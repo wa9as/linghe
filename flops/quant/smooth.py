@@ -7,6 +7,8 @@ import triton
 import triton.language as tl
 from triton import Config
 
+from flops.flops.gemm.fp8_gemm import persistent_fp8_gemm
+
 
 
 
@@ -91,121 +93,6 @@ def triton_smooth_quant_v0_nt(a, b):
 
 
 
-# grid K//BLOCK_K
-@triton.jit
-def sm_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
-    pid = tl.program_id(axis=0)
-
-    offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
-    m = tl.cdiv(M, BLOCK_SIZE)
-    x_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
-    x_ptrs = x_ptr + offs
-    for i in range(m):
-        x = tl.load(x_ptr)
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
-        x_ptrs += BLOCK_SIZE*K
-
-    # offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
-    n = tl.cdiv(N, BLOCK_SIZE)
-    w_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
-    w_ptrs = w_ptr + offs
-    for i in range(n):
-        w = tl.load(w_ptr)
-        w_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
-        w_ptr += BLOCK_SIZE*K
-
-    scale = tl.sqrt(x_max*w_max)
-    x_scale = x_max/scale
-    w_scale = w_max/scale
-
-    x_ptrs = x_ptr + offs
-    xs_ptrs = xs_ptr + offs
-    for i in range(m):
-        x = tl.load(x_ptrs)
-        x = x / x_scale
-        tl.store(xs_ptrs, x)
-        x_ptrs += BLOCK_SIZE*K
-        xs_ptrs += BLOCK_SIZE*K
-
-    w_ptrs = w_ptr + offs
-    ws_ptrs = ws_ptr + offs
-    for i in range(n):
-        w = tl.load(w_ptrs)
-        w = w / w_scale
-        tl.store(ws_ptrs, w)
-        w_ptrs += BLOCK_SIZE*K
-        ws_ptrs += BLOCK_SIZE*K
-
-# grid K//BLOCK_K
-@triton.jit
-def smooth_v3_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
-    pid = tl.program_id(axis=0)
-
-    offs = pid*BLOCK_K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
-    m = tl.cdiv(M, BLOCK_SIZE)
-    x_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
-    x_ptrs = x_ptr + offs
-    for i in range(m):
-        x = tl.load(x_ptrs)
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
-        x_ptrs += BLOCK_SIZE*K
-
-    # offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
-    n = tl.cdiv(N, BLOCK_SIZE)
-    w_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
-    w_ptrs = w_ptr + offs
-    for i in range(n):
-        w = tl.load(w_ptrs)
-        w_max = tl.maximum(tl.max(tl.abs(w), axis=0),x_max)
-        w_ptrs += BLOCK_SIZE*K
-
-    scale = tl.sqrt(x_max*w_max)
-    x_scale = x_max/scale
-    w_scale = w_max/scale
-
-    x_ptrs = x_ptr + offs
-    xs_ptrs = xs_ptr + offs
-    xs_offs = tl.arange(0, BLOCK_SIZE)
-    xs_max_ptrs =  xs_max_ptr + pid*M + xs_offs
-    for i in range(m):
-        x = tl.load(x_ptrs)
-        x = x / x_scale
-        xs_max = tl.maximum(tl.max(tl.abs(x), axis=1), eps)
-        tl.store(xs_ptrs, x)
-        tl.store(xs_max_ptrs, xs_max)
-        x_ptrs += BLOCK_SIZE*K
-        xs_ptrs += BLOCK_SIZE*K
-        xs_max_ptrs += BLOCK_SIZE
-
-    w_ptrs = w_ptr + offs
-    ws_ptrs = ws_ptr + offs
-    ws_offs = tl.arange(0, BLOCK_SIZE)
-    ws_max_ptrs = ws_max_ptr + pid*N + ws_offs
-    for i in range(n):
-        w = tl.load(w_ptrs)
-        ws = w / w_scale
-        ws_max = tl.maximum(tl.max(tl.abs(ws), axis=1),eps)
-        tl.store(ws_ptrs, ws)
-        tl.store(ws_max_ptrs, ws_max)
-        w_ptrs += BLOCK_SIZE*K
-        ws_ptrs += BLOCK_SIZE*K
-        ws_max_ptrs += BLOCK_SIZE
-
-@triton.jit
-def row_quant_sm_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
-    pid = tl.program_id(0)
-    n_block = (N-1) // BLOCK_SIZE + 1 
-    indices = tl.arange(0, BLOCK_SIZE)
-    
-    scale = tl.load(s_ptr+pid)
-    for j in range(n_block):
-        offs = pid*N + j*BLOCK_SIZE + indices
-        x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
-        y = x.to(tl.float32) / scale
-        y = y.to(q_ptr.dtype.element_ty)
-        tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
-
-
 
 """
 used for g@w^T, w is [out, in] and row_major, should be quantized and transposed to [in, out]
@@ -287,4 +174,142 @@ def triton_smooth_quant_v0_nn(a, b):
         num_warps=16
     )
     return a_q,b_q,scale
+
+
+
+# smooth quant
+def fp8_smooth_v0_f_and_b(x,w,y):
+    xq,wq,fwd_scale = triton_smooth_quant_v0_nt(x,w)
+    o = persistent_fp8_gemm(xq, wq.t(), torch.bfloat16)
+    
+    yq,wq,bwd_scale = triton_smooth_quant_v0_nn(y,w)
+    y_dummy_scale = torch.ones((x.size(0),1),dtype=torch.float32,device=x.device)
+    dx = torch._scaled_mm(yq,
+                            wq.t(),
+                            scale_a=y_dummy_scale,
+                            scale_b=bwd_scale[None],
+                            out_dtype=torch.bfloat16,
+                            use_fast_accum=True)
+
+    dw = torch._scaled_mm(yq.t().contiguous(),
+                                    xq.t().contiguous().t(),
+                                    scale_a=bwd_scale[:,None],
+                                    scale_b=fwd_scale[None],
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+    return o, dx, dw
+
+# grid K//BLOCK_K
+@triton.jit
+def smooth_v3_nt_deprecated_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
+    m = tl.cdiv(M, BLOCK_SIZE)
+    x_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
+    x_ptrs = x_ptr + offs
+    for i in range(m):
+        x = tl.load(x_ptr)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        x_ptrs += BLOCK_SIZE*K
+
+    # offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
+    n = tl.cdiv(N, BLOCK_SIZE)
+    w_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
+    w_ptrs = w_ptr + offs
+    for i in range(n):
+        w = tl.load(w_ptr)
+        w_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        w_ptr += BLOCK_SIZE*K
+
+    scale = tl.sqrt(x_max*w_max)
+    x_scale = x_max/scale
+    w_scale = w_max/scale
+
+    x_ptrs = x_ptr + offs
+    xs_ptrs = xs_ptr + offs
+    for i in range(m):
+        x = tl.load(x_ptrs)
+        x = x / x_scale
+        tl.store(xs_ptrs, x)
+        x_ptrs += BLOCK_SIZE*K
+        xs_ptrs += BLOCK_SIZE*K
+
+    w_ptrs = w_ptr + offs
+    ws_ptrs = ws_ptr + offs
+    for i in range(n):
+        w = tl.load(w_ptrs)
+        w = w / w_scale
+        tl.store(ws_ptrs, w)
+        w_ptrs += BLOCK_SIZE*K
+        ws_ptrs += BLOCK_SIZE*K
+
+# grid K//BLOCK_K
+@triton.jit
+def smooth_v3_nt_kernel(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    offs = pid*BLOCK_K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
+    m = tl.cdiv(M, BLOCK_SIZE)
+    x_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
+    x_ptrs = x_ptr + offs
+    for i in range(m):
+        x = tl.load(x_ptrs)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        x_ptrs += BLOCK_SIZE*K
+
+    # offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
+    n = tl.cdiv(N, BLOCK_SIZE)
+    w_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
+    w_ptrs = w_ptr + offs
+    for i in range(n):
+        w = tl.load(w_ptrs)
+        w_max = tl.maximum(tl.max(tl.abs(w), axis=0),x_max)
+        w_ptrs += BLOCK_SIZE*K
+
+    scale = tl.sqrt(x_max*w_max)
+    x_scale = x_max/scale
+    w_scale = w_max/scale
+
+    x_ptrs = x_ptr + offs
+    xs_ptrs = xs_ptr + offs
+    xs_offs = tl.arange(0, BLOCK_SIZE)
+    xs_max_ptrs =  xs_max_ptr + pid*M + xs_offs
+    for i in range(m):
+        x = tl.load(x_ptrs)
+        x = x / x_scale
+        xs_max = tl.maximum(tl.max(tl.abs(x), axis=1), eps)
+        tl.store(xs_ptrs, x)
+        tl.store(xs_max_ptrs, xs_max)
+        x_ptrs += BLOCK_SIZE*K
+        xs_ptrs += BLOCK_SIZE*K
+        xs_max_ptrs += BLOCK_SIZE
+
+    w_ptrs = w_ptr + offs
+    ws_ptrs = ws_ptr + offs
+    ws_offs = tl.arange(0, BLOCK_SIZE)
+    ws_max_ptrs = ws_max_ptr + pid*N + ws_offs
+    for i in range(n):
+        w = tl.load(w_ptrs)
+        ws = w / w_scale
+        ws_max = tl.maximum(tl.max(tl.abs(ws), axis=1),eps)
+        tl.store(ws_ptrs, ws)
+        tl.store(ws_max_ptrs, ws_max)
+        w_ptrs += BLOCK_SIZE*K
+        ws_ptrs += BLOCK_SIZE*K
+        ws_max_ptrs += BLOCK_SIZE
+
+@triton.jit
+def row_quant_smooth_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(0)
+    n_block = (N-1) // BLOCK_SIZE + 1 
+    indices = tl.arange(0, BLOCK_SIZE)
+    
+    scale = tl.load(s_ptr+pid)
+    for j in range(n_block):
+        offs = pid*N + j*BLOCK_SIZE + indices
+        x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
+        y = x.to(tl.float32) / scale
+        y = y.to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
 

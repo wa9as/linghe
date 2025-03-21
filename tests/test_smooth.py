@@ -22,7 +22,6 @@ if reshape:
     x = torch.cat([x]*2,0)[:128,:2048].contiguous()
     y = torch.cat([y]*2,0)[:128,:4096].contiguous()
     w = w[:4096,:2048].contiguous()
-    # x = x*0.0+torch.arange(128,dtype=dtype,device=device)[:,None]+1
 
 batch_size, in_dim = x.shape 
 out_dim, in_dim = w.shape

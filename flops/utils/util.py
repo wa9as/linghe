@@ -57,7 +57,7 @@ def torch_smooth_quant_v1(x, w, dtype):
     return x_q, w_q, scale, rescale
 
 # output-col wise w scale and quant with scaling to 448
-def torch_smooth_quant_v2_deprecated(x, w, dtype):
+def torch_smooth_quant_deprecated(x, w, dtype):
     # w:[bs, in]  w:[out, in]
     fmax = torch.finfo(dtype).max
     x = x.clone()
@@ -205,6 +205,45 @@ def torch_col_col_quant_v1(x, w, dtype):
     x_q = (x/x_scale).to(dtype)
     return x_q, w_q, w_scale, x_scale
 
+
+# token-wise and channel-wise
+def fp8_dynamic_f_and_b(x,w,y):
+    M,K = x.shape 
+    N,K = w.shape 
+    M,N = y.shape 
+    dtype = x.dtype
+    x_scale = x.abs().max(dim=1, keepdim=True)[0]/448.0
+    w_scale = w.abs().max(dim=1, keepdim=True)[0]/448.0
+    xq = (x/x_scale).to(torch.float8_e4m3fn)
+    wq = (w/w_scale).to(torch.float8_e4m3fn)
+    
+    o = torch._scaled_mm(xq,
+                            wq.t(),
+                            scale_a=x_scale.float().view(-1,1),
+                            scale_b=w_scale.float().view(1,-1),
+                            out_dtype=torch.bfloat16,
+                            use_fast_accum=True)
+    ys = y*w_scale.view(1,-1)
+    y_scale = ys.abs().max(dim=1, keepdim=True)[0]/448.0
+    yq = (y/y_scale).to(torch.float8_e4m3fn)
+    w_dummy_scale = torch.ones((1,K),dtype=torch.float32, device=x.device)
+    dx = torch._scaled_mm(yq,
+                            wq.t().contiguous().t(),
+                            scale_a=y_scale,
+                            scale_b=w_dummy_scale,
+                            out_dtype=torch.bfloat16,
+                            use_fast_accum=True)
+
+    ys = y*x_scale.view(-1,1)
+    y_scale = ys.abs().max(dim=0, keepdim=True)[0]/448.0
+    yq = (y.t()/y_scale.view(-1,1)).to(torch.float8_e4m3fn)
+    # x_dummy_scale = torch.ones((1,K),dtype=torch.float32, device=x.device)
+    dw = torch._scaled_mm(yq,
+                                    xq.t().contiguous().t(),
+                                    scale_a=y_scale.view(-1,1),
+                                    scale_b=w_dummy_scale,
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
 
 
 

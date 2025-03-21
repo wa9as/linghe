@@ -1,10 +1,9 @@
 
 import torch 
-from flops.utils.util import *
-from flops.utils.benchmark import benchmark_func
 from flops.quant.smooth import *
 from flops.quant.quantize import *
-
+from flops.utils.util import *
+from flops.utils.benchmark import benchmark_func
 
 
 batch_size = 4096
