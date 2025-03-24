@@ -23,3 +23,4 @@ y_f8 = y.to(qtype)
 
 
 
+benchmark_func(triton_sm_v3_quant_nt, x,w)
