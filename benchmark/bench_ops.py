@@ -4,6 +4,8 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
+from flops.gemm.fp8_gemm import *
+from flops.utils.util import *
 
 
 def torch_fp16_post_vector_scaled_mm(x, weight, x_scale, weight_scale, one):
@@ -55,9 +57,7 @@ def torch_fp16_scaler_scaled_mm(x, weight, x_scale, weight_scale):
     return output
 
 for i in range(0, 1):
-    batch_size = 4096
-    in_dim = 4096
-    out_dim = 4096
+    batch_size, out_dim, in_dim = 4096, 4096, 4096
     dtype = torch.bfloat16
     n_repeat = 1000
 
@@ -113,4 +113,9 @@ for i in range(0, 1):
     print(f'\ntorch_fp16_scaler_scaled_mm abs_error:{abs_error:.3f} rel_error:{rel_error:.3f}')
     benchmark_func(torch_fp16_scaler_scaled_mm, x_f8, w_f8.t(), xrs, wcs, n_repeat=n_repeat, name=f'bs:{batch_size}')
 
+    benchmark_func(trival_fp8_gemm, x_f8, w_f8, torch.bfloat16, n_repeat=n_repeat)
+    benchmark_func(persistent_fp8_gemm, x_f8, w_f8.t(), torch.bfloat16, n_repeat=n_repeat)
+    benchmark_func(nt_fp8_gemm, x_f8,w_f8,torch.bfloat16, n_repeat=n_repeat)
 
+    benchmark_func(fp8_transpose, x_f8, n_repeat=n_repeat)
+    benchmark_func(fp16_transpose, x, n_repeat=n_repeat)

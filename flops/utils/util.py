@@ -3,7 +3,7 @@ import torch
 
 
 
-def tensor_quant(x,w, dtype):
+def torch_tensor_quant(x,w, dtype):
     fmax = torch.finfo(dtype).max
     x_scale = torch.max(torch.abs(x))/fmax
     w_scale = torch.max(torch.abs(w))/fmax
@@ -11,7 +11,7 @@ def tensor_quant(x,w, dtype):
     w_q = (w/w_scale).to(dtype)
     return x_q,w_q,x_scale,w_scale
 
-def channel_quant(x,w, dtype):
+def torch_channel_quant(x,w, dtype):
     fmax = torch.finfo(dtype).max
     x_scale = (torch.max(torch.abs(x),dim=1, keepdims=True)[0]+1e-6)/fmax
     w_scale = (torch.max(torch.abs(w),dim=1, keepdims=True)[0]+1e-6)/fmax
@@ -120,7 +120,7 @@ def hadamard_matrix(n, device='cuda:0', dtype=torch.bfloat16):
         m = torch.kron(m,m2)
     return m.to(dtype)
 
-def torch_ht(x, hm):
+def torch_hadamard_transform(x, hm):
     x = x.clone()
     hm = hm.clone()
     M, K = x.shape 
@@ -136,7 +136,7 @@ def torch_ht(x, hm):
     xp = torch.reshape(xp,(M,K))
     return xp 
 
-def torch_ht_quant_v0(x,w,hm,dtype):
+def torch_hadamard_quant_v0(x,w,hm,dtype):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     w = w.clone()
@@ -165,7 +165,7 @@ def torch_ht_quant_v0(x,w,hm,dtype):
 
     return xq, wq, x_scale, w_scale
 
-def torch_ht_quant_v1(x,w,hm,dtype):
+def torch_hadamard_quant_v1(x,w,hm,dtype):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     w = w.clone()
@@ -266,7 +266,7 @@ def fp16_f_and_b(x,w,y):
     y = x@w.t()
     dw = y.t()@x
     dx = y@w
-
+    return y, dw, dx
 
 
 def quant_check(org_out, xq, wq, opt_out, mode):

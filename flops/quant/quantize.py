@@ -29,9 +29,6 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
         tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
 
 
-
-
-
 def triton_row_quant(x):
     M, N = x.shape 
     BLOCK_SIZE = 4096
@@ -42,7 +39,7 @@ def triton_row_quant(x):
         x, x_q, x_scale,
         M,N,
         BLOCK_SIZE,
-        num_stages=6,
-        num_warps=16
+        num_stages=5,
+        num_warps=4
     )
     return x_q, x_scale
