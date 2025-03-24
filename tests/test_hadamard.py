@@ -35,10 +35,10 @@ print(f'\n{batch_size=} {in_dim=} {out_dim=} {dtype=} ' \
         f'x.max={x.abs().max().item():.3f} x.mean={x.abs().mean().item():.3f} w.max={w.abs().max().item():.3f} '\
         f'w.mean={w.abs().mean().item():.3f} y.max={y.abs().max().item():.3f}')
 
-modes = ['ht_v1']
+modes = ['hadamard_v1']
 for mode in modes:
-    if mode == 'ht_v0':
-        xq,wq,x_scale,w_scale=torch_ht_quant_v0(x,w,hm,qtype)
+    if mode == 'hadamard_v0':
+        xq,wq,x_scale,w_scale=torch_hadamard_quant_v0(x,w,hm,qtype)
         opt_out =  (xq.to(dtype)@wq.to(dtype).t())*(x_scale*w_scale).to(dtype)
 
         # print('x',x[:4,:4])
@@ -50,24 +50,24 @@ for mode in modes:
 
         quant_check(org_out, xq, wq, opt_out,mode)
 
-    elif mode == 'ht_v1':
+    elif mode == 'hadamard_v1':
 
-        # xb, wb = triton_ht_nt(x,w,hm)
+        # xb, wb = triton_hadamard_nt(x,w,hm)
         # opt_out = xb@wb.t()
         # quant_check(org_out, xb, wb, opt_out, mode)
 
-        # xq,wq,x_scale,w_scale=torch_ht_quant_v1(x,w,hm,qtype)
+        # xq,wq,x_scale,w_scale=torch_hadamard_quant_v1(x,w,hm,qtype)
         # opt_out = ((xq.to(dtype)*x_scale)@((wq.to(dtype)*w_scale).t())).to(dtype)
         # quant_check(org_out, xq, wq, opt_out, mode)
 
-        opt_out,xq,wq,x_scale,w_scale = ht_quant_forward(x,w,hm)
-        quant_check(org_out, xq, wq, opt_out, mode)
+        opt_out,xq,wq,x_scale,w_scale = hadamard_quant_forward(x,w,hm)
+        quant_check(org_out, xq, wq, opt_out, 'hadamard_quant_forward')
 
-        opt_out,yq,xq,y_scale,x_scale = ht_quant_update(y,x,hm)
-        quant_check(y.t()@x, yq, xq, opt_out, mode)
+        opt_out,yq,xq,y_scale,x_scale = hadamard_quant_update(y,x,hm)
+        quant_check(y.t()@x, yq, xq, opt_out, 'hadamard_quant_update')
 
-        opt_out,yq,wq,y_scale,w_scale = ht_quant_backward(y,w,hm)
-        quant_check(y@w, yq, wq, opt_out, mode)
+        opt_out,yq,wq,y_scale,w_scale = hadamard_quant_backward(y,w,hm)
+        quant_check(y@w, yq, wq, opt_out, 'hadamard_quant_backward')
 
 
 

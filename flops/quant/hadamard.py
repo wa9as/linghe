@@ -9,48 +9,52 @@ from flops.quant.quantize import row_quant_kernel
 
 
 @triton.jit
-def ht_nt_kernel(x_ptr, xb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr):
+def hadamard_nt_kernel(x_ptr, xb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
-    offs = pid*BLOCK_SIZE + tl.arange(0, 2*BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
-    n = tl.cdiv(N, 2*BLOCK_SIZE)
+    offs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
+    n = tl.cdiv(N, R*BLOCK_SIZE)
     for i in range(n):
         w = tl.load(w_ptr+offs)
         tl.store(wb_ptr+offs, tl.dot(w, hm))
-        offs += 2*BLOCK_SIZE*K
+        offs += R*BLOCK_SIZE*K
 
     # norm hm in x
     hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
-    offs = pid*BLOCK_SIZE + tl.arange(0, 2*BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
-    m = tl.cdiv(M, 2*BLOCK_SIZE)
+    offs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
+    m = tl.cdiv(M, R*BLOCK_SIZE)
     for i in range(m):
         x = tl.load(x_ptr+offs)
         tl.store(xb_ptr+offs, tl.dot(x, hm) )
-        offs += 2*BLOCK_SIZE*K
+        offs += R*BLOCK_SIZE*K
 
 
-def triton_ht_nt(x, w, hm):
+def triton_hadamard_nt(x, w, hm):
     assert w.size(1) == w.size(1)
     M, K = x.shape
     N, K = w.shape
     x_b = torch.empty_like(x)
     w_b = torch.empty_like(w)
     BLOCK_SIZE = hm.size(0)
+    R = 2
     grid = lambda META: (K//BLOCK_SIZE, )
-    ht_nt_kernel[grid](
+    hadamard_nt_kernel[grid](
         x, x_b,
         w, w_b, 
         hm,
         M,N,K,
         BLOCK_SIZE,
+        R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
     return x_b,w_b
 
 
-def triton_ht_quant_nt(x, w, hm):
+
+
+def triton_hadamard_quant_nt(x, w, hm):
     M, K = x.shape
     N, K = w.shape
     device = x.device 
@@ -62,13 +66,15 @@ def triton_ht_quant_nt(x, w, hm):
     w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = hm.size(0)
+    R = 2
     grid = lambda META: (K//BLOCK_SIZE, )
-    ht_nt_kernel[grid](
+    hadamard_nt_kernel[grid](
         x, x_b,
         w, w_b, 
         hm,
         M,N,K,
         BLOCK_SIZE,
+        R,
         num_stages=6,
         num_warps=4
     )
@@ -97,43 +103,45 @@ def triton_ht_quant_nt(x, w, hm):
 
 
 
+
 @triton.jit
-def ht_tn_kernel(y_ptr, yb_ptr, x_ptr, xb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr):
-    # both need transpose
+def hadamard_tn_kernel(y_ptr, yb_ptr, x_ptr, xb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
     # dwT = yT @ x
+    # both need transpose
     # y: [M,N] -> [N,M]
     # x: [M,K] -> [K,M]
     pid = tl.program_id(axis=0)
 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
 
-    offs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, 2*BLOCK_SIZE)[None,:] 
-    toffs = pid*BLOCK_SIZE + tl.arange(0, 2*BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
-    n = tl.cdiv(N, 2*BLOCK_SIZE)
+    offs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, R*BLOCK_SIZE)[None,:] 
+    toffs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    n = tl.cdiv(N, R*BLOCK_SIZE)
     for i in range(n):
         y = tl.trans(tl.load(y_ptr+offs))
         o = tl.dot(y, hm)
         tl.store(yb_ptr+toffs, o)
-        offs += 2*BLOCK_SIZE
-        toffs += 2*M*BLOCK_SIZE
+        offs += R*BLOCK_SIZE
+        toffs += R*M*BLOCK_SIZE
         
     # # norm hm in x
     hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
-    offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, 2*BLOCK_SIZE)[None,:]
-    toffs = pid*BLOCK_SIZE + tl.arange(0, 2*BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
-    k = tl.cdiv(K, 2*BLOCK_SIZE)
+    offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, R*BLOCK_SIZE)[None,:]
+    toffs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    k = tl.cdiv(K, R*BLOCK_SIZE)
     for i in range(k):
         x = tl.trans(tl.load(x_ptr+offs))
         x = tl.dot(x, hm)
         tl.store(xb_ptr+toffs, x)
-        offs += 2*BLOCK_SIZE
-        toffs += 2*M*BLOCK_SIZE
+        offs += R*BLOCK_SIZE
+        toffs += R*M*BLOCK_SIZE
 
 
-# v1: ht+token/channelx quant
-def triton_ht_quant_tn(y, x, hm):
-    # both need transpose
+
+# v1: hadamard+token/channelx quant
+def triton_hadamard_quant_tn(y, x, hm):
     # dwT = yT @ x
+    # both need transpose
     # y: [M,N] -> [N,M]
     # x: [M,K] -> [K,M]
     assert y.size(0) == x.size(0)
@@ -150,13 +158,15 @@ def triton_ht_quant_tn(y, x, hm):
     x_scale = torch.empty((1,K), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = hm.size(0)
+    R = 2
     grid = lambda META: (M//BLOCK_SIZE, )
-    ht_tn_kernel[grid](
+    hadamard_tn_kernel[grid](
         y, y_b, 
         x, x_b,
         hm,
         M,N,K,
         BLOCK_SIZE,
+        R,
         num_stages=6,
         num_warps=4
     )
@@ -186,7 +196,7 @@ def triton_ht_quant_tn(y, x, hm):
 
 
 @triton.jit
-def ht_nn_kernel(y_ptr, yb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr):
+def hadamard_nn_kernel(y_ptr, yb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
     # w need transpose
     # dx = y @ w
     # y: [M,N]
@@ -195,28 +205,28 @@ def ht_nn_kernel(y_ptr, yb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.c
 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
 
-    offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE*2)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
-    m = tl.cdiv(M, 2*BLOCK_SIZE)
+    offs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
+    m = tl.cdiv(M, R*BLOCK_SIZE)
     for i in range(m):
         y = tl.load(y_ptr+offs)
         o = tl.dot(y, hm)
         tl.store(yb_ptr+offs, o)
-        offs += 2*BLOCK_SIZE*N
+        offs += R*BLOCK_SIZE*N
 
     # norm hm in y 
     hm = (hm/BLOCK_SIZE).to(w_ptr.dtype.element_ty)
-    offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, 2*BLOCK_SIZE)[None,:] 
-    toffs = pid*BLOCK_SIZE + tl.arange(0, 2*BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
-    k = tl.cdiv(K, 2*BLOCK_SIZE)
+    offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, R*BLOCK_SIZE)[None,:] 
+    toffs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
+    k = tl.cdiv(K, R*BLOCK_SIZE)
     for i in range(k):
         w = tl.trans(tl.load(w_ptr+offs))
         o = tl.dot(w, hm)
         tl.store(wb_ptr+toffs, o)
-        offs += 2*BLOCK_SIZE
-        toffs += 2*N*BLOCK_SIZE
+        offs += R*BLOCK_SIZE
+        toffs += R*BLOCK_SIZE*N
 
 
-def triton_ht_quant_nn(y, w, hm):
+def triton_hadamard_quant_nn(y, w, hm):
     # w need transpose
     # dx = y @ w
     # y: [M,N]
@@ -233,13 +243,15 @@ def triton_ht_quant_nn(y, w, hm):
     w_scale = torch.empty((1,K), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = hm.size(0)
+    R = 2
     grid = lambda META: (N//BLOCK_SIZE, )
-    ht_nn_kernel[grid](
+    hadamard_nn_kernel[grid](
         y, y_b,
         w, w_b, 
         hm,
         M,N,K,
         BLOCK_SIZE,
+        R,
         num_stages=6,
         num_warps=4
     )
@@ -267,8 +279,145 @@ def triton_ht_quant_nn(y, w, hm):
     return y_q,w_q,y_scale,w_scale
 
 
-def ht_quant_forward(x,w,hm):
-    x_q,w_q,x_scale,w_scale = triton_ht_quant_nt(x, w, hm)
+
+
+
+@triton.jit
+def fused_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
+    # apply hadamard transform and row-wise quant
+    # SIDE=0: hadamard@block  
+    # SIDE=1: block@hadamard
+    pid = tl.program_id(axis=0)
+    hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
+    # row-wise read, row-wise write
+    offs = pid*BLOCK_SIZE*N + tl.arange(0, R*BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
+    n = tl.cdiv(N, BLOCK_SIZE)
+    maxs = tl.zeros((R*BLOCK_SIZE,),dtype=tl.float32)
+    for i in range(n):
+        x = tl.load(x_ptr+offs)
+        # if SIDE == 0:
+        #     x = tl.dot(hm, x)
+        # else:
+        #     x = tl.dot(x, hm)
+        o = tl.dot(x, hm)
+        tl.store(b_ptr+offs, o)
+        maxs = tl.maximum(maxs, tl.max(o,1))
+        offs += BLOCK_SIZE
+
+    scales = maxs/448.0
+
+    tl.store(s_ptr + pid*R*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE), scales)
+    rs = (448.0/maxs)[:,None]
+
+    offs = pid*R*BLOCK_SIZE*N + tl.arange(0, R*BLOCK_SIZE)[:,None]*N + tl.arange(0, 2*BLOCK_SIZE)[None,:]
+    n = tl.cdiv(N, 2*BLOCK_SIZE)
+    for i in range(n):
+        x = tl.load(b_ptr+offs)
+        y = (x.to(tl.float32)*rs).to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr+offs, y)
+        offs += 2*BLOCK_SIZE
+
+
+
+def triton_fused_hadamard(x, hm, hm_side=1, op_side=0):
+    # for x in y = x @ w, op_side = 0, hm_side=1
+    # for wT in dx = y @ wT, hm_side=1: hm_side = 0 in logical format, but hm_side will be 1 with transpose format
+    # for yT in dwT = yT @ x, hm_side=1, op_side = 0
+    # for x in dwT = yT @ x, hm_side=1, op_side = 1
+    M, N = x.shape
+    x_b = torch.empty((M,N),dtype=x.dtype,device=x.device)
+    if op_side == 0:
+        x_s = torch.empty((M,1),dtype=torch.float32,device=x.device)
+    else:
+        x_s = torch.empty((1,N),dtype=torch.float32,device=x.device)
+    x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=x.device)
+    BLOCK_SIZE = hm.size(0)
+    R = 2
+    grid = lambda META: (M//BLOCK_SIZE//R, )
+    fused_hadamard_kernel[grid](
+        x, 
+        x_b,
+        x_s,
+        x_q, 
+        hm,
+        M,N,
+        BLOCK_SIZE,
+        R,
+        num_stages=6,
+        num_warps=4
+    )
+    return x_q,x_s
+
+
+@triton.jit
+def fused_transpose_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BLOCK_SIZE: tl.constexpr, SIDE: tl.constexpr):
+    # transpose x: [M, N] -> [N, M] 
+    # and then apply hadamard transform
+    # SIDE=0: hadamard@block  
+    # SIDE=1: block@hadamard
+    pid = tl.program_id(axis=0)
+    hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
+    # row-wise read, col-wise write
+    offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
+    toffs = pid*BLOCK_SIZE*M + tl.arange(0, BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    m = tl.cdiv(M, BLOCK_SIZE)
+    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)
+    for i in range(m):
+        x = tl.trans(tl.load(x_ptr+offs))
+        if SIDE == 0:
+            x = tl.dot(hm, x)
+        else:
+            x = tl.dot(x, hm)
+        maxs = tl.maximum(maxs, tl.max(x,1))
+        tl.store(b_ptr+toffs, x)
+        offs += BLOCK_SIZE*N
+        toffs += BLOCK_SIZE
+
+    scales = maxs/448.0
+    rs = 448.0/maxs
+
+    tl.store(s_ptr + pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE), scales)
+
+    toffs = pid*BLOCK_SIZE*M + tl.arange(0, BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    for i in range(m):
+        x = tl.load(b_ptr+toffs).to(tl.float32)
+        y = (x*rs).to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr+toffs, y)
+        toffs += BLOCK_SIZE
+
+
+def triton_fused_transpose_hadamard(x, hm, hm_side=1, op_side=0):
+    # for wT in dx = y @ wT, op_side = 0, hm_side = 1: hm_side = 0 in logical format, but hm_side will be 1 with transpose format
+    # for yT in dwT = yT @ x, op_side = 0, hm_side = 1
+    # for x in dwT = yT @ x, op_side = 1, hm_side = 1
+    M, N = x.shape
+    x_b = torch.empty((N,M),dtype=x.dtype,device=x.device)
+    if op_side == 0:
+        x_s = torch.empty((N,1),dtype=torch.float32,device=x.device)
+    else:
+        x_s = torch.empty((1,M),dtype=torch.float32,device=x.device)
+    x_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=x.device)
+    BLOCK_SIZE = hm.size(0)
+    grid = lambda META: (N//BLOCK_SIZE, )
+    fused_transpose_hadamard_kernel[grid](
+        x, 
+        x_b,
+        x_s,
+        x_q, 
+        hm,
+        M,N,
+        BLOCK_SIZE,
+        hm_side,
+        num_stages=6,
+        num_warps=4
+    )
+    return x_q,x_s
+
+
+
+
+def hadamard_quant_forward(x,w,hm):
+    x_q,w_q,x_scale,w_scale = triton_hadamard_quant_nt(x, w, hm)
     output = torch._scaled_mm(x_q,
                                     w_q.t(),
                                     scale_a=x_scale,
@@ -277,8 +426,8 @@ def ht_quant_forward(x,w,hm):
                                     use_fast_accum=True)
     return output,x_q,w_q,x_scale,w_scale
 
-def ht_quant_update(y,x,hm):
-    y_q,x_q,y_scale,x_scale = triton_ht_quant_tn(y, x, hm)
+def hadamard_quant_update(y,x,hm):
+    y_q,x_q,y_scale,x_scale = triton_hadamard_quant_tn(y, x, hm)
     output = torch._scaled_mm(y_q,
                                     x_q.t(),
                                     scale_a=y_scale,
@@ -287,9 +436,9 @@ def ht_quant_update(y,x,hm):
                                     use_fast_accum=True)
     return output,y_q,x_q,y_scale,x_scale
 
-def ht_quant_backward(y,w,hm):
+def hadamard_quant_backward(y,w,hm):
 
-    y_q,w_q,y_scale,w_scale = triton_ht_quant_nn(y, w, hm)
+    y_q,w_q,y_scale,w_scale = triton_hadamard_quant_nn(y, w, hm)
     output = torch._scaled_mm(y_q,
                                     w_q.t(),
                                     scale_a=y_scale,
@@ -299,7 +448,15 @@ def ht_quant_backward(y,w,hm):
     return output,y_q,w_q,y_scale,w_scale
 
 
-def fp8_ht_f_and_b(x,w,y,hm):
-    ht_quant_forward(x, w, hm)
-    ht_quant_update(y,x, hm)
-    ht_quant_backward(y, w, hm)
+def fp8_hadamard_f_and_b(x,w,y,hm):
+    hadamard_quant_forward(x, w, hm)
+    hadamard_quant_update(y,x, hm)
+    hadamard_quant_backward(y, w, hm)
+
+
+def triton_fused_hadamard_quant_nt(x, w, hm):
+    x_q,x_s = triton_fused_hadamard(x, hm, hm_side=1, op_side=0)
+    w_q,w_s = triton_fused_hadamard(w, hm, hm_side=1, op_side=1)
+    return x_q,x_s,w_q,w_s
+
+
