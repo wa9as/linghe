@@ -1,3 +1,4 @@
+import time 
 from enum import IntEnum
 from typing import Tuple
 import math
@@ -5,8 +6,25 @@ import torch
 import triton
 import triton.language as tl
 from triton import Config
-from flops.quant.quantize import row_quant_kernel
 
+
+
+def fp16_forward(x,w):
+    return x @ w
+
+def fp16_update(y,x):
+    return y.t() @ x
+
+def fp16_backward(y,w):
+    return y @ w
+
+
+def hadamard_matrix(n, device='cuda:0', dtype=torch.bfloat16):
+    m2 = torch.tensor([[1,1],[1,-1]],device=device,dtype=dtype)
+    m = m2
+    for i in range(int(round(math.log2(n)-1))):
+        m = torch.kron(m,m2)
+    return m.to(dtype)
 
 @triton.jit
 def hadamard_nt_kernel(x_ptr, xb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
@@ -46,7 +64,7 @@ def triton_hadamard_nt(x, w, hm, R=2):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
     return x_b,w_b
 
@@ -74,7 +92,7 @@ def triton_hadamard_quant_nt(x, w, hm, R=2):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -84,7 +102,7 @@ def triton_hadamard_quant_nt(x, w, hm, R=2):
         M,K,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -94,7 +112,7 @@ def triton_hadamard_quant_nt(x, w, hm, R=2):
         N,K,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     return x_q,w_q,x_scale,w_scale
@@ -165,7 +183,7 @@ def triton_hadamard_quant_tn(y, x, hm, R=2):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -175,7 +193,7 @@ def triton_hadamard_quant_tn(y, x, hm, R=2):
         K,M,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -185,7 +203,7 @@ def triton_hadamard_quant_tn(y, x, hm, R=2):
         N,M,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     return y_q,x_q,y_scale,x_scale
@@ -249,7 +267,7 @@ def triton_hadamard_quant_nn(y, w, hm, R=2):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -259,7 +277,7 @@ def triton_hadamard_quant_nn(y, w, hm, R=2):
         M,N,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -269,7 +287,7 @@ def triton_hadamard_quant_nn(y, w, hm, R=2):
         K,N,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     return y_q,w_q,y_scale,w_scale
@@ -338,7 +356,7 @@ def triton_fused_hadamard(x, hm, hm_side=1, op_side=0, R=2):
         R,
         SIDE,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
     return x_q,x_s
 
@@ -407,7 +425,7 @@ def triton_fused_transpose_hadamard(x, hm, hm_side=1, op_side=0, R=2):
         R,
         SIDE,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
     return x_q,x_s
 
@@ -467,7 +485,7 @@ def triton_bit_hadamard_nt(x, w, hm, R=1):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
     return x_b,x_bt,w_b,w_bt
 
@@ -495,7 +513,7 @@ def triton_bit_hadamard_quant_nt(x,w,hm, R=1):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
 
     x_q = torch.empty((M, K), device=device, dtype=torch.float8_e4m3fn)
@@ -511,7 +529,7 @@ def triton_bit_hadamard_quant_nt(x,w,hm, R=1):
         M,K,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -521,7 +539,7 @@ def triton_bit_hadamard_quant_nt(x,w,hm, R=1):
         N,K,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     return x_bt,w_bt,x_q,w_q,x_scale,w_scale
@@ -549,7 +567,7 @@ def triton_bit_hadamard_quant_nn(y,w,hm,R=1):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
 
     y_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
@@ -565,7 +583,7 @@ def triton_bit_hadamard_quant_nn(y,w,hm,R=1):
         M,N,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -575,7 +593,7 @@ def triton_bit_hadamard_quant_nn(y,w,hm,R=1):
         K,N,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     return y_bt,y_q,w_q,y_scale,w_scale
@@ -606,7 +624,7 @@ def triton_bit_hadamard_quant_tn(y,x,hm,R=1):
         N,M,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     BLOCK_SIZE = 4096
@@ -616,7 +634,7 @@ def triton_bit_hadamard_quant_tn(y,x,hm,R=1):
         K,M,
         BLOCK_SIZE,
         num_stages=5,
-        num_warps=4
+        num_warps=8
     )
 
     return y_q,x_q,y_scale,x_scale
@@ -659,7 +677,7 @@ def triton_bit_hadamard_dy(y, hm, R=1):
         BLOCK_SIZE,
         R,
         num_stages=6,
-        num_warps=4
+        num_warps=8
     )
     return y_b,y_bt
 
@@ -752,6 +770,7 @@ def fp8_fuse_hadamard_f_and_b(x,w,y,hm):
 
 
 
+
 def fuse_hadamard_quant_forward(x,w,hm):
 
     x_q,x_s,w_q,w_s = triton_fused_hadamard_quant_nt(x, w, hm)
@@ -827,3 +846,187 @@ def fp8_bit_hadamard_f_and_b(x,w,y,hm):
     output,x_bt,w_bt,x_q,w_q,x_scale,w_scale = bit_hadamard_quant_forward(x, w, hm)
     output,y_bt,y_q,w_q,y_scale,w_scale=bit_hadamard_quant_backward(y, w_bt, hm)
     output,y_q,x_q,y_scale,x_scale=bit_hadamard_quant_update(y_bt,x_bt, hm)
+
+
+
+@triton.jit
+def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(0)
+    n_block = tl.cdiv(N, BLOCK_SIZE)
+    indices = tl.arange(0, BLOCK_SIZE)
+    max_val = 1e-6
+    for j in range(n_block):
+        offs = pid*N + j*BLOCK_SIZE + indices
+        x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
+        max_val = tl.maximum(tl.max(tl.abs(x.to(tl.float32))), max_val)
+    scale = max_val/448.0
+    tl.store(s_ptr + pid, scale)
+    for j in range(n_block):
+        offs = pid*N + j*BLOCK_SIZE + indices
+        x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
+        y = x.to(tl.float32) / scale
+        y = y.to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
+
+
+def triton_row_quant(x):
+    M, N = x.shape 
+    BLOCK_SIZE = 4096
+    x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=x.device)
+    x_scale = torch.empty((M,1),dtype=torch.float32,device=x.device)
+    grid = lambda META: (M, )
+    row_quant_kernel[grid](
+        x, x_q, x_scale,
+        M,N,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=8
+    )
+    return x_q, x_scale
+
+
+
+def fp16_f_and_b(x,w,y):
+    y = x@w.t()
+    dw = y.t()@x
+    dx = y@w
+    return y, dw, dx
+
+
+
+def benchmark_func(fn, *args, n_repeat=1000, ref_flops=None, ref_time=None, name='', **kwargs):
+    func_name = fn.__name__
+
+    for i in range(100):
+        fn(*args,**kwargs)
+
+    start_events = [torch.cuda.Event(enable_timing=True) for _ in range(n_repeat)]
+    end_events = [torch.cuda.Event(enable_timing=True) for _ in range(n_repeat)]
+    
+    ts = time.time()
+    for i in range(n_repeat):
+        start_events[i].record()
+        fn(*args,**kwargs)
+        end_events[i].record()
+    
+    torch.cuda.synchronize() 
+    te = time.time()
+    
+    # times = sum([s.elapsed_time(e) for s, e in zip(start_events, end_events)])
+    # average_event_time = times * 1000 / n_repeat
+
+    times = [s.elapsed_time(e) for s, e in zip(start_events, end_events)]
+    times = sorted(times)
+    clip = max(1,n_repeat//100)
+    times = sum(times[clip:-clip])
+    
+    average_event_time = times * 1000 / (n_repeat - 2*clip)
+    
+    fs = ''
+    if ref_flops is not None:
+        flops = ref_flops/1e12/(average_event_time/1e6)
+        fs = f'FLOPS:{flops:.2f}T'
+    ss = ''
+    if ref_time is not None:
+        ss = f'speedup:{ref_time/average_event_time:.3f}'
+    print(f'{func_name} {name} time:{average_event_time:.1f} us {fs} {ss}')
+    return average_event_time
+
+
+# 5b: hidden_size:4k  seq_length:8K shape:(M,N,K)
+# qkv: 8192, 6144, 4096
+# out: 8192, 4096, 4096
+# up/gate: 8192, 13312, 4096
+# down: 8192, 4096, 13312   # benchmark setting
+
+
+# 80b: hidden_size:8k  seq_length:8K shape:(M,N,K)
+# qkv: 8192, 10240, 8192
+# out: 8192, 8192, 8192
+# up/gate: 8192, 34048, 8192
+# down: 8192, 4096, 13312
+
+
+
+def benchmark_with_shape(shape):
+    batch_size, out_dim, in_dim = shape
+    device = 'cuda:0'
+    dtype = torch.bfloat16
+    qtype = torch.float8_e4m3fn  # torch.float8_e5m2
+    n_repeat = 1000
+    gpu = torch.cuda.get_device_properties(0).name
+
+
+    x = torch.randn(batch_size, in_dim, dtype=dtype, device=device)
+    w = torch.randn(out_dim, in_dim, dtype=dtype, device=device)
+    y = torch.randn(batch_size, out_dim, dtype=dtype, device=device)
+    x_f8 = x.to(qtype)
+    w_f8 = w.to(qtype)
+    y_f8 = y.to(qtype)
+    B = 64
+    hm = hadamard_matrix(B, dtype=dtype, device=device)
+
+    org_out = fp16_forward(x, w.t())
+    print(f'\ndevice:{gpu} M:{batch_size} N:{out_dim} K:{in_dim}')
+
+    # y = x @ w
+    # dx = y @ wT
+    # dwT = yT @ x
+
+    # benchmark_func(triton_hadamard_nt, x, w, hm, n_repeat=n_repeat)
+    # benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
+    # benchmark_func(triton_row_quant, w, n_repeat=n_repeat)
+
+    benchmark_func(triton_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_quant_tn, y, x, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_quant_nn, y, w, hm, n_repeat=n_repeat)
+
+    benchmark_func(triton_fused_hadamard, x, hm, hm_side=1, op_side=0)
+    benchmark_func(triton_fused_transpose_hadamard, x, hm, hm_side=1, op_side=0)
+    benchmark_func(triton_fused_hadamard_quant_nt, x,w,hm, n_repeat=n_repeat)
+    benchmark_func(triton_fused_hadamard_quant_nn, y,x,hm, n_repeat=n_repeat)
+    benchmark_func(triton_fused_hadamard_quant_tn, y,w,hm, n_repeat=n_repeat)
+    
+    benchmark_func(triton_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat)
+    benchmark_func(triton_fuse_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat)
+
+
+    # benchmark_func(triton_bit_hadamard_nt, x, w, hm, n_repeat=n_repeat)
+    # benchmark_func(triton_bit_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
+    # benchmark_func(triton_bit_hadamard_quant_nn, y, w.t().contiguous(), hm, n_repeat=n_repeat)
+    # benchmark_func(triton_bit_hadamard_quant_tn, y.t().contiguous(), x.t().contiguous(), hm, n_repeat=n_repeat)
+
+
+    # ref_time = benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    # benchmark_func(hadamard_quant_forward, x, w, hm, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    # ref_time = benchmark_func(fp16_backward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    # benchmark_func(hadamard_quant_backward, y, w, hm, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    # ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    # benchmark_func(hadamard_quant_update, y, x, hm, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+
+    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(fp8_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(fp8_fuse_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(fp8_bit_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+
+
+
+# 5b: hidden_size:4k  seq_length:8K shape:(M,N,K)
+# qkv: 8192, 6144, 4096
+# out: 8192, 4096, 4096
+# up/gate: 8192, 13312, 4096
+# down: 8192, 4096, 13312   # benchmark setting
+
+
+# 80b: hidden_size:8k  seq_length:8K shape:(M,N,K)
+# qkv: 8192, 10240, 8192
+# out: 8192, 8192, 8192
+# up/gate: 8192, 34048, 8192
+# down: 8192, 4096, 34048
+
+
+# benchmark_with_shape([8192, 4096, 13312])
+
+for shape in [[8192, 6144, 4096], [8192, 4096, 4096], [8192, 13312, 4096], [8192, 4096, 13312],
+            [8192, 10240, 8192],[8192, 8192, 8192],[8192, 34048, 8192],[8192, 4096, 34048]]:
+    benchmark_with_shape(shape)
