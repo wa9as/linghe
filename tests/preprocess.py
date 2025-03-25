@@ -10,12 +10,12 @@ if src == 'pkl':
 
     d = torch.load(file_name, weights_only=True)
     # print(d.keys())
+    idx = 25
+    x = d[f'glm.transformer.layers.{idx}.mlp.down_proj.fwd_x']['tensor']
+    w = d[f'glm.transformer.layers.{idx}.mlp.down_proj.fwd_w']['tensor']
+    y = d[f'glm.transformer.layers.{idx}.mlp.down_proj.fwd_y']['tensor']
 
-    x = d['glm.transformer.layers.25.mlp.down_proj.fwd_x']
-    w = d['glm.transformer.layers.25.mlp.down_proj.fwd_w']
-    y = d['glm.transformer.layers.25.mlp.down_proj.fwd_y']
-
-    torch.save({'x':x, 'w':w, 'y':y},'down.pkl')
+    torch.save({'x':x, 'w':w, 'y':y},f'dump_down_{idx}.pkl')
 elif src == 'pth':
     idx = 27
     # name = 'mlp.down_proj'
@@ -27,7 +27,6 @@ elif src == 'pth':
     y = db[f'model.layers.{idx}.{name}']['grad_output']
     torch.save({'x':x, 'w':w, 'y':y},f'{name}.{idx}.pkl')
 elif src == 'safetensor':
-
 
     from safetensors import safe_open
     # model_path = '/mntnlp/common_base_model/Meta-Llama-3-8B-Instruct'

@@ -1,7 +1,7 @@
 
 import torch 
 
-from flops.utils.util import fp16_forward, quant_check, torch_os_quant_v0
+from flops.utils.util import fp16_forward, quant_check, torch_os_quant
 
 qtype = torch.float8_e4m3fn
 device = 'cuda:0'
@@ -31,7 +31,7 @@ print(f'\n{batch_size=} {in_dim=} {out_dim=} {dtype=} ' \
 
 
 
-xq, wq, x_scale, w_scale, max_idx, x_outlier = torch_os_quant_v0(x,w,qtype)
+xq, wq, x_scale, w_scale, max_idx, x_outlier = torch_os_quant(x,w,qtype)
 opt_base = xq.to(dtype)@wq.to(dtype).t()
 opt_addon = (wq.to(dtype)[:,max_idx]@x_outlier.to(dtype).t()).t()
 opt_out =  opt_base*(x_scale*w_scale).to(dtype)

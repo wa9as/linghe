@@ -68,26 +68,27 @@ def smooth_direct_quant_nt_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, 
 
 
 
-def triton_smooth_direct_quant_nt(a, b):
-    M, K = a.shape
-    N, K = b.shape
-    a_q = torch.empty((M, K), device=a.device, dtype=torch.float8_e4m3fn)
-    b_q = torch.empty((N, K), device=a.device, dtype=torch.float8_e4m3fn)
-    scale = torch.empty((K,), device=a.device, dtype=torch.float32)
+def triton_smooth_direct_quant_nt(x, w):
+    M, K = x.shape
+    N, K = w.shape
+    device = x.device
+    x_q = torch.empty((M, K), device=device, dtype=torch.float8_e4m3fn)
+    w_q = torch.empty((N, K), device=device, dtype=torch.float8_e4m3fn)
+    scale = torch.empty((K,), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = 512
     BLOCK_K = 32
     grid = lambda META: (K//BLOCK_K, )
     smooth_direct_quant_nt_kernel[grid](
-        a, a_q,
-        b, b_q, scale,
+        x, x_q,
+        w, w_q, scale,
         M,N,K,
         BLOCK_SIZE,
         BLOCK_K,
         num_stages=5,
         num_warps=16
     )
-    return a_q,b_q,scale
+    return x_q,w_q,scale
 
 
 

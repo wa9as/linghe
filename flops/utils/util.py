@@ -105,6 +105,33 @@ def torch_hadamard_transform(x, hm):
     xp = torch.reshape(xp,(M,K))
     return xp 
 
+def torch_hadamard_direct_quant(x,w,hm,dtype):
+    x = x.clone()
+    w = w.clone()
+    M, K = x.shape 
+    N, K = w.shape
+    B = hm.size(0)
+
+    xp = torch.reshape(x,(M//B,B,K//B,B)).permute(0,2,1,3)
+
+    xp = xp@hm
+    xp = xp.permute(0,2,1,3)
+    xp = torch.reshape(xp,(M,K))
+
+    # print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
+    x_scale = 1.0
+    xq = (xp/x_scale).to(dtype)
+
+    wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
+    wp = hm@wp
+    wp = wp.permute(0,2,1,3)
+    wp = torch.reshape(wp,(K,N)).t().contiguous()
+    # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
+    w_scale = 1/256
+    wq = (wp/w_scale).to(dtype)
+
+    return xq, wq, x_scale, w_scale
+
 def torch_hadamard_tensor_quant(x,w,hm,dtype):
     fmax = torch.finfo(dtype).max
     x = x.clone()
@@ -119,7 +146,7 @@ def torch_hadamard_tensor_quant(x,w,hm,dtype):
     xp = xp.permute(0,2,1,3)
     xp = torch.reshape(xp,(M,K))
 
-    print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
+    # print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
     x_scale = torch.max(torch.abs(xp).float())/fmax
     xq = (xp/x_scale).to(dtype)
 
@@ -127,6 +154,7 @@ def torch_hadamard_tensor_quant(x,w,hm,dtype):
     wp = hm@wp
     wp = wp.permute(0,2,1,3)
     wp = torch.reshape(wp,(K,N)).t().contiguous()
+    # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
     w_scale = torch.max(torch.abs(wp).float())/fmax
     wq = (wp/w_scale).to(dtype)
 
@@ -235,3 +263,18 @@ def quant_check(org_out, xq, wq, opt_out, mode):
             f'x_underflow:{x_underflow:.5f} w_underflow:{w_underflow:.5f} ' \
             f'x_overflow:{x_overflow} w_overflow:{w_overflow}')
 
+def read_and_tile(filename, tile=True):
+    device = 'cuda:0'
+    dtype = torch.bfloat16
+    d = torch.load(filename, weights_only=True)
+    x = d['x'][0].to(dtype).to(device)
+    w = d['w'].to(dtype).to(device)
+    y = d['y'][0].to(dtype).to(device)
+
+    if tile:
+        bs = x.size(0)
+        m = max(2**(int(math.log2(bs)+1)),128)
+        rep = (m-1)//bs+1
+        x = torch.cat([x]*rep,0)[:m].contiguous()
+        y = torch.cat([y]*rep,0)[:m].contiguous()
+    return x,w,y

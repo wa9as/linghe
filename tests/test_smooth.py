@@ -10,18 +10,8 @@ qtype = torch.float8_e4m3fn
 device = 'cuda:0'
 dtype = torch.bfloat16
 
+x,w,y= read_and_tile('down_fb_1.pkl', tile=True)
 
-d = torch.load('down_fb_1.pkl', weights_only=True)
-x = d['x'][0].to(dtype).to(device)
-w = d['w'].to(dtype).to(device)
-y = d['y'][0].to(dtype).to(device)
-
-
-reshape = True
-if reshape:
-    bs = x.size(0)
-    m = 2**(int(math.log2(bs)+1))
-    x = torch.cat([x]*2,0)[:m].contiguous()
 
 batch_size, in_dim = x.shape 
 out_dim, in_dim = w.shape

@@ -12,17 +12,7 @@ device = 'cuda:0'
 dtype = torch.bfloat16
 
 
-d = torch.load('down_fb_1.pkl', weights_only=True)
-x = d['x'][0].to(dtype).to(device)
-w = d['w'].to(dtype).to(device)
-y = d['y'][0].to(dtype).to(device)
-
-reshape = True
-if reshape:
-    bs = x.size(0)
-    m = 2**(int(math.log2(bs)+1))
-    x = torch.cat([x]*2,0)[:m].contiguous()
-    y = torch.cat([y]*2,0)[:m].contiguous()
+x,w,y= read_and_tile('down_fb_1.pkl', tile=True)
 
 
 B = 64
@@ -38,9 +28,24 @@ print(f'\n{batch_size=} {in_dim=} {out_dim=} {dtype=} ' \
         f'w.max={w.abs().max().item():.3f} '\
         f'w.mean={w.abs().mean().item():.3f} y.max={y.abs().max().item():.3f}')
 
-modes = ['tensor', 'channel']
+modes = ['direct', 'tensor', 'channel']
 for mode in modes:
-    if mode == 'tensor':
+    if mode == 'direct':
+        xq,wq,x_scale,w_scale = torch_hadamard_direct_quant(x,w,hm,qtype)
+        xdq = xq.to(torch.float32)*x_scale
+        wdq = wq.to(torch.float32).t()*w_scale
+        opt_out = xdq@wdq
+
+        # print('x',x[:4,:4])
+        # print('w',w[:4,:4])
+        # print('xq',xq[:4,:4])
+        # print('wq',wq[:4,:4])
+        # print('org',org_out[:4,:4])
+        # print('opt',opt_out[:4,:4])
+
+        quant_check(org_out, xq, wq, opt_out, mode)
+
+    elif mode == 'tensor':
         xq,wq,x_scale,w_scale = torch_hadamard_tensor_quant(x,w,hm,qtype)
         xdq = xq.to(torch.float32)*x_scale
         wdq = wq.to(torch.float32).t()*w_scale
