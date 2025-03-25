@@ -13,7 +13,7 @@ from flops.gemm.fp8_gemm import persistent_fp8_gemm
 
 
 @triton.jit
-def smooth_quant_v0_nt_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+def smooth_direct_quant_nt_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
     pid = tl.program_id(axis=0)
     offs = pid*BLOCK_K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
 
@@ -68,7 +68,7 @@ def smooth_quant_v0_nt_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOC
 
 
 
-def triton_smooth_quant_v0_nt(a, b):
+def triton_smooth_direct_quant_nt(a, b):
     M, K = a.shape
     N, K = b.shape
     a_q = torch.empty((M, K), device=a.device, dtype=torch.float8_e4m3fn)
@@ -78,7 +78,7 @@ def triton_smooth_quant_v0_nt(a, b):
     BLOCK_SIZE = 512
     BLOCK_K = 32
     grid = lambda META: (K//BLOCK_K, )
-    smooth_quant_v0_nt_kernel[grid](
+    smooth_direct_quant_nt_kernel[grid](
         a, a_q,
         b, b_q, scale,
         M,N,K,
@@ -96,7 +96,7 @@ def triton_smooth_quant_v0_nt(a, b):
 used for g@w^T, w is [out, in] and row_major, should be quantized and transposed to [in, out]
 """
 @triton.jit
-def smooth_quant_v0_nn_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+def smooth_direct_quant_nn_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
     pid = tl.program_id(axis=0)
     offs = pid*BLOCK_K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
 
@@ -152,7 +152,7 @@ def smooth_quant_v0_nn_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOC
 
 
 
-def triton_smooth_quant_v0_nn(a, b):
+def triton_smooth_direct_quant_nn(a, b):
     M, K = a.shape
     K, N = b.shape
     a_q = torch.empty((M, K), device=a.device, dtype=torch.float8_e4m3fn)
@@ -162,7 +162,7 @@ def triton_smooth_quant_v0_nn(a, b):
     BLOCK_SIZE = 512
     BLOCK_K = 32
     grid = lambda META: (K//BLOCK_K, )
-    smooth_quant_v0_nn_kernel[grid](
+    smooth_direct_quant_nn_kernel[grid](
         a, a_q,
         b, b_q, scale,
         M,N,K,
@@ -176,11 +176,11 @@ def triton_smooth_quant_v0_nn(a, b):
 
 
 # smooth quant
-def fp8_smooth_v0_f_and_b(x,w,y):
-    xq,wq,fwd_scale = triton_smooth_quant_v0_nt(x,w)
+def fp8_smooth_direct_quant_f_and_b(x,w,y):
+    xq,wq,fwd_scale = triton_smooth_direct_quant_nt(x,w)
     o = persistent_fp8_gemm(xq, wq.t(), torch.bfloat16)
     
-    yq,wq,bwd_scale = triton_smooth_quant_v0_nn(y,w)
+    yq,wq,bwd_scale = triton_smooth_direct_quant_nn(y,w)
     y_dummy_scale = torch.ones((x.size(0),1),dtype=torch.float32,device=x.device)
     dx = torch._scaled_mm(yq,
                             wq.t(),
@@ -200,7 +200,7 @@ def fp8_smooth_v0_f_and_b(x,w,y):
 
 # grid K//BLOCK_K
 @triton.jit
-def smooth_v3_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     offs = pid*BLOCK_K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
@@ -286,7 +286,7 @@ def row_quant_sm_kernel(x_ptr, q_ptr, s_ptr,  M, K,  BLOCK_SIZE: tl.constexpr, B
 
 
 # v3: smooth + token/channel
-def triton_sm_v3_quant_nt(x, w):
+def triton_sm_quant_nt(x, w):
     eps = 1e-10
     M, K = x.shape
     N, K = w.shape
@@ -311,7 +311,7 @@ def triton_sm_v3_quant_nt(x, w):
     # print(f"grid: {K//BLOCK_SIZE}")
 
     grid = lambda META: (K//BLOCK_K, )
-    smooth_v3_kernel_nt[grid](
+    smooth_kernel_nt[grid](
         x, x_s, xs_max_tmp,
         w, w_s, ws_max_tmp,
         M,N,K,

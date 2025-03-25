@@ -20,7 +20,7 @@ def torch_channel_quant(x,w, dtype):
     return x_q,w_q,x_scale,w_scale
 
 # direct quant without scaling to 448
-def torch_smooth_quant_v0(x, w, dtype):
+def torch_smooth_direct_quant(x, w, dtype):
     # w:[bs, in]  w:[out, in]
     x = x.clone()
     w = w.clone()
@@ -37,7 +37,7 @@ def torch_smooth_quant_v0(x, w, dtype):
     return x_q, w_q, scale
 
 # quant with scaling to 448
-def torch_smooth_quant_v1(x, w, dtype):
+def torch_smooth_tensor_quant(x, w, dtype):
     # w:[bs, in]  w:[out, in]
     x = x.clone()
     w = w.clone()
@@ -56,26 +56,7 @@ def torch_smooth_quant_v1(x, w, dtype):
 
     return x_q, w_q, scale, rescale
 
-# output-col wise w scale and quant with scaling to 448
-def torch_smooth_quant_deprecated(x, w, dtype):
-    # w:[bs, in]  w:[out, in]
-    fmax = torch.finfo(dtype).max
-    x = x.clone()
-    w = w.clone()
-    w_max = torch.max(torch.abs(w).float(), dim=1, keepdim=True)[0]
-    w_scale = w_max
-    w = w/w_scale
-
-    x_max = torch.max(torch.abs(x).float(), dim=0, keepdim=True)[0]
-    maxs = x_max**0.5
-    rescale = fmax/maxs.max()
-    # print(f'x_max:{x_max.max().item()} w_max:{w_max.max().item()} maxs:{maxs.max().item()} w_scale:{w_scale.max().item()}')
-    x_q = (x*(rescale/maxs).to(x.dtype)).to(dtype)
-    w_q = (w*(rescale*maxs).to(x.dtype)).to(dtype)
-
-    return x_q, w_q, w_scale, maxs, rescale
-
-def torch_smooth_quant_v3(x, w, dtype):
+def torch_smooth_quant(x, w, dtype):
     # w:[bs, in]  w:[out, in]
     x = x.clone()
     w = w.clone()
@@ -97,7 +78,7 @@ def torch_smooth_quant_v3(x, w, dtype):
 
     return x_q, w_q, x_scale,  w_scale
 
-def torch_os_quant_v0(x,w,dtype):
+def torch_os_quant(x,w,dtype):
     x = x.clone()
     w = w.clone()
     fmax = torch.finfo(dtype).max
@@ -113,51 +94,37 @@ def torch_os_quant_v0(x,w,dtype):
     return xq, wq, x_scale, w_scale, max_idx[:4], x_outlier
 
 
-def hadamard_matrix(n, device='cuda:0', dtype=torch.bfloat16):
-    m2 = torch.tensor([[1,1],[1,-1]],device=device,dtype=dtype)
-    m = m2
-    for i in range(int(round(math.log2(n)-1))):
-        m = torch.kron(m,m2)
-    return m.to(dtype)
-
 def torch_hadamard_transform(x, hm):
     x = x.clone()
     hm = hm.clone()
     M, K = x.shape 
     B = hm.size(0)
     xp = torch.reshape(x,(M//B,B,K//B,B)).permute(0,2,1,3).contiguous()
-    # print('xp',xp)
-    # pm = hm/B
-    pm = hm
-    xp = xp@pm
-    # print('xp@pm',xp)
+    xp = xp@hm
     xp = xp.permute(0,2,1,3)
-    # print('xp.permute',xp)
     xp = torch.reshape(xp,(M,K))
     return xp 
 
-def torch_hadamard_quant_v0(x,w,hm,dtype):
+def torch_hadamard_tensor_quant(x,w,hm,dtype):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     w = w.clone()
     M, K = x.shape 
     N, K = w.shape
     B = hm.size(0)
+
     xp = torch.reshape(x,(M//B,B,K//B,B)).permute(0,2,1,3)
 
-    # pm = 1.0*((torch.randn((B,B),dtype=x.dtype,device=x.device)>0).to(x.dtype)-0.5)
-    pm = hm/B
-    xp = xp@pm
+    xp = xp@hm
     xp = xp.permute(0,2,1,3)
     xp = torch.reshape(xp,(M,K))
-    # print(f'{x.abs().mean()=} {xp.abs().mean()=} {x.abs().max()=} {xp.abs().max()=}')
+
+    print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
     x_scale = torch.max(torch.abs(xp).float())/fmax
     xq = (xp/x_scale).to(dtype)
 
     wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
-    # pmi = torch.linalg.inv(pm.float()).to(x.dtype)
-    pmi = hm
-    wp = pmi@wp
+    wp = hm@wp
     wp = wp.permute(0,2,1,3)
     wp = torch.reshape(wp,(K,N)).t().contiguous()
     w_scale = torch.max(torch.abs(wp).float())/fmax
@@ -165,7 +132,7 @@ def torch_hadamard_quant_v0(x,w,hm,dtype):
 
     return xq, wq, x_scale, w_scale
 
-def torch_hadamard_quant_v1(x,w,hm,dtype):
+def torch_hadamard_channel_quant(x,w,hm,dtype):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     w = w.clone()
@@ -174,9 +141,7 @@ def torch_hadamard_quant_v1(x,w,hm,dtype):
     B = hm.size(0)
     xp = torch.reshape(x,(M//B,B,K//B,B)).permute(0,2,1,3)
 
-    # pm = 1.0*((torch.randn((B,B),dtype=x.dtype,device=x.device)>0).to(x.dtype)-0.5)
-    pm = hm/B
-    xp = xp@pm
+    xp = xp@hm
     xp = xp.permute(0,2,1,3)
     xp = torch.reshape(xp,(M,K))
     # print(f'{x.abs().mean()=} {xp.abs().mean()=} {x.abs().max()=} {xp.abs().max()=}')
@@ -184,26 +149,14 @@ def torch_hadamard_quant_v1(x,w,hm,dtype):
     xq = (xp/x_scale).to(dtype)
 
     wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
-    # pmi = torch.linalg.inv(pm.float()).to(x.dtype)
-    pmi = hm
-    wp = pmi@wp
+    wp = hm@wp
     wp = wp.permute(0,2,1,3)
     wp = torch.reshape(wp,(K,N)).t().contiguous()
     w_scale = torch.amax(torch.abs(wp).float(),dim=1,keepdim=True)/fmax
     wq = (wp/w_scale).to(dtype)
 
-    return xq, wq, x_scale, w_scale
+    return xq, wq, x_scale, w_scale.view(1,-1)
 
-
-def torch_col_col_quant_v1(x, w, dtype):
-    dtype = x.dtype 
-    w_max = torch.max(torch.abs(w), dim=0, keepdim=True)[0]  # col
-    x_max = torch.max(torch.abs(x), dim=1, keepdim=True)[0]  # col as well
-    w_scale = w_max/dtype
-    x_scale = x_max/dtype
-    w_q = (w/w_scale).to(dtype)
-    x_q = (x/x_scale).to(dtype)
-    return x_q, w_q, w_scale, x_scale
 
 
 # token-wise and channel-wise

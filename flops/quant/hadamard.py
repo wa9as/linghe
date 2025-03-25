@@ -8,6 +8,17 @@ from triton import Config
 from flops.quant.quantize import row_quant_kernel
 
 
+
+def hadamard_matrix(n, device='cuda:0', dtype=torch.bfloat16, norm=False):
+    assert 2**int(math.log2(n)) == n
+    m2 = torch.tensor([[1,1],[1,-1]],device=device,dtype=torch.float32)
+    m = m2
+    for i in range(int(math.log2(n))-1):
+        m = torch.kron(m,m2)
+    if norm:
+        m = m / n**0.5
+    return m.to(dtype)
+
 @triton.jit
 def hadamard_nt_kernel(x_ptr, xb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
     pid = tl.program_id(axis=0)
@@ -21,7 +32,7 @@ def hadamard_nt_kernel(x_ptr, xb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE
         offs += R*BLOCK_SIZE*K
 
     # norm hm in x
-    hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
+    # hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
     offs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
     m = tl.cdiv(M, R*BLOCK_SIZE)
     for i in range(m):
@@ -123,7 +134,7 @@ def hadamard_tn_kernel(y_ptr, yb_ptr, x_ptr, xb_ptr, hm_ptr, M, N, K, BLOCK_SIZE
         toffs += R*M*BLOCK_SIZE
         
     # # norm hm in x
-    hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
+    # hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
     offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, R*BLOCK_SIZE)[None,:]
     toffs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
     k = tl.cdiv(K, R*BLOCK_SIZE)
@@ -211,7 +222,7 @@ def hadamard_nn_kernel(y_ptr, yb_ptr, w_ptr, wb_ptr, hm_ptr, M, N, K, BLOCK_SIZE
         offs += R*BLOCK_SIZE*N
 
     # norm hm in y 
-    hm = (hm/BLOCK_SIZE).to(w_ptr.dtype.element_ty)
+    # hm = (hm/BLOCK_SIZE).to(w_ptr.dtype.element_ty)
     offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, R*BLOCK_SIZE)[None,:] 
     toffs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
     k = tl.cdiv(K, R*BLOCK_SIZE)
@@ -648,8 +659,8 @@ def triton_bit_hadamard_dy(y, hm, R=1):
     assert R==1
     M, N = y.shape
     K = 0
-    y_b = torch.empty_like(x)
-    y_bt = torch.empty((N,M),dtype=x.dtype,device=x.device)
+    y_b = torch.empty_like(y)
+    y_bt = torch.empty((N,M),dtype=y.dtype,device=y.device)
     BLOCK_SIZE = hm.size(0)
     grid = lambda META: (N//BLOCK_SIZE, )
     bit_hadamard_nt_kernel[grid](
