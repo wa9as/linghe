@@ -256,6 +256,64 @@ def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N,
         ws_max_ptrs += BLOCK_SIZE
 
 
+@triton.jit
+def smooth_kernel_tn(y_ptr, yq_ptr,x_ptr, xq_ptr, x_quant_scale_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    
+    offs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_K)[None,:] 
+    toffs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_K)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    scale_ptrs = x_quant_scale_ptr + pid * BLOCK_SIZE +tl.arange(0, BLOCK_SIZE)[None,:]
+    scale = tl.load(scale_ptrs)
+    n = tl.cdiv(N, BLOCK_K)
+    for i in range(n):
+        y = tl.trans(tl.load(y_ptr+offs))
+        o = (y*scale).to(yq_ptr.dtype.element_ty)
+        tl.store(yq_ptr+toffs, o)
+        offs += BLOCK_K
+        toffs += BLOCK_K*M
+        # scale_ptrs += BLOCK_K
+
+    offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
+    toffs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_K)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    k = tl.cdiv(K, BLOCK_K)
+    for j in range(k):
+        x = tl.trans(tl.load(x_ptr+offs))
+        tl.store(xq_ptr+toffs, x)
+        offs += BLOCK_K
+        toffs += BLOCK_K*M
+
+@triton.jit
+def smooth_v3_kernel_nn(y_ptr, yq_ptr,w_ptr, wq_ptr, w_quant_scale_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_N: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    
+    # offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_N)[None,:] 
+    offs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_N)[None,:] 
+    scale_ptrs = w_quant_scale_ptr + tl.arange(0, BLOCK_N)[None,:]
+    scale = tl.load(scale_ptrs)
+    # n = tl.cdiv(M, BLOCK_SIZE)
+    n = tl.cdiv(N, BLOCK_N)
+    for i in range(n):
+        y = tl.load(y_ptr+offs)
+        o = (y*scale).to(yq_ptr.dtype.element_ty)
+        tl.store(yq_ptr+offs, o)
+        # offs += BLOCK_SIZE * N
+        offs += BLOCK_N
+        scale_ptrs += BLOCK_N
+
+@triton.jit
+def smooth_kernel_wq(w_ptr, wq_ptr, M, N, K, eps, BLOCK_K: tl.constexpr, BLOCK_N: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    
+    offs = pid*BLOCK_N*K + tl.arange(0, BLOCK_N)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
+    toffs = pid*BLOCK_N + tl.arange(0, BLOCK_K)[:,None]*N + tl.arange(0, BLOCK_N)[None,:]
+    k = tl.cdiv(K, BLOCK_K)
+    for j in range(k):
+        x = tl.trans(tl.load(w_ptr+offs))
+        tl.store(wq_ptr+toffs, x)
+        offs += BLOCK_K
+        toffs += BLOCK_K*N
+
+
 #grid M/BLOCK_M
 @triton.jit
 def row_quant_sm_kernel(x_ptr, q_ptr, s_ptr,  M, K,  BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr, SCALE_K: tl.constexpr):
@@ -360,3 +418,69 @@ def triton_sm_quant_nt(x, w):
     )
 
     return x_q,w_q
+
+def triton_sm_quant_tn(y, x):
+    eps = 1e-10
+    M, N = y.shape
+    M, K = x.shape
+    device = x.device 
+    # x_s = torch.empty((M, K), device=x.device, dtype=x.dtype)
+    # w_s = torch.empty((N, K), device=w.device, dtype=w.dtype)
+    y_q = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
+    x_q = torch.empty((K, M), device=x.device, dtype=torch.float8_e4m3fn)
+    x_quant_scale = torch.empty((M,1), device=x.device, dtype=torch.float32)#pass from outside 
+    
+    BLOCK_SIZE = 64
+    BLOCK_K = 64 #128
+
+    grid = lambda META: (M//BLOCK_SIZE, )
+    smooth_kernel_tn[grid](
+        y, y_q,
+        x, x_q, x_quant_scale,
+        M,N,K,
+        eps, 
+        BLOCK_SIZE,
+        BLOCK_K,
+        num_stages=6,
+        num_warps=32
+    )
+    
+def triton_sm_quant_nn(y, w):
+    eps = 1e-10
+    M, N = y.shape
+    N, K = w.shape
+    device = w.device 
+    # x_s = torch.empty((M, K), device=x.device, dtype=x.dtype)
+    # w_s = torch.empty((N, K), device=w.device, dtype=w.dtype)
+    y_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    w_q = torch.empty((K, N), device=device, dtype=torch.float8_e4m3fn)
+    w_quant_scale = torch.empty((1,N), device=device, dtype=torch.float32)#pass from outside 
+    
+    BLOCK_SIZE = 64
+    BLOCK_N = 512
+
+    # grid = lambda META: (N//BLOCK_N, )
+    grid = lambda META: (M//BLOCK_SIZE, )
+    smooth_v3_kernel_nn[grid](
+        y, y_q,
+        w, w_q, w_quant_scale,
+        M,N,K,
+        eps, 
+        BLOCK_SIZE,
+        BLOCK_N,
+        num_stages=6,
+        num_warps=32
+    )
+
+    BLOCK_K = 64
+    BLOCK_N = 64
+    grid = lambda META: (N//BLOCK_N, )
+    smooth_kernel_wq[grid](
+        w, w_q,
+        M,N,K,
+        eps, 
+        BLOCK_K,
+        BLOCK_N,
+        num_stages=6,
+        num_warps=32
+    )
