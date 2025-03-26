@@ -10,7 +10,9 @@ from flops.utils.transpose import *
 from flops.quant.channel import *
 
 
-batch_size, out_dim, in_dim = 8192, 4096, 13312
+# batch_size, out_dim, in_dim = 8192, 4096, 13312
+batch_size, out_dim, in_dim = 8192, 6144, 4096
+
 dtype = torch.bfloat16
 n_repeat = 1000
 
@@ -24,18 +26,23 @@ w_f8 = w.to(torch.float8_e4m3fn)
 # benchmark_func(persistent_fp8_gemm, x_f8, w_f8.t(), torch.bfloat16, n_repeat=n_repeat)
 # benchmark_func(nt_fp8_gemm, x_f8,w_f8,torch.bfloat16, n_repeat=n_repeat)
 
+
+# x = w
+# x_f8 = w_f8
 benchmark_func(fp16_transpose, x, n_repeat=n_repeat)
 benchmark_func(triton_transpose,x, n_repeat=n_repeat)
-
-benchmark_func(fp8_transpose, x_f8, n_repeat=n_repeat)
-benchmark_func(triton_transpose,x_f8, n_repeat=n_repeat)
+benchmark_func(triton_opt_transpose,x, n_repeat=n_repeat)
 
 
 benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
 benchmark_func(triton_transpose_row_quant, x, n_repeat=n_repeat)
 
-# benchmark_func(triton_row_quant, w, n_repeat=n_repeat)
-# benchmark_func(triton_transpose_row_quant, w, n_repeat=n_repeat)
+
+benchmark_func(fp8_transpose, x_f8, n_repeat=n_repeat)
+benchmark_func(triton_transpose,x_f8, n_repeat=n_repeat)
+benchmark_func(triton_opt_transpose,x_f8, n_repeat=n_repeat)
+
+
 
 
 

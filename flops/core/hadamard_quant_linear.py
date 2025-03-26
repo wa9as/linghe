@@ -73,8 +73,7 @@ class HadamardQuantLinear(torch.nn.Module):
         out_features: int,
         bias: bool = True,
         device=None,
-        dtype=None,
-        hadamard_matrix_size=64
+        dtype=None
     ):
         super().__init__()
         self.in_features = in_features
@@ -85,7 +84,7 @@ class HadamardQuantLinear(torch.nn.Module):
         else:
             self.bias = None
         self.reset_parameters()
-        self.hadamard_matrix_size = hadamard_matrix_size
+        self.hadamard_matrix_size = 64
         self.hadamard_matrix = self._hadamard_matrix(self.hadamard_matrix_size, device, dtype)
 
     def _hadamard_matrix(self, size, device, dtype):
