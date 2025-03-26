@@ -234,7 +234,6 @@ def reuse_smooth_quant_f_and_b(x,w,y):
     M,K = x.shape 
     N,K = w.shape 
     M,N = y.shape 
-    dtype = x.dtype
     x_smooth_max = torch.amax(torch.abs(x).float(), dim=0, keepdim=True)
     w_smooth_max = torch.amax(torch.abs(w).float(), dim=0, keepdim=True)
     maxs = (x_smooth_max*w_smooth_max)**0.5

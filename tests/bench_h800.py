@@ -447,7 +447,7 @@ def bit_hadamard_nt_kernel(x_ptr, xb_ptr, xbt_ptr, w_ptr, wb_ptr, wbt_ptr, hm_pt
     for i in range(m):
         x = tl.load(x_ptr+offs)
         tl.store(xb_ptr+offs, tl.dot(x, hm) )
-        tl.store(xbt_ptr+toffs, tl.dot(hm, x) )
+        tl.store(xbt_ptr+toffs, tl.trans(tl.dot(hm, x)) )
         offs += R*BLOCK_SIZE*K
         toffs += R*BLOCK_SIZE
 
@@ -458,7 +458,7 @@ def bit_hadamard_nt_kernel(x_ptr, xb_ptr, xbt_ptr, w_ptr, wb_ptr, wbt_ptr, hm_pt
     for i in range(n):
         w = tl.load(w_ptr+offs)
         tl.store(wb_ptr+offs, tl.dot(w, hm))
-        tl.store(wbt_ptr+toffs, tl.dot(hm, w))
+        tl.store(wbt_ptr+toffs, tl.trans(tl.dot(hm, w)))
         offs += R*BLOCK_SIZE*K
         toffs += R*BLOCK_SIZE
 
@@ -656,7 +656,7 @@ def bit_hadamard_dy_kernel(y_ptr, yb_ptr, ybt_ptr, hm_ptr, M, N, K, BLOCK_SIZE: 
     for i in range(m):
         x = tl.load(y_ptr+offs)
         tl.store(yb_ptr+offs, tl.dot(x, hm) )
-        tl.store(ybt_ptr+toffs, tl.dot(hm, x) )
+        tl.store(ybt_ptr+toffs, tl.trans(tl.dot(hm, x)) )
         offs += R*BLOCK_SIZE*N
         toffs += R*BLOCK_SIZE
 
@@ -973,10 +973,9 @@ def benchmark_with_shape(shape):
     # dx = y @ wT
     # dwT = yT @ x
 
-    # benchmark_func(triton_hadamard_nt, x, w, hm, n_repeat=n_repeat)
-    # benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
-    # benchmark_func(triton_row_quant, w, n_repeat=n_repeat)
-
+    benchmark_func(triton_hadamard_nt, x, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
+    benchmark_func(triton_row_quant, w, n_repeat=n_repeat)
     benchmark_func(triton_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
     benchmark_func(triton_hadamard_quant_tn, y, x, hm, n_repeat=n_repeat)
     benchmark_func(triton_hadamard_quant_nn, y, w, hm, n_repeat=n_repeat)
@@ -987,14 +986,11 @@ def benchmark_with_shape(shape):
     benchmark_func(triton_fused_hadamard_quant_nn, y,x,hm, n_repeat=n_repeat)
     benchmark_func(triton_fused_hadamard_quant_tn, y,w,hm, n_repeat=n_repeat)
     
-    benchmark_func(triton_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat)
-    benchmark_func(triton_fuse_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat)
-
-
-    # benchmark_func(triton_bit_hadamard_nt, x, w, hm, n_repeat=n_repeat)
-    # benchmark_func(triton_bit_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
-    # benchmark_func(triton_bit_hadamard_quant_nn, y, w.t().contiguous(), hm, n_repeat=n_repeat)
-    # benchmark_func(triton_bit_hadamard_quant_tn, y.t().contiguous(), x.t().contiguous(), hm, n_repeat=n_repeat)
+    benchmark_func(triton_bit_hadamard_nt, x, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_bit_hadamard_dy, y, hm, n_repeat=n_repeat)
+    benchmark_func(triton_bit_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_bit_hadamard_quant_nn, y, w.t().contiguous(), hm, n_repeat=n_repeat)
+    benchmark_func(triton_bit_hadamard_quant_tn, y.t().contiguous(), x.t().contiguous(), hm, n_repeat=n_repeat)
 
 
     # ref_time = benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)

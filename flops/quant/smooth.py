@@ -94,7 +94,7 @@ def triton_smooth_direct_quant_nt(x, w):
 
 
 """
-used for g@w^T, w is [out, in] and row_major, should be quantized and transposed to [in, out]
+used for y@w^T, w is [out, in] and row_major, should be quantized and transposed to [in, out]
 """
 @triton.jit
 def smooth_direct_quant_nn_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
@@ -107,9 +107,6 @@ def smooth_direct_quant_nn_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, 
     for i in range(m):
         x = tl.load(x_ptrs)
         x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
-        # if pid==0:
-        #     if i==0:
-        #         tl.device_print('x_max',tl.max(tl.abs(x), axis=0))
         x_ptrs += BLOCK_SIZE*K
 
 
@@ -176,7 +173,6 @@ def triton_smooth_direct_quant_nn(a, b):
 
 
 
-# smooth quant
 def fp8_smooth_direct_quant_f_and_b(x,w,y):
     xq,wq,fwd_scale = triton_smooth_direct_quant_nt(x,w)
     o = persistent_fp8_gemm(xq, wq.t(), torch.bfloat16)
