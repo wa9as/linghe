@@ -1,11 +1,9 @@
-from enum import IntEnum
-from typing import Tuple
 import math
 import torch
 import triton
 import triton.language as tl
 from triton import Config
-from flops.quant.quantize import row_quant_kernel
+from flops.quant.channel import row_quant_kernel
 
 
 
@@ -423,11 +421,15 @@ def triton_fused_transpose_hadamard(x, hm, hm_side=1, op_side=0, R=2):
     return x_q,x_s
 
 
+"""
+write h@x and h@w as well, bit for BIlateral Transform
+y = x @ w
+dx = y @ wT
+dwT = yT @ x
+x in yT @ x should be h@x and transposed
+w in y @ wT should be h@w and transposed
+"""
 
-# write h@x and h@w as well, bit for bilateral transformer
-# y = x @ w
-# dx = y @ wT
-# dwT = yT @ x
 @triton.jit
 def bit_hadamard_nt_kernel(x_ptr, xb_ptr, xbt_ptr, w_ptr, wb_ptr, wbt_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
     pid = tl.program_id(axis=0)
@@ -440,18 +442,18 @@ def bit_hadamard_nt_kernel(x_ptr, xb_ptr, xbt_ptr, w_ptr, wb_ptr, wbt_ptr, hm_pt
     for i in range(m):
         x = tl.load(x_ptr+offs)
         tl.store(xb_ptr+offs, tl.dot(x, hm) )
-        tl.store(xbt_ptr+toffs, tl.dot(hm, x) )
+        tl.store(xbt_ptr+toffs, tl.trans(tl.dot(hm, x)) )
         offs += R*BLOCK_SIZE*K
         toffs += R*BLOCK_SIZE
 
-    hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
+    # hm = (hm/BLOCK_SIZE).to(x_ptr.dtype.element_ty)
     offs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_SIZE)[None,:]
     toffs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, R*BLOCK_SIZE)[None,:]
     n = tl.cdiv(N, R*BLOCK_SIZE)
     for i in range(n):
         w = tl.load(w_ptr+offs)
         tl.store(wb_ptr+offs, tl.dot(w, hm))
-        tl.store(wbt_ptr+toffs, tl.dot(hm, w))
+        tl.store(wbt_ptr+toffs, tl.trans(tl.dot(hm, w)))
         offs += R*BLOCK_SIZE*K
         toffs += R*BLOCK_SIZE
 
@@ -482,9 +484,52 @@ def triton_bit_hadamard_nt(x, w, hm, R=1):
     )
     return x_b,x_bt,w_b,w_bt
 
+
+
+"""
+y = x @ w
+dx = y @ wT
+dwT = yT @ x
+yT in yT @ x should be h@y and transposed
+"""
+@triton.jit
+def bit_hadamard_dy_kernel(y_ptr, yb_ptr, ybt_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
+
+    offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
+    toffs = pid*BLOCK_SIZE*M + tl.arange(0, BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
+    m = tl.cdiv(M, BLOCK_SIZE)
+    for i in range(m):
+        x = tl.load(y_ptr+offs)
+        tl.store(yb_ptr+offs, tl.dot(x, hm) )
+        tl.store(ybt_ptr+toffs, tl.trans(tl.dot(hm, x)) )
+        offs += BLOCK_SIZE*N
+        toffs += BLOCK_SIZE
+
+
+def triton_bit_hadamard_dy(y, hm, R=1):
+    assert R==1
+    M, N = y.shape
+    K = 0
+    y_b = torch.empty_like(y)
+    y_bt = torch.empty((N,M),dtype=y.dtype,device=y.device)
+    BLOCK_SIZE = hm.size(0)
+    grid = lambda META: (N//BLOCK_SIZE, )
+    bit_hadamard_nt_kernel[grid](
+        y, y_b, y_bt,
+        hm,
+        M,N,K,
+        BLOCK_SIZE,
+        R,
+        num_stages=6,
+        num_warps=4
+    )
+    return y_b,y_bt
+
+
 # y = x @ w
-# dx = y @ wT
-# dwT = yT @ x
 def triton_bit_hadamard_quant_nt(x,w,hm, R=1):
 
     assert R==1
@@ -514,7 +559,6 @@ def triton_bit_hadamard_quant_nt(x,w,hm, R=1):
     x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
     w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
 
-
     BLOCK_SIZE = 4096
     grid = lambda META: (M, )
     row_quant_kernel[grid](
@@ -537,10 +581,12 @@ def triton_bit_hadamard_quant_nt(x,w,hm, R=1):
 
     return x_bt,w_bt,x_q,w_q,x_scale,w_scale
 
+"""
+y = x @ w
+dx = y @ wT
+dwT = yT @ x
 
-# y = x @ w
-# dx = y @ wT
-# dwT = yT @ x
+"""
 def triton_bit_hadamard_quant_nn(y,w,hm,R=1):
     # w is transposed and hadamard tranformed
     assert R==1
@@ -558,7 +604,6 @@ def triton_bit_hadamard_quant_nn(y,w,hm,R=1):
         hm,
         M,N,K,
         BLOCK_SIZE,
-        R,
         num_stages=6,
         num_warps=4
     )
@@ -631,48 +676,6 @@ def triton_bit_hadamard_quant_tn(y,x,hm,R=1):
     )
 
     return y_q,x_q,y_scale,x_scale
-
-
-# write h@x and h@w as well, bit for bilateral transformer
-# y = x @ w
-# dx = y @ wT
-# dwT = yT @ x
-@triton.jit
-def bit_hadamard_dy_kernel(y_ptr, yb_ptr, ybt_ptr, hm_ptr, M, N, K, BLOCK_SIZE: tl.constexpr, R: tl.constexpr):
-    pid = tl.program_id(axis=0)
-
-    hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
-
-    offs = pid*BLOCK_SIZE + tl.arange(0, R*BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
-    toffs = pid*BLOCK_SIZE*M + tl.arange(0, BLOCK_SIZE)[:,None]*M + tl.arange(0, R*BLOCK_SIZE)[None,:]
-    m = tl.cdiv(M, R*BLOCK_SIZE)
-    for i in range(m):
-        x = tl.load(y_ptr+offs)
-        tl.store(yb_ptr+offs, tl.dot(x, hm) )
-        tl.store(ybt_ptr+toffs, tl.dot(hm, x) )
-        offs += R*BLOCK_SIZE*N
-        toffs += R*BLOCK_SIZE
-
-
-
-def triton_bit_hadamard_dy(y, hm, R=1):
-    assert R==1
-    M, N = y.shape
-    K = 0
-    y_b = torch.empty_like(y)
-    y_bt = torch.empty((N,M),dtype=y.dtype,device=y.device)
-    BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (N//BLOCK_SIZE, )
-    bit_hadamard_nt_kernel[grid](
-        y, y_b, y_bt,
-        hm,
-        M,N,K,
-        BLOCK_SIZE,
-        R,
-        num_stages=6,
-        num_warps=4
-    )
-    return y_b,y_bt
 
 
 

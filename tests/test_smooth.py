@@ -1,6 +1,5 @@
 import torch 
 from flops.quant.hadamard import *
-from flops.quant.quantize import *
 from flops.utils.util import *
 from flops.utils.benchmark import *
 
