@@ -30,7 +30,6 @@ def torch_smooth_direct_quant(x, w, dtype):
     scale = (x_max/w_max)**0.5
     x_max_ = x_max/scale
     w_max_ = w_max*scale
-    # print(f'x_max:{x_max.max().item()} w_max:{w_max.max().item()} scale:{scale.max().item()} x_smooth_max:{x_max_.max().item()} w_smooth_max:{w_max_.max().item()} x_scale:{x_scale.max().item()} w_scale:{w_scale.max().item()}')
     x_q = (x*(1.0/scale).to(x.dtype)).to(dtype)
     w_q = (w*(scale).to(x.dtype)).to(dtype)
 
@@ -50,7 +49,6 @@ def torch_smooth_tensor_quant(x, w, dtype):
     x_scale = x_max_/fmax
     w_scale = w_max_/fmax
     rescale = fmax/torch.maximum(x_max_.max(),w_max_.max())
-    # print(f'x_max:{x_max.max().item()} w_max:{w_max.max().item()} scale:{scale.max().item()} x_smooth_max:{x_max_.max().item()} w_smooth_max:{w_max_.max().item()} x_scale:{x_scale.max().item()} w_scale:{w_scale.max().item()}')
     x_q = (x*(rescale/scale).to(x.dtype)).to(dtype)
     w_q = (w*(scale*rescale).to(x.dtype)).to(dtype)
 
@@ -72,7 +70,6 @@ def torch_smooth_quant(x, w, dtype):
     w_max = torch.max(torch.abs(w_smooth).float(), dim=1, keepdim=True)[0]
     x_scale = x_max/448.0
     w_scale = w_max/448.0
-    # print(f'x_max:{x_max.max().item()} w_max:{w_max.max().item()} scale:{scale.max().item()} x_smooth_max:{x_max_.max().item()} w_smooth_max:{w_max_.max().item()} x_scale:{x_scale.max().item()} w_scale:{w_scale.max().item()}')
     x_q = (x_smooth*(1.0/x_scale).to(x.dtype)).to(dtype)
     w_q = (w_smooth*(1.0/w_scale).to(x.dtype)).to(dtype)
 
@@ -118,7 +115,6 @@ def torch_hadamard_direct_quant(x,w,hm,dtype):
     xp = xp.permute(0,2,1,3)
     xp = torch.reshape(xp,(M,K))
 
-    # print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
     x_scale = 1.0
     xq = (xp/x_scale).to(dtype)
 
@@ -126,7 +122,6 @@ def torch_hadamard_direct_quant(x,w,hm,dtype):
     wp = hm@wp
     wp = wp.permute(0,2,1,3)
     wp = torch.reshape(wp,(K,N)).t().contiguous()
-    # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
     w_scale = 1/256
     wq = (wp/w_scale).to(dtype)
 
@@ -188,25 +183,26 @@ def torch_hadamard_channel_quant(x,w,hm,dtype):
 
 
 # token-wise and channel-wise
-def fp8_dynamic_f_and_b(x,w,y):
+def dynamic_quant_f_and_b(x,w,y):
     M,K = x.shape 
     N,K = w.shape 
     M,N = y.shape 
-    dtype = x.dtype
-    x_scale = x.abs().max(dim=1, keepdim=True)[0]/448.0
-    w_scale = w.abs().max(dim=1, keepdim=True)[0]/448.0
+    x_scale = x.abs().float().amax(dim=1, keepdim=True)/448.0  # [M,1]
+    w_scale = w.abs().float().amax(dim=1, keepdim=True)/448.0  # [N,1]
     xq = (x/x_scale).to(torch.float8_e4m3fn)
     wq = (w/w_scale).to(torch.float8_e4m3fn)
-    
     o = torch._scaled_mm(xq,
                             wq.t(),
-                            scale_a=x_scale.float().view(-1,1),
-                            scale_b=w_scale.float().view(1,-1),
+                            scale_a=x_scale.view(-1,1),
+                            scale_b=w_scale.view(1,-1),
                             out_dtype=torch.bfloat16,
                             use_fast_accum=True)
-    ys = y*w_scale.view(1,-1)
-    y_scale = ys.abs().max(dim=1, keepdim=True)[0]/448.0
-    yq = (y/y_scale).to(torch.float8_e4m3fn)
+    
+    # dx = y @ wT
+    # absort w quant scale to y
+    ys = y*w_scale.view(1,N)
+    y_scale = ys.abs().float().amax(dim=1, keepdim=True)/448.0+1e-9
+    yq = (ys/y_scale).to(torch.float8_e4m3fn)
     w_dummy_scale = torch.ones((1,K),dtype=torch.float32, device=x.device)
     dx = torch._scaled_mm(yq,
                             wq.t().contiguous().t(),
@@ -215,17 +211,78 @@ def fp8_dynamic_f_and_b(x,w,y):
                             out_dtype=torch.bfloat16,
                             use_fast_accum=True)
 
-    ys = y*x_scale.view(-1,1)
-    y_scale = ys.abs().max(dim=0, keepdim=True)[0]/448.0
-    yq = (y.t()/y_scale.view(-1,1)).to(torch.float8_e4m3fn)
-    # x_dummy_scale = torch.ones((1,K),dtype=torch.float32, device=x.device)
-    dw = torch._scaled_mm(yq,
+    # dw = yT@x
+    yt = y.t().contiguous()
+    yts = yt*x_scale.view(1,M)
+    yt_scale = yts.abs().float().amax(dim=1, keepdim=True)/448.0+1e-9
+    ytq = (yts/yt_scale).to(torch.float8_e4m3fn)
+    dw = torch._scaled_mm(ytq,
                                     xq.t().contiguous().t(),
-                                    scale_a=y_scale.view(-1,1),
+                                    scale_a=yt_scale.view(-1,1),
                                     scale_b=w_dummy_scale,
                                     out_dtype=torch.bfloat16,
                                     use_fast_accum=True)
+    return xq,wq,yq,ytq,o,dx,dw
 
+
+
+# smooth and token-wise/channel-wise
+def reuse_smooth_quant_f_and_b(x,w,y):
+    x = x.clone()
+    w = w.clone()
+    y = y.clone()
+    M,K = x.shape 
+    N,K = w.shape 
+    M,N = y.shape 
+    dtype = x.dtype
+    x_smooth_max = torch.amax(torch.abs(x).float(), dim=0, keepdim=True)
+    w_smooth_max = torch.amax(torch.abs(w).float(), dim=0, keepdim=True)
+    maxs = (x_smooth_max*w_smooth_max)**0.5
+    x_smooth_scale = x_smooth_max/maxs  # [K, 1]
+    w_smooth_scale = w_smooth_max/maxs  # [K, 1] reciprocal of x_scale
+    x_smooth = x/x_smooth_scale 
+    w_smooth = w/w_smooth_scale
+
+    x_quant_max = torch.amax(torch.abs(x_smooth).float(), dim=1, keepdim=True)
+    w_quant_max = torch.amax(torch.abs(w_smooth).float(), dim=1, keepdim=True)
+
+    x_quant_scale = x_quant_max/448.0  # [M, 1]
+    w_quant_scale = w_quant_max/448.0  # [N, 1]
+    xq = (x_smooth/x_quant_scale).to(torch.float8_e4m3fn)
+    wq = (w_smooth/w_quant_scale).to(torch.float8_e4m3fn)
+
+    o = torch._scaled_mm(xq,
+                            wq.t(),
+                            scale_a=x_quant_scale.view(-1,1),
+                            scale_b=w_quant_scale.view(1,-1),
+                            out_dtype=torch.bfloat16,
+                            use_fast_accum=True)
+
+    # dx = y @ wT
+    # absort w quant scale to y
+    ys = y*w_quant_scale.view(1,N)
+    y_scale = ys.abs().float().amax(dim=1, keepdim=True)/448.0+1e-9
+    yq = (ys/y_scale).to(torch.float8_e4m3fn)
+    dx = torch._scaled_mm(yq,
+                            wq.t().contiguous().t(),
+                            scale_a=y_scale,
+                            scale_b=w_smooth_scale.view(1,-1),
+                            out_dtype=torch.bfloat16,
+                            use_fast_accum=True)
+
+    # dw = yT@x
+    yt = y.t().contiguous()  # [N, M]
+    yts = yt*x_quant_scale.view(1, M)
+    yt_scale = yts.abs().amax(dim=1, keepdim=True)/448.0+1e-9
+    ytq = (yts/yt_scale).to(torch.float8_e4m3fn)
+    dw = torch._scaled_mm(ytq,
+                                    xq.t().contiguous().t(),
+                                    scale_a=yt_scale.view(-1,1),
+                                    scale_b=x_smooth_scale.view(1,-1),
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+
+    return xq,wq,yq,ytq,o, dx, dw
 
 
 def fp16_forward(x,w):
@@ -244,10 +301,20 @@ def fp16_transpose(x):
     return x.t().contiguous()
 
 def fp16_f_and_b(x,w,y):
-    y = x@w.t()
+    o = x@w.t()
     dw = y.t()@x
     dx = y@w
-    return y, dw, dx
+    return o, dx, dw
+
+
+
+
+def output_check(org_out, opt_out, mode):
+    abs_error = (opt_out.float() - org_out.float()).abs().mean().item()
+    rel_error = abs_error/org_out.float().abs().mean().item()
+    print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \
+            f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
+            f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ')
 
 
 def quant_check(org_out, xq, wq, opt_out, mode):
@@ -272,9 +339,71 @@ def read_and_tile(filename, tile=True):
     y = d['y'][0].to(dtype).to(device)
 
     if tile:
+        indices = y.abs().float().sum(-1)>0
+        x = x[indices]
+        y = y[indices]
+
         bs = x.size(0)
-        m = max(2**(int(math.log2(bs)+1)),128)
+        m = max(2**(int(math.log2(bs)+1)),256)
         rep = (m-1)//bs+1
         x = torch.cat([x]*rep,0)[:m].contiguous()
         y = torch.cat([y]*rep,0)[:m].contiguous()
+
+    batch_size, in_dim = x.shape 
+    out_dim, in_dim = w.shape
+    print(f'\ndataset: {batch_size=} {in_dim=} {out_dim=} ' \
+        f'x.max={x.abs().max().item():.3f} x.mean={x.abs().mean().item():.3f} ' \
+        f'w.max={w.abs().max().item():.3f} w.mean={w.abs().mean().item():.3f} ' \
+        f'y.max={y.abs().max().item():.3f} y.mean={y.abs().mean().item():.3f}')
+
     return x,w,y
+
+
+
+def torch_fp16_post_vector_scaled_mm(x, weight, x_scale, weight_scale, one):
+    output = torch._scaled_mm(x,
+                                    weight,
+                                    scale_a=one,
+                                    scale_b=one,
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+    output = output * x_scale * weight_scale
+    return output
+
+def torch_fp32_post_vector_scaled_mm(x, weight, x_scale, weight_scale, one):
+    output = torch._scaled_mm(x,
+                                    weight,
+                                    scale_a=one,
+                                    scale_b=one,
+                                    out_dtype=torch.float32,
+                                    use_fast_accum=True)
+    output = output * x_scale * weight_scale
+    output = output.to(dtype=torch.bfloat16)
+    return output
+
+def torch_fp16_vector_scaled_mm(x, weight, x_scale, weight_scale):
+    output = torch._scaled_mm(x,
+                                    weight,
+                                    scale_a=x_scale,
+                                    scale_b=weight_scale,
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+    return output
+
+def torch_fp32_vector_scaled_mm(x, weight, x_scale, weight_scale):
+    output = torch._scaled_mm(x,
+                                    weight,
+                                    scale_a=x_scale,
+                                    scale_b=weight_scale,
+                                    out_dtype=torch.float32,
+                                    use_fast_accum=True)
+    return output
+
+def torch_fp16_scaler_scaled_mm(x, weight, x_scale, weight_scale):
+    output = torch._scaled_mm(x,
+                                weight,
+                                scale_a=x_scale,
+                                scale_b=weight_scale,
+                                out_dtype=torch.bfloat16,
+                                use_fast_accum=True)
+    return output

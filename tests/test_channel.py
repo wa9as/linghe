@@ -13,11 +13,6 @@ out_dim, in_dim = w.shape
 
 org_out = fp16_forward(x, w.t())
 
-print(f'\n{batch_size=} {in_dim=} {out_dim=} {dtype=} ' \
-        f'x.max={x.abs().max().item():.3f} x.mean={x.abs().mean().item():.3f} ' \
-        f'w.max={w.abs().max().item():.3f} ' \
-        f'w.mean={w.abs().mean().item():.3f} y.max={y.abs().max().item():.3f}')
-
 modes = ['tensor','channel']
 for mode in modes:
     if mode == 'tensor':
