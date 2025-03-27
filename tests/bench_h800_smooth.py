@@ -26,8 +26,9 @@ def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, x_smo
     m = tl.cdiv(M, BLOCK_SIZE)
     x_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
     x_ptrs = x_ptr + offs
+    indices = tl.arange(0, BLOCK_SIZE)
     for i in range(m):
-        x = tl.load(x_ptrs)
+        x = tl.load(x_ptrs, mask=i*BLOCK_SIZE+indices[:,None]<M)
         x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
         x_ptrs += BLOCK_SIZE*K
 
@@ -35,14 +36,18 @@ def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, x_smo
     n = tl.cdiv(N, BLOCK_SIZE)
     w_max = tl.zeros((BLOCK_K,),dtype=tl.float32)
     w_ptrs = w_ptr + offs
+    indices = tl.arange(0, BLOCK_SIZE)
     for i in range(n):
-        w = tl.load(w_ptrs)
+        w = tl.load(w_ptrs, mask=i*BLOCK_SIZE+indices[:,None]<N)
         w_max = tl.maximum(tl.max(tl.abs(w), axis=0),x_max)
         w_ptrs += BLOCK_SIZE*K
 
     scale = tl.sqrt(x_max*w_max)
     x_scale = x_max/scale
     w_scale = w_max/scale
+
+    # if pid == 0:
+    #   tl.device_print("x_scale", x_scale)
 
     x_smooth_scale_ptrs = x_smooth_scale_ptr + pid*BLOCK_K + tl.arange(0, BLOCK_K)
     w_smooth_scale_ptrs = w_smooth_scale_ptr + pid*BLOCK_K + tl.arange(0, BLOCK_K)
@@ -412,12 +417,10 @@ def smooth_quant_backward(y,w,w_quant_scale,w_smooth_scale):
 
 def smooth_quant_update(y,x,x_quant_scale, x_smooth_scale):
     y_q,x_q,y_scale,x_scale = triton_sm_quant_tn(y, x, x_quant_scale)
-    print(y_q.size())
-    print(x_q.size())
     output = torch._scaled_mm(y_q,
                                     x_q.t(),
-                                    scale_a=y_scale,
-                                    scale_b=x_smooth_scale,
+                                    scale_a=y_scale.view(-1,1),
+                                    scale_b=x_smooth_scale.view(1, -1),
                                     out_dtype=torch.bfloat16,
                                     use_fast_accum=True)
     return output,y_q,x_q,y_scale,x_scale
@@ -433,7 +436,7 @@ def triton_smooth_quant_nt_nn_tn(x,w,y):
 def fp8_smooth_f_and_b(x,w,y):
     _, x_q, w_q, x_quant_scale, w_quant_scale, x_smooth_scale, w_smooth_scale = smooth_quant_forward(x, w)
     smooth_quant_backward(y, w_q, w_quant_scale, w_smooth_scale)
-    # smooth_quant_update(y,x_q, x_quant_scale, x_smooth_scale)
+    smooth_quant_update(y,x_q, x_quant_scale, x_smooth_scale)
 
 
 def fp16_f_and_b(x,w,y):
@@ -520,7 +523,11 @@ def benchmark_with_shape(shape):
     print(f'\ndevice:{gpu} M:{batch_size} N:{out_dim} K:{in_dim}')
 
     # triton_smooth_quant_nt_nn_tn(x, w, y)
-    fp8_smooth_f_and_b(x, w, y)
+    # fp8_smooth_f_and_b(x, w, y)
+    benchmark_func(triton_sm_quant_nt, x, w, n_repeat=n_repeat)
+    benchmark_func(triton_sm_quant_tn, y, x_f8, n_repeat=n_repeat)
+    benchmark_func(triton_sm_quant_nn, y, w_f8, n_repeat=n_repeat)
+    benchmark_func(fp8_smooth_f_and_b, x, w, y, n_repeat=n_repeat)
 
     # benchmark_func(triton_smooth_hw, x_f8, n_repeat=n_repeat)
     # benchmark_func(triton_smooth_wh, x_f8, n_repeat=n_repeat)
@@ -586,5 +593,5 @@ def benchmark_with_shape(shape):
 
 # benchmark_with_shape([8192, 4096, 13312])
 
-for shape in [[8192, 6144, 4096]]:
-    benchmark_with_shape(shape)
+# for shape in [[8192, 6144, 4096]]:
+#     benchmark_with_shape(shape)
