@@ -2,7 +2,7 @@ import torch
 
 from flops.quant.hadamard import *
 from flops.utils.util import *
-from bench_h800_smooth import smooth_quant_forward
+from bench_h800_smooth import smooth_quant_forward, smooth_quant_backward
 
 def setup_seed(seed):
      torch.manual_seed(seed)
@@ -23,17 +23,15 @@ batch_size, out_dim, in_dim = [8192, 6144, 4096]
 x = torch.randn(batch_size, in_dim, dtype=dtype, device=device)
 w = torch.randn(out_dim, in_dim, dtype=dtype, device=device)
 y = torch.randn(batch_size, out_dim, dtype=dtype, device=device)
+M,K = x.shape 
+N,K = w.shape 
 
-org_out = fp16_forward(x, w.t())
+ref_o, ref_dx, ref_dw = fp16_f_and_b(x, w, y)
 
 
 def torch_nt(x, w):
     x = x.clone()
     w = w.clone()
-    # y = y.clone()
-    M,K = x.shape 
-    N,K = w.shape 
-    # M,N = y.shape 
     x_smooth_max = torch.amax(torch.abs(x).float(), dim=0, keepdim=True)
     w_smooth_max = torch.amax(torch.abs(w).float(), dim=0, keepdim=True)
     maxs = (x_smooth_max*w_smooth_max)**0.5
@@ -49,32 +47,64 @@ def torch_nt(x, w):
     wq = (w_smooth/w_quant_scale).to(torch.float8_e4m3fn)
     return xq, wq, x_quant_scale, w_quant_scale, x_smooth_scale, w_smooth_scale
 
+def torch_nn(y, w_quant_scale):
+    y = y.clone()
+    ys = y*w_quant_scale.view(1,N)
+    y_scale = ys.abs().float().amax(dim=1, keepdim=True)/448.0+1e-9
+    # yq = (ys/y_scale).to(torch.float8_e4m3fn)
+    # print(y[0, :])
+    # print(ys[0,:])
+    # print(y_scale[0])
+    yq = (ys/y_scale)
+    # print(y_scale[0])
+    # print(ys[0,:])
+    return ys, y_scale, yq, w_quant_scale
+
 def abs_error(a, b):
   return (a.float() - b.float()).abs().mean().item()
 
-xqt, wqt, x_quant_scale_t, w_quant_scale_t, x_smooth_scale_t, w_smooth_scale_t = torch_nt(x, w)
+### single part test ###
+
+### smooth_quant_forward ###
+
+# xqt, wqt, x_quant_scale_t, w_quant_scale_t, x_smooth_scale_t, w_smooth_scale_t = torch_nt(x, w)
 opt_out,xq,wq,x_quant_scale,w_quant_scale,x_smooth_scale,w_smooth_scale = smooth_quant_forward(x,w)
+# quant_check(ref_o, xq, wq, opt_out, 'smooth_quant_forward')
 
-print(f"x_quant_scale abs error:{abs_error(x_quant_scale_t, x_quant_scale)}")
-print(f"x_smooth_scale abs error:{abs_error(x_smooth_scale_t, x_smooth_scale)}")
-print(f"w_quant_scale abs error:{abs_error(w_quant_scale_t, w_quant_scale)}")
-print(f"w_smooth_scale abs error :{abs_error(w_smooth_scale_t, w_smooth_scale)}")
+# print(f"x_quant_scale abs error:{abs_error(x_quant_scale_t, x_quant_scale)}")
+# print(f"x_smooth_scale abs error:{abs_error(x_smooth_scale_t, x_smooth_scale)}")
+# print(f"w_quant_scale abs error:{abs_error(w_quant_scale_t, w_quant_scale)}")
+# print(f"w_smooth_scale abs error :{abs_error(w_smooth_scale_t, w_smooth_scale)}")
 
-print(x_smooth_scale.size())
-print(x_smooth_scale_t[:10])
-print(x_smooth_scale[:10])
-print(x_quant_scale_t[:10])
-print(x_smooth_scale[:10])
+### smooth_quant_backward ###
+# print(w_quant_scale.size())
+# print(w_quant_scale)
+# wqt_t = wq.clone().t().contiguous().t()
+
+y_s, y_quant_scale_t, yqt, w_quant_scale_t = torch_nn(y, w_quant_scale)
+opt_dx,yq,wq_t,y_quant_scale, w_quant_scale  = smooth_quant_backward(y,wq,w_quant_scale,w_smooth_scale)
+
+# print(y_quant_scale_t[:10])
+# print(y_quant_scale[:10])
+
+# print(f"wq abs error :{abs_error(wqt_t, wq_t)}") # pass
+# print(f"y_quant_scale abs error :{abs_error(y_quant_scale_t, y_quant_scale)}") # pass
+
+# quant_check(ref_dx, yq, wq, opt_dx, 'smooth_quant_backward')
+
+# print(y_quant_scale_t[:10, :])
+# print(y_quant_scale[:10, :])
+# print(yqt)
+# print(yq)
+# quant_check(ref_dx, yq, wq, opt_dx, 'smooth_quant_backward')
+# print(f"y_quant_scale abs error:{abs_error(y_quant_scale_t, y_quant_scale)}")
+# print(f"w_quant_scale abs error:{abs_error(w_quant_scale_t, w_quant_scale)}")
 
 
-# quant_check(org_out, xq, wq, opt_out, 'smooth_quant_forward')
 
-#     opt_out,yq,wq,y_scale,w_scale = hadamard_quant_backward(y,w,hm)
-#     quant_check(y@w, yq, wq, opt_out, 'hadamard_quant_backward')
 
-#     opt_out,yq,xq,y_scale,x_scale = hadamard_quant_update(y,x,hm)
-#     quant_check(y.t()@x, yq, xq, opt_out, 'hadamard_quant_update')
-# elif impl == 'fuse':
+
+
 #     output,x_q,x_s,w_q,w_s = fuse_hadamard_quant_forward(x, w, hm)
 #     quant_check(org_out, x_q, w_q, output, 'fuse_hadamard_quant_forward')
 
@@ -83,16 +113,3 @@ print(x_smooth_scale[:10])
 
 #     output,y_q,y_s,x_q,x_s = fuse_hadamard_quant_update(y,x, hm)
 #     quant_check(y.t()@x, y_q, x_q, output, 'fuse_hadamard_quant_update')
-
-# elif impl == 'bit':
-#     output,x_bt,w_bt,x_q,w_q,x_scale,w_scale = bit_hadamard_quant_forward(x, w, hm)
-#     quant_check(org_out, x_q, w_q, output, 'bit_hadamard_quant_forward')
-
-#     output,y_bt,y_q,w_q,y_scale,w_scale=bit_hadamard_quant_backward(y, w_bt, hm)
-#     quant_check(y@w, y_q, w_q, output, 'bit_hadamard_quant_backward')
-
-#     output,y_q,x_q,y_scale,x_scale=bit_hadamard_quant_update(y_bt,x_bt, hm)
-#     quant_check(y.t()@x, y_q, x_q, output, 'bit_hadamard_quant_update')
-
-
-
