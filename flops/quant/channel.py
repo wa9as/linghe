@@ -11,17 +11,18 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0)
     n_block = tl.cdiv(N, BLOCK_SIZE)
     indices = tl.arange(0, BLOCK_SIZE)
-    max_val = 1e-6
+    max_val = 1e-9
     for j in range(n_block):
         offs = pid*N + j*BLOCK_SIZE + indices
         x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
         max_val = tl.maximum(tl.max(tl.abs(x.to(tl.float32))), max_val)
     scale = max_val/448.0
     tl.store(s_ptr + pid, scale)
+    s = 448.0/max_val
     for j in range(n_block):
         offs = pid*N + j*BLOCK_SIZE + indices
         x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
-        y = x.to(tl.float32) / scale
+        y = x.to(tl.float32) * s
         y = y.to(q_ptr.dtype.element_ty)
         tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
 
@@ -55,7 +56,7 @@ def transpose_row_quant_kernel(x_ptr, q_ptr, s_ptr, M, N, H: tl.constexpr, W: tl
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     indices = tl.arange(0, H)
     m = tl.cdiv(M, H)
-    x_max = tl.zeros((W,),dtype=tl.float32)
+    x_max = tl.zeros((W,),dtype=tl.float32)+1e-9
     for i in range(m):
         x = tl.load(x_ptr+offs,mask=i*H+indices[:,None]<M)
         x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)

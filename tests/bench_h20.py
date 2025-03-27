@@ -757,21 +757,21 @@ def triton_fused_hadamard_quant_tn(y, x, hm):
     torch.cuda.current_stream().wait_stream(stream)
     return y_q,y_s,x_q,x_s
 
-def triton_fuse_hadamard_quant_nt_nn_tn(x,w,y,hm):
+def triton_fused_hadamard_quant_nt_nn_tn(x,w,y,hm):
     triton_fused_hadamard_quant_nt(x, w, hm)
     triton_fused_hadamard_quant_nn(y, w, hm)
     triton_fused_hadamard_quant_tn(y, x, hm)
 
-def fp8_fuse_hadamard_f_and_b(x,w,y,hm):
-    fuse_hadamard_quant_forward(x, w, hm)
-    fuse_hadamard_quant_backward(y, w, hm)
-    fuse_hadamard_quant_update(y,x, hm)
+def fp8_fused_hadamard_f_and_b(x,w,y,hm):
+    fused_hadamard_quant_forward(x, w, hm)
+    fused_hadamard_quant_backward(y, w, hm)
+    fused_hadamard_quant_update(y,x, hm)
 
 
 
 
 
-def fuse_hadamard_quant_forward(x,w,hm):
+def fused_hadamard_quant_forward(x,w,hm):
 
     x_q,x_s,w_q,w_s = triton_fused_hadamard_quant_nt(x, w, hm)
     output = torch._scaled_mm(x_q,
@@ -782,7 +782,7 @@ def fuse_hadamard_quant_forward(x,w,hm):
                                     use_fast_accum=True)
     return output,x_q,x_s,w_q,w_s
 
-def fuse_hadamard_quant_backward(y,w,hm):
+def fused_hadamard_quant_backward(y,w,hm):
 
     y_q,y_s,w_q,w_s = triton_fused_hadamard_quant_nn(y, w, hm)
     output = torch._scaled_mm(y_q,
@@ -795,7 +795,7 @@ def fuse_hadamard_quant_backward(y,w,hm):
 
 
 
-def fuse_hadamard_quant_update(y,x,hm):
+def fused_hadamard_quant_update(y,x,hm):
     y_q,y_s,x_q,x_s = triton_fused_hadamard_quant_tn(y, x, hm)
     output = torch._scaled_mm(y_q,
                                     x_q.t(),
@@ -987,7 +987,7 @@ def benchmark_with_shape(shape):
     benchmark_func(triton_fused_hadamard_quant_tn, y,w,hm, n_repeat=n_repeat)
     
     ref_time=benchmark_func(triton_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat)
-    benchmark_func(triton_fuse_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat,ref_time=ref_time)
+    benchmark_func(triton_fused_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat,ref_time=ref_time)
 
 
     # benchmark_func(triton_bit_hadamard_nt, x, w, hm, n_repeat=n_repeat)
@@ -1005,7 +1005,7 @@ def benchmark_with_shape(shape):
 
     ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
     benchmark_func(fp8_hadamard_f_and_b, x, w, y, hm[:32,:32].contiguous(), n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
-    benchmark_func(fp8_fuse_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(fp8_fused_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
     benchmark_func(fp8_bit_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
 
 

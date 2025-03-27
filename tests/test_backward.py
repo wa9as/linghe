@@ -12,8 +12,7 @@ layer = HadamardQuantLinear(in_features=K,
         out_features=N,
         bias = False,
         device = device,
-        dtype = dtype,
-        hadamard_matrix_size=64)
+        dtype = dtype)
 
 
 x = torch.randn((M,K), dtype=dtype, device=device) 

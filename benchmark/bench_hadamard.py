@@ -18,7 +18,6 @@ from flops.quant.hadamard import *
 # down: 8192, 4096, 13312
 
 
-batch_size, out_dim, in_dim = 8192, 4096, 4096
 
 def benchmark_with_shape(shape):
     batch_size, out_dim, in_dim = shape
@@ -35,7 +34,7 @@ def benchmark_with_shape(shape):
     x_f8 = x.to(qtype)
     w_f8 = w.to(qtype)
     y_f8 = y.to(qtype)
-    B = 64
+    B = 32
     hm = hadamard_matrix(B, dtype=dtype, device=device)
 
     org_out = fp16_forward(x, w.t())
@@ -45,13 +44,13 @@ def benchmark_with_shape(shape):
     # dx = y @ wT
     # dwT = yT @ x
 
-    # benchmark_func(triton_hadamard_nt, x, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_nt, x, w, hm, n_repeat=n_repeat)
     # benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
     # benchmark_func(triton_row_quant, w, n_repeat=n_repeat)
 
-    # benchmark_func(triton_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
-    # benchmark_func(triton_hadamard_quant_tn, y, x, hm, n_repeat=n_repeat)
-    # benchmark_func(triton_hadamard_quant_nn, y, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_quant_tn, y, x, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_quant_nn, y, w, hm, n_repeat=n_repeat)
 
     # benchmark_func(triton_fused_hadamard, x, hm, hm_side=1, op_side=0)
     # benchmark_func(triton_fused_transpose_hadamard, x, hm, hm_side=1, op_side=0)
@@ -60,7 +59,7 @@ def benchmark_with_shape(shape):
     # benchmark_func(triton_fused_hadamard_quant_tn, y,w,hm, n_repeat=n_repeat)
     
     # ref_time=benchmark_func(triton_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat)
-    # benchmark_func(triton_fuse_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat,ref_time=ref_time)
+    # benchmark_func(triton_fused_hadamard_quant_nt_nn_tn, x,w,y,hm, n_repeat=n_repeat,ref_time=ref_time)
 
 
     # benchmark_func(triton_bit_hadamard_nt, x, w, hm, n_repeat=n_repeat)
@@ -76,10 +75,10 @@ def benchmark_with_shape(shape):
     # ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
     # benchmark_func(hadamard_quant_update, y, x, hm, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
 
-    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
-    benchmark_func(fp8_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
-    benchmark_func(fp8_fuse_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
-    benchmark_func(fp8_bit_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    # ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
+    # benchmark_func(fp8_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    # benchmark_func(fp8_fused_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    # benchmark_func(fp8_bit_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
 
 
 

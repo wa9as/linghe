@@ -12,7 +12,7 @@ setup(
     license_files=("LICENSE",),
     description="flood ops",
     URL="https://code.alibaba-inc.com/infer/flops",
-    packages=find_packages(include=("flops",)),
+    packages=find_packages(),
     install_requires=[],
     python_requires=">=3.8",
 )
