@@ -60,19 +60,32 @@ def torch_nn(y, w_quant_scale):
     # print(ys[0,:])
     return ys, y_scale, yq, w_quant_scale
 
-def torch_tn(y, x_quant_scale):
-    # print(y.size())
-    # print(x_quant_scale.size())
+def torch_tn_org(y, x_quant_scale):
     y = y.clone()
     yt = y.t().contiguous()  # [N, M]
     yts = yt*x_quant_scale.view(1, M)
-    print(yt[0, :])
-    print(x_quant_scale[:, :8])
-    print(yts[0, :])
     yt_scale = yts.abs().amax(dim=1, keepdim=True)/448.0+1e-9
     # print(yt_scale.size())
     ytq = (yts/yt_scale).to(torch.float8_e4m3fn)
     return yts, yt_scale, ytq, x_quant_scale
+
+def torch_tn(y, x_quant_scale):
+    y = y.clone()
+    ys = y*x_quant_scale.view(M, 1)
+    ys_scale = ys.abs().amax(dim=0, keepdim=True)/448.0+1e-9 
+    print(ys_scale.size()) #[1, 6144]
+    # yts = (ys/ys_scale).to(torch.float8_e4m3fn)
+    yts = ys/ys_scale
+    print(ys.size())
+    print(ys[:, 1])
+    # print(ys[0, :].size()) #6144
+    print(ys_scale[:, 1])
+    print(ys[:, 1]/ys_scale[:, 1])
+    ytq = yts.t().contiguous()
+    print(ytq.size())
+    # print(ytq[0, :])
+    print(ytq[1, :8].detach().cpu().numpy())
+    return yts, ys_scale, ytq, x_quant_scale
 
 def abs_error(a, b):
   return (a.float() - b.float()).abs().mean().item()
@@ -109,32 +122,23 @@ opt_dx,yq,wq_t,y_scale, w_quant_scale  = smooth_quant_backward(y,wq,w_quant_scal
 
 
 ### smooth_quant_update ###
+
+# yts_o, yt_scale_t_o, ytq_t_o, x_quant_scale_t_o = torch_tn_org(y, x_quant_scale)
 yts, yt_scale_t, ytq_t, x_quant_scale_t = torch_tn(y, x_quant_scale)
-opt_dw,yq,xq_t,y_scale,x_smooth_scale, yt_s = smooth_quant_update(y, xq, x_quant_scale, x_smooth_scale)
+opt_dw,ytq,xq_t,y_scale,x_smooth_scale = smooth_quant_update(y, xq, x_quant_scale, x_smooth_scale)
 
 # xqt_t = xq.clone().t().contiguous().t()
 # print(f"wq abs error :{abs_error(xqt_t, xq_t)}") # pass
-print(f"yts abs error :{abs_error(yts, yt_s)}") # pass
 
+# print(f"ytq abs error :{abs_error(ytq_t_o, ytq_t)}") # pass
+# print(f"yt_scale abs error :{abs_error(yt_scale_t_o, yt_scale_t)}") # pass
+# print(yt_scale_t_o)
+# print(yt_scale_t)
 
-# print(y_quant_scale_t[:10, :])
-# print(y_quant_scale[:10, :])
-# print(yqt)
-# print(yq)
-# quant_check(ref_dx, yq, wq, opt_dx, 'smooth_quant_backward')
-# print(f"y_quant_scale abs error:{abs_error(y_quant_scale_t, y_quant_scale)}")
-# print(f"w_quant_scale abs error:{abs_error(w_quant_scale_t, w_quant_scale)}")
+print(f"ytq abs error :{abs_error(ytq_t, ytq)}")
 
-
+quant_check(ref_dw, ytq, xq, opt_dw, 'smooth_quant_backward')
 
 
 
 
-#     output,x_q,x_s,w_q,w_s = fuse_hadamard_quant_forward(x, w, hm)
-#     quant_check(org_out, x_q, w_q, output, 'fuse_hadamard_quant_forward')
-
-#     output,y_q,y_s,w_q,w_s = fuse_hadamard_quant_backward(y, w, hm)
-#     quant_check(y@w, y_q, w_q, output, 'fuse_hadamard_quant_backward')
-
-#     output,y_q,y_s,x_q,x_s = fuse_hadamard_quant_update(y,x, hm)
-#     quant_check(y.t()@x, y_q, x_q, output, 'fuse_hadamard_quant_update')
