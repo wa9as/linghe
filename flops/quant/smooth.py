@@ -6,7 +6,7 @@ import torch
 import triton
 import triton.language as tl
 from triton import Config
-
+from flops.quant.channel import row_quant_kernel
 
 
 @triton.jit
@@ -84,9 +84,414 @@ def triton_smooth_direct_quant_nt(x, w):
     return x_q,w_q,scale
 
 
+
+@triton.jit
+def smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, M, N, K, H: tl.constexpr, W: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # col-wise read, col-wise write
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    m = tl.cdiv(M, H)
+    for i in range(m):
+        x = tl.load(x_ptr+offs)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        offs += H*K
+
+    n = tl.cdiv(N, H)
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    w_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    for i in range(n):
+        w = tl.load(w_ptr+offs)
+        w_max = tl.maximum(tl.max(tl.abs(w), axis=0),x_max)
+        offs += H*K
+
+    scale = tl.sqrt(x_max*w_max)
+    w_scale = (w_max/scale).to(x_ptr.dtype.element_ty)  # reciprocal of x_scale
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    for i in range(m):
+        x = tl.load(x_ptr+offs)
+        x = x*w_scale   # x / x_scale
+        tl.store(xs_ptr+offs, x)
+        offs += H*K
+
+    x_scale = (x_max/scale).to(x_ptr.dtype.element_ty)  # reciprocal of w_scale
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    for i in range(n):
+        w = tl.load(w_ptr+offs)
+        ws = w*x_scale  # w / w_scale
+        tl.store(ws_ptr+offs, ws)
+        offs += H*K
+
+
+
+def triton_smooth_quant_nt(x, w):
+    M, K = x.shape
+    N, K = w.shape
+    device = x.device 
+    x_b = torch.empty((M, K), device=device, dtype=x.dtype)
+    w_b = torch.empty((N, K), device=device, dtype=x.dtype)
+    x_q = torch.empty((M, K), device=device, dtype=torch.float8_e4m3fn)
+    w_q = torch.empty((N, K), device=device, dtype=torch.float8_e4m3fn)
+    x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
+    w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
+
+    H = 1024
+    W = 32
+    grid = lambda META: (K//W, )
+    smooth_nt_kernel[grid](
+        x, x_b,
+        w, w_b,
+        M,N,K,
+        H,
+        W,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (M, )
+    row_quant_kernel[grid](
+        x_b, x_q, x_scale,
+        K,M,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (N, )
+    row_quant_kernel[grid](
+        w_b, w_q, w_scale,
+        N,M,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+
+    return x_q,w_q,x_scale,w_scale
+
+
+
+# dx = y @wT
+@triton.jit
+def smooth_nn_kernel(y_ptr, ys_ptr, w_ptr, ws_ptr, M, N, K, H: tl.constexpr, W: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # y: col-wise read, col-wise write
+    # w: row-wise read, col-wise write
+    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    y_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    m = tl.cdiv(M, H)
+    for i in range(m):
+        y = tl.load(y_ptr+offs)
+        y_max = tl.maximum(tl.max(tl.abs(y), axis=0),y_max)
+        offs += H*N
+
+    k = tl.cdiv(K, H)
+    w_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    offs = pid*W*K + tl.arange(0, W)[:,None]*K + tl.arange(0, H)[None,:]
+    for i in range(k):
+        w = tl.load(w_ptr+offs)
+        w_max = tl.maximum(tl.max(tl.abs(w), axis=1),w_max)
+        offs += H
+
+    scale = tl.sqrt(y_max*w_max)
+    w_scale = (w_max/scale).to(y_ptr.dtype.element_ty)  # reciprocal of x_scale
+    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    for i in range(m):
+        y = tl.load(y_ptr+offs)
+        y = y*w_scale   # y / y_scale
+        tl.store(ys_ptr+offs, y)
+        offs += H*N
+
+    y_scale = (y_max/scale).to(y_ptr.dtype.element_ty)  # reciprocal of w_scale
+    offs = pid*W*K + tl.arange(0, W)[:,None]*K + tl.arange(0, H)[None,:]
+    toffs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    for i in range(k):
+        w = tl.trans(tl.load(w_ptr+offs))
+        ws = w*y_scale  # w / w_scale
+        tl.store(ws_ptr+toffs, ws)
+        offs += H
+        toffs += H*N
+
+
+# dx = y @ wT
+# w should be transposed
+def triton_smooth_quant_nn(y, w):
+    M, N = y.shape
+    N, K = w.shape
+    device = y.device 
+    y_b = torch.empty((M, N), device=device, dtype=y.dtype)
+    y_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    w_b = torch.empty((K, N), device=device, dtype=y.dtype)
+    w_q = torch.empty((K, N), device=device, dtype=torch.float8_e4m3fn)
+    y_scale = torch.empty((M,1), device=device, dtype=torch.float32)
+    w_scale = torch.empty((1,K), device=device, dtype=torch.float32)
+
+    H = 1024
+    W = 32
+    grid = lambda META: (N//W, )
+    smooth_nn_kernel[grid](
+        y, y_b,
+        w, w_b,
+        M,N,K,
+        H,
+        W,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (M, )
+    row_quant_kernel[grid](
+        y_b, y_q, y_scale,
+        M,N,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (K, )
+    row_quant_kernel[grid](
+        w_b, w_q, w_scale,
+        K,N,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+
+    return y_q,w_q
+
+
+
+# dwT = yT @ x
+@triton.jit
+def smooth_tn_kernel(y_ptr, ys_ptr, x_ptr, xs_ptr, M, N, K, H: tl.constexpr, W: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # y: row-wise read, col-wise write
+    # x: row-wise read, col-wise write
+    n = tl.cdiv(N, H)
+    y_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
+    for i in range(n):
+        y = tl.load(y_ptr+offs)
+        y_max = tl.maximum(tl.max(tl.abs(y), axis=1),y_max)
+        offs += H
+
+    k = tl.cdiv(K, H)
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    offs = pid*W*K + tl.arange(0, W)[:,None]*K + tl.arange(0, H)[None,:]
+    for i in range(k):
+        x = tl.load(x_ptr+offs)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=1),x_max)
+        offs += H
+
+    scale = tl.sqrt(y_max*x_max)
+
+    y_scale = (x_max/scale).to(y_ptr.dtype.element_ty)  # reciprocal of x_scale
+    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
+    toffs = pid*W + tl.arange(0, H)[:,None]*M + tl.arange(0, W)[None,:]
+    for i in range(n):
+        y = tl.trans(tl.load(y_ptr+offs))
+        ys = y*y_scale  
+        tl.store(ys_ptr+toffs, ys)
+        offs += H
+        toffs += H*M
+
+    x_scale = (y_max/scale).to(y_ptr.dtype.element_ty)  # reciprocal of w_scale
+    offs = pid*W*K + tl.arange(0, W)[:,None]*K + tl.arange(0, H)[None,:]
+    toffs = pid*W + tl.arange(0, H)[:,None]*M + tl.arange(0, W)[None,:]
+    for i in range(k):
+        x = tl.trans(tl.load(x_ptr+offs))
+        xs = x*x_scale  
+        tl.store(xs_ptr+toffs, xs)
+        offs += H
+        toffs += H*M
+
+
+
+
+# dwT = yT @ x
+# y & w should be transposed
+def triton_smooth_quant_tn(y, x):
+    M, N = y.shape
+    M, K = x.shape
+    device = y.device 
+    y_b = torch.empty((N, M), device=device, dtype=y.dtype)
+    y_q = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
+    x_b = torch.empty((K, M), device=device, dtype=y.dtype)
+    x_q = torch.empty((K, M), device=device, dtype=torch.float8_e4m3fn)
+    y_scale = torch.empty((N,1), device=device, dtype=torch.float32)
+    x_scale = torch.empty((1,K), device=device, dtype=torch.float32)
+
+    H = 1024
+    W = 16
+    grid = lambda META: (M//W, )
+    smooth_tn_kernel[grid](
+        y, y_b,
+        x, x_b,
+        M,N,K,
+        H,
+        W,
+        num_stages=6,
+        num_warps=2
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (N, )
+    row_quant_kernel[grid](
+        y_b, y_q, y_scale,
+        N,M,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (K, )
+    row_quant_kernel[grid](
+        x_b, x_q, x_scale,
+        K,M,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+
+    return y_q,x_q
+
+
+
+
+
+def smooth_quant_forward(x,w,hm):
+
+    x_q,x_s,w_q,w_s = triton_smooth_quant_nt(x, w)
+    output = torch._scaled_mm(x_q,
+                                    w_q.t(),
+                                    scale_a=x_s,
+                                    scale_b=w_s,
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+    return output
+
+def smooth_quant_backward(y,w,hm):
+
+    y_q,y_s,w_q,w_s = triton_smooth_quant_nn(y, w)
+    output = torch._scaled_mm(y_q,
+                                    w_q.t(),
+                                    scale_a=y_s,
+                                    scale_b=w_s,
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+    return output
+
+
+
+def smooth_quant_update(y,x,hm):
+    y_q,y_s,x_q,x_s = triton_smooth_quant_tn(y, x)
+    output = torch._scaled_mm(y_q,
+                                    x_q.t(),
+                                    scale_a=y_s,
+                                    scale_b=x_s,
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True)
+    return output
+
+
+
+@triton.jit
+def slide_smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, M, N, K, H: tl.constexpr, W: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # col-wise read, col-wise write
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    m = tl.cdiv(M, H)
+    for i in range(m):
+        x = tl.load(x_ptr+offs)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        offs += H*K
+
+    n = tl.cdiv(N, H)
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    w_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    for i in range(n):
+        w = tl.load(w_ptr+offs)
+        w_max = tl.maximum(tl.max(tl.abs(w), axis=0),x_max)
+        offs += H*K
+
+    scale = tl.sqrt(x_max*w_max)
+    w_scale = (w_max/scale).to(x_ptr.dtype.element_ty)  # reciprocal of x_scale
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    for i in range(m):
+        x = tl.load(x_ptr+offs)
+        x = x*w_scale   # x / x_scale
+        tl.store(xs_ptr+offs, x)
+        offs += H*K
+
+    x_scale = (x_max/scale).to(x_ptr.dtype.element_ty)  # reciprocal of w_scale
+    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    for i in range(n):
+        w = tl.load(w_ptr+offs)
+        ws = w*x_scale  # w / w_scale
+        tl.store(ws_ptr+offs, ws)
+        offs += H*K
+
+
+# smooth_scale: w_max/tl.sqrt(x_max*w_max)
+def triton_slide_smooth_quant_nt(x, w, smooth_scale):
+    M, K = x.shape
+    N, K = w.shape
+    device = x.device 
+    x_b = torch.empty((M, K), device=device, dtype=x.dtype)
+    w_b = torch.empty((N, K), device=device, dtype=x.dtype)
+    x_q = torch.empty((M, K), device=device, dtype=torch.float8_e4m3fn)
+    w_q = torch.empty((N, K), device=device, dtype=torch.float8_e4m3fn)
+    x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
+    w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
+
+    H = 1024
+    W = 32
+    grid = lambda META: (K//W, )
+    slide_smooth_nt_kernel[grid](
+        x, x_b,
+        w, w_b,
+        M,N,K,
+        H,
+        W,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (M, )
+    row_quant_kernel[grid](
+        x_b, x_q, x_scale,
+        K,M,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+    BLOCK_SIZE = 4096
+    grid = lambda META: (N, )
+    row_quant_kernel[grid](
+        w_b, w_q, w_scale,
+        N,M,
+        BLOCK_SIZE,
+        num_stages=5,
+        num_warps=4
+    )
+
+
+    return x_q,w_q
+
+
 # grid K//BLOCK_K
 @triton.jit
-def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
+def fused_smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     offs = pid*BLOCK_K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
@@ -139,6 +544,10 @@ def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, M, N,
         w_ptrs += BLOCK_SIZE*K
         ws_ptrs += BLOCK_SIZE*K
         ws_max_ptrs += BLOCK_SIZE
+
+
+
+
 
 
 @triton.jit
@@ -230,7 +639,7 @@ def row_quant_sm_kernel(x_ptr, q_ptr, s_ptr,  M, K,  BLOCK_SIZE: tl.constexpr, B
 
 
 # v3: smooth + token/channel
-def triton_sm_quant_nt(x, w):
+def triton_fused_sm_quant_nt(x, w):
     eps = 1e-10
     M, K = x.shape
     N, K = w.shape
@@ -255,7 +664,7 @@ def triton_sm_quant_nt(x, w):
     # print(f"grid: {K//BLOCK_SIZE}")
 
     grid = lambda META: (K//BLOCK_K, )
-    smooth_kernel_nt[grid](
+    fused_smooth_kernel_nt[grid](
         x, x_s, xs_max_tmp,
         w, w_s, ws_max_tmp,
         M,N,K,
@@ -369,3 +778,5 @@ def triton_sm_quant_nn(y, w):
         num_stages=6,
         num_warps=32
     )
+
+

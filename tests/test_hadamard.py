@@ -76,14 +76,14 @@ for mode in modes:
 
             opt_out,yq,xq,y_scale,x_scale = hadamard_quant_update_debug(y,x,hm)
             quant_check(y.t()@x, yq, xq, opt_out, 'hadamard_quant_update')
-        elif impl == 'fuse':
-            output,x_q,x_s,w_q,w_s = fuse_hadamard_quant_forward_debug(x, w, hm)
+        elif impl == 'fused':
+            output,x_q,x_s,w_q,w_s = fused_hadamard_quant_forward_debug(x, w, hm)
             quant_check(org_out, x_q, w_q, output, 'fuse_hadamard_quant_forward')
 
-            output,y_q,y_s,w_q,w_s = fuse_hadamard_quant_backward_debug(y, w, hm)
+            output,y_q,y_s,w_q,w_s = fused_hadamard_quant_backward_debug(y, w, hm)
             quant_check(y@w, y_q, w_q, output, 'fuse_hadamard_quant_backward')
 
-            output,y_q,y_s,x_q,x_s = fuse_hadamard_quant_update_debug(y,x, hm)
+            output,y_q,y_s,x_q,x_s = fused_hadamard_quant_update_debug(y,x, hm)
             quant_check(y.t()@x, y_q, x_q, output, 'fuse_hadamard_quant_update')
 
         elif impl == 'bit':

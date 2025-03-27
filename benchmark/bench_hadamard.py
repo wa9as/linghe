@@ -24,7 +24,7 @@ def benchmark_with_shape(shape):
     device = 'cuda:0'
     dtype = torch.bfloat16
     qtype = torch.float8_e4m3fn  # torch.float8_e5m2
-    n_repeat = 100
+    n_repeat = 1000
     gpu = torch.cuda.get_device_properties(0).name
 
 
@@ -49,8 +49,8 @@ def benchmark_with_shape(shape):
     # benchmark_func(triton_row_quant, w, n_repeat=n_repeat)
 
     benchmark_func(triton_hadamard_quant_nt, x, w, hm, n_repeat=n_repeat)
-    benchmark_func(triton_hadamard_quant_tn, y, x, hm, n_repeat=n_repeat)
     benchmark_func(triton_hadamard_quant_nn, y, w, hm, n_repeat=n_repeat)
+    benchmark_func(triton_hadamard_quant_tn, y, x, hm, n_repeat=n_repeat)
 
     # benchmark_func(triton_fused_hadamard, x, hm, hm_side=1, op_side=0)
     # benchmark_func(triton_fused_transpose_hadamard, x, hm, hm_side=1, op_side=0)
