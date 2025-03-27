@@ -773,6 +773,8 @@ def triton_fused_hadamard_quant_nt(x, w, hm):
     return x_q,x_s,w_q,w_s
 
 
+
+
 # dx = y @ wT
 def triton_fused_hadamard_quant_nn(y, w, hm):
     # stream = torch.cuda.Stream(device=0)

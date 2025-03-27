@@ -11,7 +11,7 @@ os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
 @triton.jit
 def transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
     pid = tl.program_id(axis=0)
-    # row-wise read, col-wise write
+    # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:] 
     toffs = pid*W*M + tl.arange(0, W)[:,None]*M + tl.arange(0, H)[None,:]
     m = tl.cdiv(M, H)
@@ -27,7 +27,7 @@ def triton_transpose(x):
     device = x.device
     t = torch.empty((N, M),device=device,dtype=x.dtype)
     if x.dtype == torch.float8_e4m3fn:
-        H = 512
+        H = 512 if M%512==0 else 256
         W = 32
         num_stages = 6
         num_warps = 2
@@ -44,7 +44,7 @@ def triton_transpose(x):
         num_stages=num_stages,
         num_warps=num_warps
     )
-
+    return t
 
 
 
@@ -80,5 +80,6 @@ def triton_opt_transpose(x):
         x, t,
         M, N, D
     )
+    return t
 
 

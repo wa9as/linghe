@@ -227,7 +227,7 @@ def dynamic_quant_f_and_b(x,w,y):
 
 
 # smooth and token-wise/channel-wise
-def reuse_smooth_quant_f_and_b(x,w,y):
+def torch_reuse_smooth_quant_f_and_b(x,w,y):
     x = x.clone()
     w = w.clone()
     y = y.clone()
@@ -256,6 +256,8 @@ def reuse_smooth_quant_f_and_b(x,w,y):
                             scale_b=w_quant_scale.view(1,-1),
                             out_dtype=torch.bfloat16,
                             use_fast_accum=True)
+
+    # print(f'{x_smooth_scale=} {x_quant_scale[:,0]=} {w_quant_scale=}')
 
     # dx = y @ wT
     # absort w quant scale to y
@@ -347,6 +349,15 @@ def read_and_tile(filename, tile=True):
         rep = (m-1)//bs+1
         x = torch.cat([x]*rep,0)[:m].contiguous()
         y = torch.cat([y]*rep,0)[:m].contiguous()
+
+        if x.size(1) % 256 != 0:
+            xs = x.size(1)//256*256
+            x = x[:,:xs].contiguous()
+            w = w[:,:xs].contiguous()
+        if y.size(1) % 256 != 0:
+            ys = y.size(1)//256*256
+            y = y[:,:ys].contiguous()
+            w = w[:ys].contiguous()
 
     batch_size, in_dim = x.shape 
     out_dim, in_dim = w.shape

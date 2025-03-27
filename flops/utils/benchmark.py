@@ -43,6 +43,6 @@ def benchmark_func(fn, *args, n_repeat=1000, ref_flops=None, ref_time=None, name
     ss = ''
     if ref_time is not None:
         ss = f'speedup:{ref_time/average_event_time:.3f}'
-    print(f'{func_name} {name} time:{average_event_time:.1f} us {fs} {ss}')
+    print(f'{func_name:<30} {name} time:{average_event_time:.1f} us {fs} {ss}')
     return average_event_time
 

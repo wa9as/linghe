@@ -77,7 +77,7 @@ def trival_fp8_gemm(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
 
 @triton.autotune(configs=fp8_gemm_configs, key=["N", "K"])
 @triton.jit
-def nt_fp8_gemm_kernel(
+def fp8_gemm_nn_kernel(
     a_ptr,
     b_ptr,
     c_ptr,
@@ -113,13 +113,13 @@ def nt_fp8_gemm_kernel(
     tl.store(c_ptrs, c)
 
 
-def nt_fp8_gemm(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
+def fp8_gemm_nn(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
     assert a.is_contiguous() and b.is_contiguous()
     M, K = a.size()
     K, N = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
     grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
-    nt_fp8_gemm_kernel[grid](a, b, c, M, N, K, 128)
+    fp8_gemm_nn_kernel[grid](a, b, c, M, N, K, 128)
     return c
 
 
