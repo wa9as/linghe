@@ -2,7 +2,7 @@ import torch
 
 from flops.quant.hadamard import *
 from flops.utils.util import *
-from bench_h800_smooth import smooth_quant_forward, smooth_quant_backward
+from bench_h800_smooth import smooth_quant_forward, smooth_quant_backward, smooth_quant_update
 
 def setup_seed(seed):
      torch.manual_seed(seed)
@@ -51,14 +51,28 @@ def torch_nn(y, w_quant_scale):
     y = y.clone()
     ys = y*w_quant_scale.view(1,N)
     y_scale = ys.abs().float().amax(dim=1, keepdim=True)/448.0+1e-9
-    # yq = (ys/y_scale).to(torch.float8_e4m3fn)
+    yq = (ys/y_scale).to(torch.float8_e4m3fn)
     # print(y[0, :])
     # print(ys[0,:])
     # print(y_scale[0])
-    yq = (ys/y_scale)
+    # yq = (ys/y_scale)
     # print(y_scale[0])
     # print(ys[0,:])
     return ys, y_scale, yq, w_quant_scale
+
+def torch_tn(y, x_quant_scale):
+    # print(y.size())
+    # print(x_quant_scale.size())
+    y = y.clone()
+    yt = y.t().contiguous()  # [N, M]
+    yts = yt*x_quant_scale.view(1, M)
+    print(yt[0, :])
+    print(x_quant_scale[:, :8])
+    print(yts[0, :])
+    yt_scale = yts.abs().amax(dim=1, keepdim=True)/448.0+1e-9
+    # print(yt_scale.size())
+    ytq = (yts/yt_scale).to(torch.float8_e4m3fn)
+    return yts, yt_scale, ytq, x_quant_scale
 
 def abs_error(a, b):
   return (a.float() - b.float()).abs().mean().item()
@@ -77,20 +91,31 @@ opt_out,xq,wq,x_quant_scale,w_quant_scale,x_smooth_scale,w_smooth_scale = smooth
 # print(f"w_smooth_scale abs error :{abs_error(w_smooth_scale_t, w_smooth_scale)}")
 
 ### smooth_quant_backward ###
+
 # print(w_quant_scale.size())
 # print(w_quant_scale)
 # wqt_t = wq.clone().t().contiguous().t()
 
-y_s, y_quant_scale_t, yqt, w_quant_scale_t = torch_nn(y, w_quant_scale)
-opt_dx,yq,wq_t,y_quant_scale, w_quant_scale  = smooth_quant_backward(y,wq,w_quant_scale,w_smooth_scale)
+y_s, y_scale_t, yqt, w_quant_scale_t = torch_nn(y, w_quant_scale)
+opt_dx,yq,wq_t,y_scale, w_quant_scale  = smooth_quant_backward(y,wq,w_quant_scale,w_smooth_scale)
 
 # print(y_quant_scale_t[:10])
 # print(y_quant_scale[:10])
 
 # print(f"wq abs error :{abs_error(wqt_t, wq_t)}") # pass
-# print(f"y_quant_scale abs error :{abs_error(y_quant_scale_t, y_quant_scale)}") # pass
-
+# print(f"y_quant_scale abs error :{abs_error(y_scale_t, y_scale)}") # pass
+# print(f"y_q abs error :{abs_error(yqt, yq)}") # pass
 # quant_check(ref_dx, yq, wq, opt_dx, 'smooth_quant_backward')
+
+
+### smooth_quant_update ###
+yts, yt_scale_t, ytq_t, x_quant_scale_t = torch_tn(y, x_quant_scale)
+opt_dw,yq,xq_t,y_scale,x_smooth_scale, yt_s = smooth_quant_update(y, xq, x_quant_scale, x_smooth_scale)
+
+# xqt_t = xq.clone().t().contiguous().t()
+# print(f"wq abs error :{abs_error(xqt_t, xq_t)}") # pass
+print(f"yts abs error :{abs_error(yts, yt_s)}") # pass
+
 
 # print(y_quant_scale_t[:10, :])
 # print(y_quant_scale[:10, :])
