@@ -39,15 +39,12 @@ def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, x_smo
     indices = tl.arange(0, BLOCK_SIZE)
     for i in range(n):
         w = tl.load(w_ptrs, mask=i*BLOCK_SIZE+indices[:,None]<N)
-        w_max = tl.maximum(tl.max(tl.abs(w), axis=0),x_max)
+        w_max = tl.maximum(tl.max(tl.abs(w), axis=0),w_max)
         w_ptrs += BLOCK_SIZE*K
 
     scale = tl.sqrt(x_max*w_max)
     x_scale = x_max/scale
     w_scale = w_max/scale
-
-    # if pid == 0:
-    #   tl.device_print("x_scale", x_scale)
 
     x_smooth_scale_ptrs = x_smooth_scale_ptr + pid*BLOCK_K + tl.arange(0, BLOCK_K)
     w_smooth_scale_ptrs = w_smooth_scale_ptr + pid*BLOCK_K + tl.arange(0, BLOCK_K)
@@ -88,15 +85,15 @@ def smooth_kernel_nt(x_ptr, xs_ptr, xs_max_ptr, w_ptr, ws_ptr, ws_max_ptr, x_smo
 def row_quant_sm_kernel(x_ptr, q_ptr, s_ptr,  M, K, quant_scale_ptr, BLOCK_SIZE: tl.constexpr, BLOCK_K: tl.constexpr, SCALE_K: tl.constexpr):
     pid = tl.program_id(0)
 
-    offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
+    offs = pid*BLOCK_SIZE*K + tl.arange(0, BLOCK_SIZE)[:,None]*K + tl.arange(0, BLOCK_K)[None,:]
     n_block = SCALE_K 
     
     # offs_scale = pid * (M // BLOCK_SIZE) + tl.arange(0, 8)[None,:] #需要加边界 K // BLOCK_K
-    offs_scale = pid * BLOCK_SIZE * SCALE_K +  tl.arange(0, BLOCK_SIZE)[:,None]* SCALE_K + tl.arange(0, SCALE_K)[None,:]
+    offs_scale = pid * BLOCK_SIZE +  tl.arange(0, SCALE_K)[:,None]* M + tl.arange(0, BLOCK_SIZE)[None,:]
     quant_scale_ptrs = quant_scale_ptr + pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
 
     scale_off = tl.load(s_ptr+offs_scale)
-    scale = tl.max(scale_off, axis=1) / 448.0
+    scale = tl.max(scale_off, axis=0) / 448.0
     tl.store(quant_scale_ptrs, scale)
     scale = scale.expand_dims(-1)
     # if pid == 0:
@@ -289,8 +286,10 @@ def triton_sm_quant_nt(x, w):
         num_warps=16
     )
 
-    xs_max_tmp = xs_max_tmp.view(M,-1)
-    ws_max_tmp = ws_max_tmp.view(N,-1)
+    xs_max_tmp = xs_max_tmp.view(-1,M)
+    ws_max_tmp = ws_max_tmp.view(-1,N)
+
+    # print(torch.max(xs_max_tmp, axis=0)[0])
     
     # print(x_s)
     # print(torch.sum(x_s==0))
@@ -300,7 +299,7 @@ def triton_sm_quant_nt(x, w):
     # ws_max = ws_max_tmp.view(N, -1).max(1)[0]/448.0
 
     BLOCK_SIZE = 16
-    BLOCK_K = 512
+    # BLOCK_K = 512
     SCALE_K = K // BLOCK_K
     grid = lambda META: (M//BLOCK_SIZE, )
     row_quant_sm_kernel[grid](
@@ -314,8 +313,6 @@ def triton_sm_quant_nt(x, w):
         num_warps=32
     )
 
-    # BLOCK_SIZE = 4096
-    # BLOCK_SIZE = 4096
     grid = lambda META: (N//BLOCK_SIZE, )
     row_quant_sm_kernel[grid](
         w_s, w_q, ws_max_tmp,
