@@ -92,7 +92,7 @@ def row_quant_sm_kernel(x_ptr, q_ptr, s_ptr,  M, K, quant_scale_ptr, BLOCK_SIZE:
     offs_scale = pid * BLOCK_SIZE +  tl.arange(0, SCALE_K)[:,None]* M + tl.arange(0, BLOCK_SIZE)[None,:]
     quant_scale_ptrs = quant_scale_ptr + pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
 
-    scale_off = tl.load(s_ptr+offs_scale)
+    scale_off = tl.load(s_ptr+offs_scale) #todo: 加mask
     scale = tl.max(scale_off, axis=0) / 448.0
     tl.store(quant_scale_ptrs, scale)
     scale = scale.expand_dims(-1)
@@ -133,65 +133,112 @@ def smooth_row_quant_kernel(x_ptr, q_ptr, xs_ptr, w_quant_scale_ptr, s_ptr,  M, 
         w_quant_scale_ptrs += BLOCK_SIZE
     scale = max_val/448.0
     tl.store(s_ptr + pid, scale)
+    
+    # tl.debug_barrier()
 
-    # for j in range(n_block):
-    #     offs = pid*N + j*BLOCK_SIZE + indices
-    #     xs = tl.load(xs_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
-    #     y = xs.to(tl.float32) / scale
-    #     if pid==0 and j==0:
-    #       tl.device_print("scale", scale)
-    #       tl.device_print("xs", xs)
-    #     y = y.to(q_ptr.dtype.element_ty)
-    #     tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
+    for j in range(n_block):
+        offs = pid*N + j*BLOCK_SIZE + indices
+        xs = tl.load(xs_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
+        y = xs.to(tl.float32) / scale
+        # if pid==0 and j==0:
+        #   tl.device_print("scale", scale)
+        #   tl.device_print("xs", xs.to(tl.float32))
+        y = y.to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
 
 @triton.jit
-def smooth_ys_quant(xs_ptr, q_ptr, s_ptr, M, N,  BLOCK_SIZE: tl.constexpr):
+def smooth_ys_quant_kernel(xs_ptr, q_ptr, s_ptr, M, N,  BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0)
     n_block = tl.cdiv(N, BLOCK_SIZE)
     scale = tl.load(s_ptr + pid)
+    indices = tl.arange(0, BLOCK_SIZE)[None,:]
     for j in range(n_block):
       offs = pid*N + j*BLOCK_SIZE + indices
       xs = tl.load(xs_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
+      # xs = tl.load(xs_ptr + offs)
       y = xs.to(tl.float32) / scale
       if pid==0 and j==0:
         tl.device_print("scale", scale)
-        tl.device_print("xs", xs)
+        tl.device_print("xs", xs.to(tl.float32))
       y = y.to(q_ptr.dtype.element_ty)
       tl.store(q_ptr + offs, y, mask=j*BLOCK_SIZE + indices<N)
 
+
 @triton.jit
-def smooth_transpose_row_quant_kernel(x_ptr, q_ptr, x_quant_scale_ptr, s_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
+def slide_transpose_smooth_quant_kernel(x_ptr, q_ptr, xs_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # col-wise read, row-wise write
+    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    soffs = tl.arange(0, H)
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    m = tl.cdiv(M, H)
+    for i in range(m):
+        x = tl.load(x_ptr+offs)
+        scale = tl.load(ss_ptr+soffs)[:,None]
+        x = x * scale
+        tl.store(xs_ptr+offs, x)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        offs += H*N 
+        soffs += H
+
+    scale = (x_max/448.0)
+    tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
+
+    s = (1.0/scale)[:,None]
+    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    toffs = pid*W*M + tl.arange(0, W)[:,None]*M + tl.arange(0, H)[None,:]
+    for i in range(m):
+        x = tl.trans(tl.load(xs_ptr+offs))
+        x = (x*s).to(q_ptr.dtype.element_ty)
+        # x = x*s
+        # if pid==0 and i==0:
+        #     tl.device_print("scale", scale)
+        #     tl.device_print("x", x.to(tl.float32)) #comment fp8
+        tl.store(q_ptr+toffs, x)
+        offs += H*N
+        toffs += H
+
+@triton.jit
+def smooth_transpose_row_quant_kernel(x_ptr, q_ptr, xs_ptr, x_quant_scale_ptr, s_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
 
     pid = tl.program_id(axis=0)
     # col-wise read, row-wise write
     # read block: [BLOCK_SIZE, B]
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    toffs = pid*W*M + tl.arange(0, W)[:,None]*M + tl.arange(0, H)[None,:]
     indices = tl.arange(0, H)
 
-    x_quant_scale_ptrs = x_quant_scale_ptr + pid * W + tl.arange(0, W)[None,:]
-    x_quant_scale = tl.load(x_quant_scale_ptrs)
+    x_quant_scale_ptrs = x_quant_scale_ptr + tl.arange(0, H)
 
     m = tl.cdiv(M, H)
-    x_max = tl.zeros((W,),dtype=tl.float32)
+    x_max = tl.zeros((H,),dtype=tl.float32)
     for i in range(m):
-        x = tl.load(x_ptr+offs,mask=i*H+indices[:,None]<M)
+        x = tl.trans(tl.load(x_ptr+offs,mask=i*H+indices[:,None]<M))
+        # x = tl.load(x_ptr+offs)
+        x_quant_scale = tl.load(x_quant_scale_ptrs)
         x = x * x_quant_scale
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
-        offs += H*N
+        if pid==0 and i==0:
+          tl.device_print("scale", x_quant_scale) #pass
+          tl.device_print("x", x.to(tl.float32))
+        tl.store(xs_ptr + toffs, x, mask=i*H+indices[None,:]<M)
+    #     x_max = tl.maximum(tl.max(tl.abs(x), axis=1),x_max)
+    #     offs += H*N
+    #     toffs += H
+    #     x_quant_scale_ptrs += H
 
-    scale = x_max/448.0
-    s = (1.0/scale)[:,None]
+    # scale = x_max/448.0
+    # s = (1.0/scale)[:,None]
 
-    tl.store(s_ptr+pid*W+tl.arange(0,W), scale)
+    # tl.store(s_ptr+pid*W+tl.arange(0,W), scale)
 
-    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
-    toffs = pid*W*M + tl.arange(0, W)[:,None]*M + tl.arange(0, H)[None,:]
-    for i in range(m):
-        x = tl.trans(tl.load(x_ptr + offs,mask=i*H+indices[:,None]<M))
-        x = (x*s).to(q_ptr.dtype.element_ty)
-        tl.store(q_ptr + toffs, x, mask=i*H+indices[None,:]<M)
-        offs += H*N
-        toffs += H
+    # offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    # toffs = pid*W*M + tl.arange(0, W)[:,None]*M + tl.arange(0, H)[None,:]
+    # for i in range(m):
+    #     x = tl.trans(tl.load(x_ptr + offs,mask=i*H+indices[:,None]<M))
+    #     x = (x*s).to(q_ptr.dtype.element_ty)
+    #     tl.store(q_ptr + toffs, x, mask=i*H+indices[None,:]<M)
+    #     offs += H*N
+    #     toffs += H
 
 @triton.jit
 def smooth_kernel_nn(y_ptr, yq_ptr,w_ptr, wq_ptr, w_quant_scale_ptr, M, N, K, eps, BLOCK_SIZE: tl.constexpr, BLOCK_N: tl.constexpr):
@@ -359,6 +406,7 @@ def triton_sm_quant_tn(y, x, x_quant_scale=None):
     device = x.device 
     # x_s = torch.empty((M, K), device=x.device, dtype=x.dtype)
     # w_s = torch.empty((N, K), device=w.device, dtype=w.dtype)
+    y_s = torch.empty((M, N), device=device, dtype=y.dtype)
     y_q = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
     # x_q = torch.empty((K, M), device=x.device, dtype=torch.float8_e4m3fn)
     if x_quant_scale == None:
@@ -366,19 +414,24 @@ def triton_sm_quant_tn(y, x, x_quant_scale=None):
 
     y_scale = torch.empty((N, 1),dtype=torch.float32,device=y.device)
 
-    H = 1024
-    W = 16
+    # H = 1024
+    H = 8
+    W = 4
+    
+    # print(y[:, 0])
 
     grid = lambda META: (N//W, )
-    smooth_transpose_row_quant_kernel[grid](
-        y, y_q,
+    slide_transpose_smooth_quant_kernel[grid](
+        y, y_q, y_s,
         x_quant_scale, y_scale,
         M,N,
         H,W,
         num_stages=6,
         num_warps=4
     )
-    
+    # print(yt_s)
+    # triton_slide_smooth_quant
+
     x_qt = triton_smooth_hw(x)
 
     return y_q, x_qt, y_scale, x_quant_scale
@@ -397,8 +450,8 @@ def triton_sm_quant_nn(y, w, w_quant_scale=None):
       print("come in")
       w_quant_scale = torch.empty((1,N), device=device, dtype=torch.float32)#pass from outside 
     y_scale = torch.empty((M, 1),dtype=torch.float32,device=y.device)
-    # BLOCK_SIZE = 4096
-    BLOCK_SIZE = 8
+    BLOCK_SIZE = 4096
+    # BLOCK_SIZE = 8
 
     # print(w_quant_scale.size)
 
@@ -413,6 +466,15 @@ def triton_sm_quant_nn(y, w, w_quant_scale=None):
     )
     # print(y_s[0, :])
 
+    # grid = lambda META: (M, )
+    # smooth_ys_quant_kernel[grid](
+    #   y_s,y_q, y_scale,
+    #   M,N,
+    #   BLOCK_SIZE,
+    #   num_stages=6,
+    #   num_warps=32
+    # )
+  
     w_qt = triton_smooth_hw(w)
     
     return y_q, w_qt, y_scale, w_quant_scale
@@ -450,7 +512,7 @@ def smooth_quant_update(y,x,x_quant_scale, x_smooth_scale):
                                     scale_b=x_smooth_scale.view(1, -1),
                                     out_dtype=torch.bfloat16,
                                     use_fast_accum=True)
-    return output,y_q,x_q,y_scale,x_scale
+    return output,y_q,x_q.t(),y_scale,x_scale
 
 
 def triton_smooth_quant_nt_nn_tn(x,w,y):
