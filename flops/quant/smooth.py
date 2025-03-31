@@ -1,6 +1,5 @@
 
 import math
-from types import DynamicClassAttribute
 import torch
 import triton
 import triton.language as tl
@@ -529,7 +528,6 @@ def triton_slide_smooth_quant(x, smooth_scale):
     x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
     H = 1024 if N%1024 == N else 256
-    # H = 32
     W = 16
     grid = lambda META: (M//W, )
     slide_smooth_quant_kernel[grid](
@@ -554,18 +552,14 @@ def slide_smooth_quant_tma_kernel(x_desc_ptr, q_desc_ptr, ss_ptr, qs_ptr, M, N, 
     soffs = tl.arange(0, H)
     x_max = tl.zeros((W,),dtype=tl.float32) + 1e-20
     n = tl.cdiv(N, H)
-    # offs_w = 0
     for i in range(n):
         # x = tl.load(x_ptr+offs)
         offs_w = i*H
-        x = tl._experimental_descriptor_load(x_desc_ptr, [offs, offs_w], [W, H], tl.bfloat16)
+        x = tl._experimental_descriptor_load(x_desc_ptr, [offs, offs_w], [W, H], tl.float16)
         scale = tl.load(ss_ptr+soffs)
-        if pid ==1 and i == 1:
-            tl.device_print("x", x.to(tl.float32))
-            # tl.device_print("scale", scale)
         x = x.to(tl.float32) * scale
         x_max = tl.maximum(tl.max(tl.abs(x), axis=1),x_max)
-        # offs_w += H 
+        # offs += H 
         soffs += H
 
     scale = x_max/448.0
@@ -578,7 +572,7 @@ def slide_smooth_quant_tma_kernel(x_desc_ptr, q_desc_ptr, ss_ptr, qs_ptr, M, N, 
     for i in range(n):
         # x = tl.load(x_ptr+offs)
         offs_w = i*H
-        x = tl._experimental_descriptor_load(x_desc_ptr, [offs, offs_w], [W, H], tl.bfloat16)
+        x = tl._experimental_descriptor_load(x_desc_ptr, [offs, offs_w], [W, H], tl.float16)
         smooth_scale = tl.load(ss_ptr+soffs)
         xq = (x.to(tl.float32) * smooth_scale * s).to(tl.float8e4nv)
         # tl.store(q_ptr+offs, xq)
@@ -594,8 +588,7 @@ def triton_slide_smooth_quant_tma(x, smooth_scale):
     x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
     # H = 1024 if N%1024 == N else 256
-    H = 256
-    # H = 32
+    H = 32
     W = 16
 
     # desc_helper = TmaAutoTuneHelper()
@@ -625,18 +618,14 @@ def triton_slide_smooth_quant_tma(x, smooth_scale):
     TMA_SIZE = 128
     desc_x = np.empty(TMA_SIZE, dtype=np.int8)
     desc_xq = np.empty(TMA_SIZE, dtype=np.int8)
-    # desc_xs = np.empty(TMA_SIZE, dtype=np.int8)
 
     triton.runtime.driver.active.utils.fill_2d_tma_descriptor(x.data_ptr(), M, N, W, H, x.element_size(),
                                                               desc_x)
     triton.runtime.driver.active.utils.fill_2d_tma_descriptor(x_q.data_ptr(), M, N, W, H, x_q.element_size(),
                                                               desc_xq)
-    # triton.runtime.driver.active.utils.fill_1d_tma_descriptor(x_scale.data_ptr(), M, H, x_scale.element_size(),
-                                                            #   desc_xs)
 
     desc_x = torch.tensor(desc_x, device=device)
     desc_xq = torch.tensor(desc_xq, device=device)
-    # desc_xs = torch.tensor(desc_xs, device=device)
     
     grid = lambda META: (M//W, )
     slide_smooth_quant_tma_kernel[grid](
