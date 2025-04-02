@@ -1,7 +1,8 @@
 
 
 import torch 
-from flops.core.hadamard_quant_linear import HadamardQuantLinear
+from flops.core.hadamard_quant_linear import QuantLinear as HadamardQuantLinear
+from flops.core.smooth_quant_linear import QuantLinear as SmoothQuantLinear
 
 
 device = 'cuda:0'
@@ -12,7 +13,16 @@ layer = HadamardQuantLinear(in_features=K,
         out_features=N,
         bias = False,
         device = device,
-        dtype = dtype)
+        dtype = dtype,
+        impl='bit')
+
+
+# layer = SmoothQuantLinear(in_features=K,
+#         out_features=N,
+#         bias = False,
+#         device = device,
+#         dtype = dtype,
+#         impl='reused')
 
 
 x = torch.randn((M,K), dtype=dtype, device=device) 

@@ -2,21 +2,19 @@ import math
 from typing import Optional, Union
 
 import torch
-from flops.quant.hadamard import hadamard_quant_forward, hadamard_quant_update, hadamard_quant_backward
-from flops.quant.hadamard import fused_hadamard_quant_forward, fused_hadamard_quant_update, fused_hadamard_quant_backward
-from flops.quant.hadamard import bit_hadamard_quant_forward, bit_hadamard_quant_update, bit_hadamard_quant_backward
+from flops.quant.smooth import smooth_quant_forward, smooth_quant_update, smooth_quant_backward
+from flops.quant.smooth import reused_smooth_quant_forward, reused_smooth_quant_update, reused_smooth_quant_backward
 
 
 # https://code.alipay.com/Arc/atorch/blob/master/atorch/modules/fp8/scaled_linear.py#L45
 
-class _HadamardQuantLinear(torch.autograd.Function):
+class _SmoothQuantLinear(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
         input: torch.Tensor,
         weight: torch.Tensor,
-        bias: Optional[torch.Tensor],
-        hadamard_matrix: torch.Tensor
+        bias: Optional[torch.Tensor]
     ):
         ctx.input_requires_grad = input.requires_grad
         ctx.weight_requires_grad = weight.requires_grad
@@ -26,14 +24,13 @@ class _HadamardQuantLinear(torch.autograd.Function):
         ctx.input_shape = input.shape
         input = input.view(-1, input.shape[-1])
 
-        output = hadamard_quant_forward(input, weight, hadamard_matrix)
+        output,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(input, weight)
         if bias is not None:
             output += bias
         
         saved_tensors = [
             input if ctx.weight_requires_grad else None,
-            weight if ctx.input_requires_grad else None,
-            hadamard_matrix if ctx.weight_requires_grad or ctx.weight_requires_grad else None
+            weight if ctx.input_requires_grad else None
         ]
 
         ctx.save_for_backward(*saved_tensors)
@@ -45,17 +42,17 @@ class _HadamardQuantLinear(torch.autograd.Function):
         ctx,
         output_grad: torch.Tensor,
     ):
-        x,w,hadamard_matrix = ctx.saved_tensors
+        x,w = ctx.saved_tensors
         results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
         # calculate input grad and assign to results[0]
-        dx=hadamard_quant_backward(output_grad, w, hadamard_matrix)
+        dx=smooth_quant_backward(output_grad, w)
         results[0] = dx.view(ctx.input_shape)
 
         # calculate weight grad and assign to results[1]
-        dw=hadamard_quant_update(output_grad, x, hadamard_matrix)
+        dw=smooth_quant_update(output_grad, x)
         results[1] = dw
 
         if ctx.bias_requires_grad:
@@ -66,14 +63,14 @@ class _HadamardQuantLinear(torch.autograd.Function):
 
 
 
-class _FusedHadamardQuantLinear(torch.autograd.Function):
+
+class _MixSmoothQuantLinear(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
         input: torch.Tensor,
         weight: torch.Tensor,
         bias: Optional[torch.Tensor],
-        hadamard_matrix: torch.Tensor
     ):
         ctx.input_requires_grad = input.requires_grad
         ctx.weight_requires_grad = weight.requires_grad
@@ -83,36 +80,40 @@ class _FusedHadamardQuantLinear(torch.autograd.Function):
         ctx.input_shape = input.shape
         input = input.view(-1, input.shape[-1])
 
-        output = fused_hadamard_quant_forward(input, weight, hadamard_matrix)
+        output,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(input, weight)
+
         if bias is not None:
             output += bias
         
         saved_tensors = [
-            input if ctx.weight_requires_grad else None,
-            weight if ctx.input_requires_grad else None,
-            hadamard_matrix if ctx.weight_requires_grad or ctx.weight_requires_grad else None
+            x_q if ctx.weight_requires_grad else None,
+            x_s if ctx.weight_requires_grad else None,
+            w_q if ctx.input_requires_grad else None,
+            w_s if ctx.input_requires_grad else None,
+            smooth_scale if ctx.weight_requires_grad or ctx.weight_requires_grad else None
         ]
 
         ctx.save_for_backward(*saved_tensors)
         out_shape = (*ctx.input_shape[0:-1], -1)
-        return output.view(out_shape)
+        return output.view(out_shape), smooth_scale
 
     @staticmethod
     def backward(
         ctx,
         output_grad: torch.Tensor,
+        smooth_scale_grad: Optional[torch.Tensor]
     ):
-        x,w,hadamard_matrix = ctx.saved_tensors
+        x_q,x_s,w_q,w_s,smooth_scale = ctx.saved_tensors
         results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
         # calculate input grad and assign to results[0]
-        dx=fused_hadamard_quant_backward(output_grad, w, hadamard_matrix)
+        dx=reused_smooth_quant_backward(output_grad, w_q, smooth_scale, w_s)
         results[0] = dx.view(ctx.input_shape)
 
         # calculate weight grad and assign to results[1]
-        dw=fused_hadamard_quant_update(output_grad, x, hadamard_matrix)
+        dw=reused_smooth_quant_update(output_grad, x_q, smooth_scale, x_s)
         results[1] = dw
 
         if ctx.bias_requires_grad:
@@ -123,14 +124,15 @@ class _FusedHadamardQuantLinear(torch.autograd.Function):
 
 
 
-class _BitHadamardQuantLinear(torch.autograd.Function):
+
+class _ReusedSmoothQuantLinear(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
         input: torch.Tensor,
         weight: torch.Tensor,
         bias: Optional[torch.Tensor],
-        hadamard_matrix: torch.Tensor
+        smooth_scale: Optional[torch.Tensor]
     ):
         ctx.input_requires_grad = input.requires_grad
         ctx.weight_requires_grad = weight.requires_grad
@@ -140,36 +142,43 @@ class _BitHadamardQuantLinear(torch.autograd.Function):
         ctx.input_shape = input.shape
         input = input.view(-1, input.shape[-1])
 
-        output,x_bt,w_bt = bit_hadamard_quant_forward(input, weight, hadamard_matrix)
+        if smooth_scale is None:
+            output,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(input, weight)
+        else:
+            output,x_q,w_q,x_s,w_s,smooth_scale = reused_smooth_quant_forward(input, weight,smooth_scale)
+
         if bias is not None:
             output += bias
         
         saved_tensors = [
-            x_bt if ctx.weight_requires_grad else None,
-            w_bt if ctx.input_requires_grad else None,
-            hadamard_matrix if ctx.weight_requires_grad or ctx.weight_requires_grad else None
+            x_q if ctx.weight_requires_grad else None,
+            x_s if ctx.weight_requires_grad else None,
+            w_q if ctx.input_requires_grad else None,
+            w_s if ctx.input_requires_grad else None,
+            smooth_scale if ctx.weight_requires_grad or ctx.weight_requires_grad else None
         ]
 
         ctx.save_for_backward(*saved_tensors)
         out_shape = (*ctx.input_shape[0:-1], -1)
-        return output.view(out_shape)
+        return output.view(out_shape), smooth_scale
 
     @staticmethod
     def backward(
         ctx,
         output_grad: torch.Tensor,
+        smooth_scale_grad: Optional[torch.Tensor]
     ):
-        x,w,hadamard_matrix = ctx.saved_tensors
+        x_q,x_s,w_q,w_s,smooth_scale = ctx.saved_tensors
         results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
         # calculate input grad and assign to results[0]
-        dx,y_bt=bit_hadamard_quant_backward(output_grad, w, hadamard_matrix)
+        dx=reused_smooth_quant_backward(output_grad, w_q, smooth_scale, w_s)
         results[0] = dx.view(ctx.input_shape)
 
         # calculate weight grad and assign to results[1]
-        dw=bit_hadamard_quant_update(y_bt, x, hadamard_matrix)
+        dw=reused_smooth_quant_update(output_grad, x_q, smooth_scale, x_s)
         results[1] = dw
 
         if ctx.bias_requires_grad:
@@ -177,7 +186,6 @@ class _BitHadamardQuantLinear(torch.autograd.Function):
             results[2] = torch.sum(output_grad, dim=0)
 
         return tuple(results)
-
 
 
 class QuantLinear(torch.nn.Module):
@@ -188,7 +196,7 @@ class QuantLinear(torch.nn.Module):
         bias: bool = True,
         device=None,
         dtype=None,
-        impl='bit'
+        impl='mix'
     ):
         super().__init__()
         self.in_features = in_features
@@ -199,39 +207,38 @@ class QuantLinear(torch.nn.Module):
         else:
             self.bias = None
 
-        assert impl in ('naive', 'fused', 'bit')
-        self.impl = impl 
-    
-        size = 32 if 'H20' in torch.cuda.get_device_properties(0).name else 64
-        data = self._hadamard_matrix(size, device=device, dtype=dtype, norm=True)
-        self.hadamard_matrix = torch.nn.parameter.Parameter(data, requires_grad=False)
-        self.reset_parameters()
+        assert impl in ('naive', 'mix', 'reused')
+        self.impl = impl
 
-    def _hadamard_matrix(self, size, device=None, dtype=None, norm=False):
-        assert 2**int(math.log2(size)) == size
-        m2 = torch.tensor([[1,1],[1,-1]], device=device, dtype=torch.float32)
-        m = m2
-        for _ in range(int(math.log2(size))-1):
-            m = torch.kron(m,m2)
-        if norm:
-            m = m / size**0.5
-        if dtype is not None:
-            m = m.to(dtype)
-        return m
+        self.gap_step = 16
+        self.decay_coef = 0.9
+        self.smooth_scale = None
+        self.smooth_update_step = 0
+
+        self.reset_parameters()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         if self.training:
             if self.impl == 'naive':
-                return _HadamardQuantLinear.apply(input, self.weight, self.bias, self.hadamard_matrix)
-            elif self.impl == 'fused':
-                return _FusedHadamardQuantLinear.apply(input, self.weight, self.bias, self.hadamard_matrix)
-            else:
-                return _BitHadamardQuantLinear.apply(input, self.weight, self.bias, self.hadamard_matrix)
+                return _SmoothQuantLinear.apply(input, self.weight, self.bias)
+            elif self.impl == 'mix':
+                output, _ =  _MixSmoothQuantLinear.apply(input, self.weight, self.bias)
+                return output
+            elif self.impl == 'reused':
+                if self.smooth_update_step % self.gap_step == 0:
+                    output, smooth_scale = _ReusedSmoothQuantLinear.apply(input, self.weight, self.bias, None)
+                else:
+                    output, smooth_scale = _ReusedSmoothQuantLinear.apply(input, self.weight, self.bias, self.smooth_scale.detach())
+                if self.smooth_update_step == 0:
+                    self.smooth_scale = smooth_scale
+                elif self.smooth_update_step % self.gap_step == 0:
+                    self.smooth_scale = self.decay_coef*self.smooth_scale + (1.0-self.decay_coef)*smooth_scale
+                self.smooth_update_step += 1
         else:
             output = input@self.weight.t()
             if self.bias is not None:
                 output = output + self.bias
-            return output
+        return output
 
     def extra_repr(self) -> str:
         return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"

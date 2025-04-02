@@ -9,7 +9,7 @@ from triton import Config
 # os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
 
 @triton.jit
-def transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
+def rearrange_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:] 
@@ -22,7 +22,7 @@ def transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
         toffs += H
 
 
-def triton_transpose(x):
+def triton_arrange(x):
     M, N = x.shape
     device = x.device
     t = torch.empty((N, M),device=device,dtype=x.dtype)

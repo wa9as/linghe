@@ -75,7 +75,7 @@ def torch_smooth_quant(x, w, dtype):
 
     return x_q, w_q, x_scale,  w_scale
 
-def torch_os_quant(x,w,dtype):
+def torch_outlier_quant(x,w,dtype):
     x = x.clone()
     w = w.clone()
     fmax = torch.finfo(dtype).max
@@ -340,22 +340,23 @@ def read_and_tile(filename, tile=True):
     y = d['y'][0].to(dtype).to(device)
 
     if tile:
+        min_block = 256
         indices = y.abs().float().sum(-1)>0
         x = x[indices]
         y = y[indices]
 
         bs = x.size(0)
-        m = max(2**(int(math.log2(bs)+1)),256)
+        m = max(2**(int(math.log2(bs)+1)),min_block)
         rep = (m-1)//bs+1
         x = torch.cat([x]*rep,0)[:m].contiguous()
         y = torch.cat([y]*rep,0)[:m].contiguous()
 
-        if x.size(1) % 256 != 0:
-            xs = x.size(1)//256*256
+        if x.size(1) % min_block != 0:
+            xs = x.size(1)//min_block*min_block
             x = x[:,:xs].contiguous()
             w = w[:,:xs].contiguous()
-        if y.size(1) % 256 != 0:
-            ys = y.size(1)//256*256
+        if y.size(1) % min_block != 0:
+            ys = y.size(1)//min_block*min_block
             y = y[:,:ys].contiguous()
             w = w[:ys].contiguous()
 

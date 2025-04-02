@@ -8,7 +8,7 @@ from flops.utils.benchmark import *
 device = 'cuda:0'
 dtype = torch.bfloat16
 
-x,w,y= read_and_tile('/ossfs/workspace/flops/tests/down_fb_1.pkl', tile=True)
+x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
 
 
 batch_size, in_dim = x.shape 
@@ -58,10 +58,16 @@ for mode in modes:
 
         impl = 'reuse'
         if impl == 'reuse':
-            o, dx, dw = reused_smooth_quant_f_and_b(x,w,y)
+            o, dx, dw, smooth_scale = reused_smooth_quant_f_and_b(x,w,y)
             output_check(ref_o, o, mode)
             output_check(ref_dx,dx,  mode)
             output_check(ref_dw, dw,  mode)
+
+            o, dx, dw, smooth_scale = reused_smooth_quant_f_and_b(x,w,y, smooth_scale=smooth_scale)
+            output_check(ref_o, o, mode)
+            output_check(ref_dx,dx,  mode)
+            output_check(ref_dw, dw,  mode)
+
 
             # print(f'{ref_dx=}')
             # print(f'{dx=}')

@@ -6,7 +6,7 @@ from flops.utils.util import *
 device = 'cuda:0'
 dtype = torch.bfloat16
 
-x,w,y= read_and_tile('down_fb_1.pkl', tile=True)
+x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
 
 batch_size, in_dim = x.shape 
 out_dim, in_dim = w.shape

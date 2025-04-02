@@ -127,7 +127,7 @@ def smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, smooth_scale_ptr, M, N, K, H:
 
 
 
-def triton_smooth_quant_nt(x, w):
+def triton_smooth_quant_nt(x, w, smooth_scale=None):
     M, K = x.shape
     N, K = w.shape
     device = x.device 
@@ -138,9 +138,11 @@ def triton_smooth_quant_nt(x, w):
     x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
     w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
     
-    smooth_scale = torch.empty((K,), device=device, dtype=torch.float32)
+    # smooth_scale may be initialized from SmoothQuantLinear, as forward can not output two params with a single grad
+    if smooth_scale is None:
+        smooth_scale = torch.empty((K,), device=device, dtype=torch.float32)
 
-    H = 1024 if M%1024==0 and N%1024==0 else 256
+    H = max([x for x in [128,256,512,1024] if M%x == 0 and N%x == 0])
     W = 32
     grid = lambda META: (K//W, )
     smooth_nt_kernel[grid](
@@ -370,16 +372,16 @@ def triton_smooth_quant_tn(y, x):
 
 
 
-def smooth_quant_forward(x,w):
+def smooth_quant_forward(x,w,smooth_scale=None):
 
-    x_q,w_q,x_s,w_s,smooth_scale = triton_smooth_quant_nt(x, w)
+    x_q,w_q,x_s,w_s,smooth_scale = triton_smooth_quant_nt(x, w, smooth_scale=smooth_scale)
     output = torch._scaled_mm(x_q,
                                     w_q.t(),
                                     scale_a=x_s,
                                     scale_b=w_s,
                                     out_dtype=x.dtype,
                                     use_fast_accum=True)
-    return output
+    return output,x_q,w_q,x_s,w_s,smooth_scale
 
 def smooth_quant_backward(y,w):
 
@@ -405,13 +407,15 @@ def smooth_quant_update(y,x):
     return output
 
 
-def reused_smooth_quant_forward(x,w):
+def reused_smooth_quant_forward(x,w,smooth_scale):
 
-    x_q,w_q,x_s,w_s,smooth_scale = triton_smooth_quant_nt(x, w)
+    x_q,x_s = triton_slide_smooth_quant(x, 1/smooth_scale)
+    w_q,w_s = triton_slide_smooth_quant(w, smooth_scale)
+
     output = torch._scaled_mm(x_q,
                                     w_q.t(),
                                     scale_a=x_s,
-                                    scale_b=w_s,
+                                    scale_b=w_s.view(1,-1),
                                     out_dtype=x.dtype,
                                     use_fast_accum=True)
     return output,x_q,w_q,x_s,w_s,smooth_scale
@@ -444,12 +448,15 @@ def reused_smooth_quant_update(y,x_q, smooth_scale, x_s):
     return output
 
 
-def reused_smooth_quant_f_and_b(x,w,y):
-    o,x_q,w_q,x_s,w_s,smooth_scale = reused_smooth_quant_forward(x,w)
+def reused_smooth_quant_f_and_b(x,w,y,smooth_scale=None):
+    if smooth_scale is None:
+        o,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(x,w,smooth_scale=None)
+    else:
+        o,x_q,w_q,x_s,w_s,smooth_scale = reused_smooth_quant_forward(x,w,smooth_scale)
     dx = reused_smooth_quant_backward(y, w_q, smooth_scale, w_s)
     dw = reused_smooth_quant_update(y, x_q, smooth_scale, x_s)
     # print(f'{smooth_scale=} {x_s[:,0]=} {w_s=}')
-    return o,dx,dw
+    return o,dx,dw,smooth_scale
 
 
 @triton.jit
@@ -489,7 +496,7 @@ def triton_slide_smooth_quant(x, smooth_scale):
     device = x.device 
     x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
-    H = 1024 if N%1024 == N else 256
+    H = max([x for x in [128,256,512,1024] if N%x == 0])
     W = 16
     grid = lambda META: (M//W, )
     slide_smooth_quant_kernel[grid](
@@ -545,7 +552,7 @@ def triton_slide_transpose_smooth_quant(x, smooth_scale):
     device = x.device 
     x_q = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.empty((1,N), device=device, dtype=torch.float32)
-    H = 512 if M%512==0 else 256
+    H = max([x for x in [128,256,512] if M%x == 0])
     W = 16
     grid = lambda META: (N//W, )
     slide_transpose_smooth_quant_kernel[grid](
@@ -564,8 +571,8 @@ def triton_slide_transpose_smooth_quant(x, smooth_scale):
 
 
 def triton_slide_smooth_quant_nt(x, w, smooth_scale):
-    x_q,x_scale = triton_slide_smooth_quant(x, smooth_scale)
-    w_q,w_scale = triton_slide_smooth_quant(w, 1/smooth_scale)
+    x_q,x_scale = triton_slide_smooth_quant(x, 1/smooth_scale)
+    w_q,w_scale = triton_slide_smooth_quant(w, smooth_scale)
     return x_q,x_scale,w_q,w_scale
 
 
