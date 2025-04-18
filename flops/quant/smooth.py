@@ -7,43 +7,6 @@ from triton import Config
 from flops.quant.channel import row_quant_kernel
 from flops.utils.transpose import triton_transpose
 
-class TmaAutoTuneHelper:
-
-    # duck typing wrapper to implement the same interface as TmaDescKernelParam in Triton PR #4498
-    class KernelParamWrapper:
-
-        def __init__(self, desc):
-            self.desc = desc
-
-        def tma_desc_cpu_ptr(self):
-            return self.desc.data_ptr()
-
-    TMA_SIZE = 128
-
-    def __init__(self):
-        self.fill_1d_tma_descriptor_inner = (triton.runtime.driver.active.utils.fill_1d_tma_descriptor)
-        self.fill_2d_tma_descriptor_inner = (triton.runtime.driver.active.utils.fill_2d_tma_descriptor)
-        self.descriptors = {}
-
-    # Call this method outside of the lambda function for grid size
-    def init_tma_descriptor(self, name):
-        self.descriptors[name] = torch.empty(TmaAutoTuneHelper.TMA_SIZE, device="cpu", dtype=torch.int8)
-
-    # Call this method inside the lambda function for grid size
-    def fill_1d_tma_descriptor(self, name, ptr, dim, block_dim, element_size):
-        desc_x = self.descriptors[name]
-        assert desc_x.data_ptr() % 64 == 0
-        self.fill_1d_tma_descriptor_inner(ptr, dim, block_dim, element_size, desc_x.data_ptr())
-
-    # Call this method inside the lambda function for grid size
-    def fill_2d_tma_descriptor(self, name, ptr, dim1, dim0, block_dim1, block_dim0, element_size):
-        desc_x = self.descriptors[name]
-        assert desc_x.data_ptr() % 64 == 0
-        self.fill_2d_tma_descriptor_inner(ptr, dim1, dim0, block_dim1, block_dim0, element_size, desc_x.data_ptr())
-
-    def get_tma_descriptor_kernel_param(self, name):
-        assert self.descriptors[name] is not None
-        return self.KernelParamWrapper(self.descriptors[name])
 
 @triton.jit
 def smooth_direct_quant_nt_kernel(x_ptr, xq_ptr, w_ptr, wq_ptr, s_ptr, M, N, K, H: tl.constexpr, W: tl.constexpr):
@@ -134,7 +97,7 @@ def smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, smooth_scale_ptr, M, N, K, H:
         offs += H*K
 
     n = tl.cdiv(N, H)
-    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    offs = (pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]).to(tl.int64)
     w_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
     for i in range(n):
         w = tl.load(w_ptr+offs)
@@ -156,7 +119,7 @@ def smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, smooth_scale_ptr, M, N, K, H:
         offs += H*K
 
     x_scale = x_scale.to(x_ptr.dtype.element_ty)  # reciprocal of w_scale
-    offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
+    offs = (pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]).to(tl.int64)
     for i in range(n):
         w = tl.load(w_ptr+offs)
         w = w*x_scale  # w / w_scale
@@ -598,29 +561,6 @@ def triton_slide_smooth_quant_tma(x, smooth_scale):
     H = 32
     W = 16
 
-    # desc_helper = TmaAutoTuneHelper()
-    # desc_helper.init_tma_descriptor("x")
-    # desc_helper.init_tma_descriptor("xq")
-
-    # desc_helper.fill_2d_tma_descriptor(
-    #         "x",
-    #         x.data_ptr(),
-    #         M,
-    #         N,
-    #         W,
-    #         H,
-    #         x.element_size(),
-    # )
-
-    # desc_helper.fill_2d_tma_descriptor(
-    #         "xq",
-    #         x_q.data_ptr(),
-    #         M,
-    #         N,
-    #         W,
-    #         H,
-    #         q.element_size(),
-    # )
 
     TMA_SIZE = 128
     desc_x = np.empty(TMA_SIZE, dtype=np.int8)

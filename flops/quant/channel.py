@@ -12,6 +12,8 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
     n_block = tl.cdiv(N, BLOCK_SIZE)
     indices = tl.arange(0, BLOCK_SIZE)
     max_val = 1e-9
+    N = N.to(tl.int64)
+
     for j in range(n_block):
         offs = pid*N + j*BLOCK_SIZE + indices
         x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0)
