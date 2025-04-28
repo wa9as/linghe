@@ -8,10 +8,10 @@ import os
 import random
 
 
-def benchmark_func(fn, *args, n_repeat=1000, ref_flops=None, ref_time=None, name='', **kwargs):
+def benchmark_func(fn, *args, n_warmup=100, n_repeat=1000, ref_flops=None, ref_time=None, name='', **kwargs):
     func_name = fn.__name__
 
-    for i in range(100):
+    for i in range(n_warmup):
         fn(*args,**kwargs)
 
     start_events = [torch.cuda.Event(enable_timing=True) for _ in range(n_repeat)]

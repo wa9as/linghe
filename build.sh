@@ -1,1 +1,6 @@
-rm -rf build && rm -rf dist && rm -rf flops.egg-info && python setup.py bdist_wheel && cp -f dist/flops-0.0.1-py3-none-any.whl /076074/arch
+rm -rf build && 
+rm -rf dist && 
+rm -rf flops.egg-info && 
+python setup.py develop && 
+python setup.py bdist_wheel && 
+cp -f dist/flops-0.0.1-py3-none-any.whl /076074/arch
