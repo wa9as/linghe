@@ -402,6 +402,7 @@ if __name__ == '__main__':
 
 
     if False:
+        # test can run in `h800` aistudio exp
         from atorch.modules.moe.grouped_gemm_moe import Grouped_GEMM_MoE
         atorch_moe = Grouped_GEMM_MoE(
                         hidden_size=dim,
@@ -431,10 +432,9 @@ if __name__ == '__main__':
     opt_output = moe(hidden_states, logits, gate_up_weights, down_weights, n_act=n_act)
     # torch.testing.assert_close(org_output,opt_output,rtol=0.05,atol=0.01)
 
-    naive_fp8_moe(hidden_states, logits, wfns, vfns, n_act=n_act)
-    fused_fp8_moe_forward(hidden_states, logits, gate_up_weights, down_weights, n_act=n_act)
-    slide_fp8_moe_forward(hidden_states, logits, gate_up_weights.to(torch.float8_e4m3fn), gate_up_scales, down_weights.to(torch.float8_e4m3fn), down_scales, gate_up_smooth_scale, down_smooth_scale, n_act=4)
-    torch.cuda.synchronize() 
+    # naive_fp8_moe(hidden_states, logits, wfns, vfns, n_act=n_act)
+    # fused_fp8_moe_forward(hidden_states, logits, gate_up_weights, down_weights, n_act=n_act)
+    # slide_fp8_moe_forward(hidden_states, logits, gate_up_weights.to(torch.float8_e4m3fn), gate_up_scales, down_weights.to(torch.float8_e4m3fn), down_scales, gate_up_smooth_scale, down_smooth_scale, n_act=4)
 
     # print(expert*ims*2)
 
@@ -446,8 +446,8 @@ if __name__ == '__main__':
 
     benchmark_func(split_moe, hidden_states, logits, gate_weights, up_weights, down_weights, n_act=n_act, ref_flops=ref_flops, n_repeat=n_repeat)
     ref_time = benchmark_func(moe, hidden_states, logits, gate_up_weights, down_weights, n_act=n_act, ref_flops=ref_flops, n_repeat=n_repeat)
-    benchmark_func(naive_fp8_moe, hidden_states, logits, wfns, vfns, n_act=n_act, ref_flops=ref_flops, ref_time=ref_time, n_repeat=n_repeat)
-    benchmark_func(fused_fp8_moe_forward, hidden_states, logits, gate_up_weights, down_weights, n_act=n_act, ref_flops=ref_flops, ref_time=ref_time,n_repeat=n_repeat)
-    benchmark_func(slide_fp8_moe_forward, hidden_states, logits,  gate_up_weights.to(torch.float8_e4m3fn), gate_up_scales, down_weights.to(torch.float8_e4m3fn), down_scales, gate_up_smooth_scale, down_smooth_scale, n_act=n_act, ref_flops=ref_flops, ref_time=ref_time,n_repeat=n_repeat)
+    # benchmark_func(naive_fp8_moe, hidden_states, logits, wfns, vfns, n_act=n_act, ref_flops=ref_flops, ref_time=ref_time, n_repeat=n_repeat)
+    # benchmark_func(fused_fp8_moe_forward, hidden_states, logits, gate_up_weights, down_weights, n_act=n_act, ref_flops=ref_flops, ref_time=ref_time,n_repeat=n_repeat)
+    # benchmark_func(slide_fp8_moe_forward, hidden_states, logits,  gate_up_weights.to(torch.float8_e4m3fn), gate_up_scales, down_weights.to(torch.float8_e4m3fn), down_scales, gate_up_smooth_scale, down_smooth_scale, n_act=n_act, ref_flops=ref_flops, ref_time=ref_time,n_repeat=n_repeat)
 
 
