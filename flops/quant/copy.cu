@@ -20,6 +20,15 @@ __global__ void init_data_kernel(dtype *x, int N) {
     }
 }
 
+__device__ float fp8_to_fp32(uint8_t fp8_val) {
+    int s = (fp8_val & 0x80) ? -1 : 1;
+    int e = ((fp8_val & 0x78) >> 3) - 7;
+    int m = fp8_val & 0x07;
+
+    float result = s * powf(2.0f, e) * (1.0f + m / 8.0f);
+    return result;
+}
+
 __global__ void cp_kernel(dtype *x, int N) {
 
   const int BYTES = 16;
@@ -84,17 +93,29 @@ __global__ void cp_kernel(dtype *x, int N) {
 
   for (int i = 0; i < num_per_thread; i++) {
       C_frag_fp8[i] =  __nv_fp8_e4m3(__bfloat162float(A_frag_bf[i]) * scale);
-      // if (threadIdx.x == 1 && blockIdx.x == 0) {
-      //   printf("cfrag %f \n", __bfloat162float(A_frag_bf[i]) * scale);
-      // }
+      if (threadIdx.x == 0 && blockIdx.x == 0) {
+        printf("cfrag %f \n", __bfloat162float(A_frag_bf[i]) * scale);
+      }
   }
 
   // asm volatile("st.shared.v2.u32 [%0], {%1, %2};\n"
   //                     : :"r"(smem_fp8_ptr), "r"(3254828548U), "r"(3254828548U));
 
-  asm volatile("st.shared.v2.f32 [%0], {%1, %2};\n"
-                    : :"r"(smem_fp8_ptr), "r"(255.0f), "r"(255.0f));
+  // asm volatile("st.shared.v2.f32 [%0], {%1, %2};\n"
+  //                   : :"r"(smem_fp8_ptr), "f"(255.0f), "f"(255.0f));
 
+  asm volatile("st.shared.v2.f32 [%0], {%1, %2};\n"
+                  : :"r"(smem_fp8_ptr), "f"(C_frag[0]), "f"(C_frag[1]));
+  
+  __syncthreads();
+  
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    // for (int i = 0; i < threads * num_per_thread; i++) {
+    for (int i = 0; i < 10; i++) {
+        printf("smem fp8 %d : %f \n", i, fp8_to_fp32(uint8_t(smem_fp8[i])));
+    }
+  }
+  
   // asm volatile (
   //   "st.shared.v4.f32 [%0], {%1, %2, %3, %4};\n"
   //   : : "r"(addr), "f"(reg0), "f"(reg1), "f"(reg2), "f"(reg3)
