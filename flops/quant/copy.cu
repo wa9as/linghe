@@ -35,7 +35,8 @@ __global__ void cp_kernel(dtype *x, int N) {
   const int threads = 128;
   const int num_per_thread = BYTES / sizeof(dtype);
   __shared__ dtype smem[threads * num_per_thread];
-  __shared__ __nv_fp8_e4m3 smem_fp8[threads * num_per_thread];
+  // __shared__ __nv_fp8_e4m3 smem_fp8[threads * num_per_thread];
+  __shared__ __nv_fp8_storage_t smem_fp8[threads * num_per_thread];
 
   int index = threadIdx.x * num_per_thread;
   uint32_t smem_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(smem + index));
@@ -44,6 +45,7 @@ __global__ void cp_kernel(dtype *x, int N) {
 
   float A_frag[4];
   float C_frag[2];
+  // __nv_fp8_e4m3 C_frag[8];
 
   asm volatile(
     "{\n"
@@ -87,14 +89,24 @@ __global__ void cp_kernel(dtype *x, int N) {
   //     // printf("reg c.x %f \n", __bfloat162float(c.x));
   //     // printf("reg c.y %f \n", __bfloat162float(c.y));
   // }
-  float scale = 0.5f;
+  // float scale = 0.5f;
+  float scale = 1024/448.0f;
   __nv_bfloat16*  A_frag_bf   = reinterpret_cast<__nv_bfloat16*>(A_frag);
-  __nv_fp8_e4m3*  C_frag_fp8   = reinterpret_cast<__nv_fp8_e4m3*>(C_frag);
+  // __nv_fp8_e4m3*  C_frag_fp8   = reinterpret_cast<__nv_fp8_e4m3*>(C_frag);
+  __nv_fp8_storage_t*  C_frag_fp8   = reinterpret_cast<__nv_fp8_storage_t*>(C_frag);
 
   for (int i = 0; i < num_per_thread; i++) {
-      C_frag_fp8[i] =  __nv_fp8_e4m3(__bfloat162float(A_frag_bf[i]) * scale);
+      // C_frag_fp8[i] =  __nv_fp8_e4m3(__bfloat162float(A_frag_bf[i]) / scale);
+      // C_frag[i] =  __nv_fp8_e4m3(__bfloat162float(A_frag_bf[i]) / scale);
+      // C_frag[i] =  __nv_cvt_float_to_fp8(__bfloat162float(A_frag_bf[i]) / scale, __NV_SATFINITE, __NV_E4M3);
+      float val  = __bfloat162float(A_frag_bf[i]) / scale;
+      // __nv_fp8_storage_t res = __nv_cvt_float_to_fp8(val, __NV_SATFINITE, __NV_E4M3);
+      C_frag_fp8[i] = __nv_cvt_float_to_fp8(val, __NV_SATFINITE, __NV_E4M3);
       if (threadIdx.x == 0 && blockIdx.x == 0) {
-        printf("cfrag %f \n", __bfloat162float(A_frag_bf[i]) * scale);
+        printf("cfrag %d : %f \n", i, val);
+        // printf("C_frag fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(res, __NV_E4M3)));
+        printf("C_frag fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(C_frag_fp8[i], __NV_E4M3)));
+        // printf("C_frag fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(uint8_t(C_frag[i]), __NV_E4M3)));
       }
   }
 
@@ -107,13 +119,14 @@ __global__ void cp_kernel(dtype *x, int N) {
   asm volatile("st.shared.v2.f32 [%0], {%1, %2};\n"
                   : :"r"(smem_fp8_ptr), "f"(C_frag[0]), "f"(C_frag[1]));
   
-  __syncthreads();
+  // __syncthreads();
   
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     // for (int i = 0; i < threads * num_per_thread; i++) {
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 8; i++) {
         // printf("smem fp8 %d : %f \n", i, fp8_to_fp32(uint8_t(smem_fp8[i])));
-        printf("smem fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(uint8_t(smem_fp8[i]), __NV_E4M3)));
+        // printf("smem fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(uint8_t(smem_fp8[i]), __NV_E4M3)));
+        printf("smem fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(smem_fp8[i], __NV_E4M3)));
     }
   }
   
