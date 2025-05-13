@@ -112,7 +112,8 @@ __global__ void cp_kernel(dtype *x, int N) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     // for (int i = 0; i < threads * num_per_thread; i++) {
     for (int i = 0; i < 10; i++) {
-        printf("smem fp8 %d : %f \n", i, fp8_to_fp32(uint8_t(smem_fp8[i])));
+        // printf("smem fp8 %d : %f \n", i, fp8_to_fp32(uint8_t(smem_fp8[i])));
+        printf("smem fp8 %d : %f \n", i, __half2float(__nv_cvt_fp8_to_halfraw(uint8_t(smem_fp8[i]), __NV_E4M3)));
     }
   }
   
