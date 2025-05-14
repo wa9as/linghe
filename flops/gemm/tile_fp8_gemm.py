@@ -120,24 +120,20 @@ def fp8_gemm_bb_kernel(
     b_ptrs = b_ptr + offs_n[:, None] * K + offs_k[None, :]
 
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-    for i in range(k):
-        # a = tl.load(a_ptrs)
-        # b = tl.load(b_ptrs)
-        a_s = tl.load(a_s_ptr+pid_m + i)
-        b_s = tl.load(b_s_ptr+pid_n + i)
-        scale = a_s*b_s
-        a = tl.load(a_ptrs+i*BLOCK_SIZE_K, mask=offs_k[None, :] < K - i * BLOCK_SIZE_K, other=0.0)
-        b = tl.load(b_ptrs+i*BLOCK_SIZE_K, mask=offs_k[None, :] < K - i * BLOCK_SIZE_K, other=0.0)
-        # accumulator += tl.dot(a, tl.trans(b)) * scale
-        accumulators = tl.dot(a, tl.trans(b), accumulator)
-        accumulator += (accumulators-accumulator) * scale
-        # a_ptrs += BLOCK_SIZE_K
-        # b_ptrs += BLOCK_SIZE_K
+    for i in range(0, k):
+        a_s = tl.load(a_s_ptr+pid_m*(K//BLOCK_SIZE_K) + i)
+        b_s = tl.load(b_s_ptr+pid_n*(K//BLOCK_SIZE_K) + i)
+        a = tl.load(a_ptrs, mask=offs_k[None, :] < K - i * BLOCK_SIZE_K, other=0.0)
+        b = tl.load(b_ptrs, mask=offs_k[None, :] < K - i * BLOCK_SIZE_K, other=0.0)
+        accumulator += tl.dot(a, tl.trans(b)) * a_s * b_s
+        #accumulator = tl.dot(a, tl.trans(b), accumulator)
+        #accumulator += (accumulators-accumulator) * scale
+        a_ptrs += BLOCK_SIZE_K
+        b_ptrs += BLOCK_SIZE_K
     c = accumulator.to(c_ptr.dtype.element_ty)
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     c_ptrs = c_ptr + offs_m[:, None] * N + offs_n[None, :]
-    # tl.store(c_ptrs, c)
     mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
     tl.store(c_ptrs, c, mask=mask)
 
