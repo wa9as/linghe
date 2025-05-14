@@ -26,7 +26,7 @@
 #define LDST128(value) (reinterpret_cast<float4 *>(&(value))[0])
 
 // using FP8_TYPE = c10::Float8_e4m3fnuz;
-using FP8_TYPE = __nv_fp8_e4m3;
+// using FP8_TYPE = __nv_fp8_e4m3;
 
 // template <const int NUM_THREADS = 256>
 
@@ -60,7 +60,7 @@ __inline__ __device__ T blockReduceMax(T val)
 }
 
 __global__ void row_quant_bf16_kernel(__nv_bfloat16* __restrict__ x, 
-                                      FP8_TYPE* __restrict__ y,
+                                      __nv_fp8_storage_t* __restrict__ y,
                                       float* __restrict__ s,
                                       const int64_t M, const int64_t K) {
 
@@ -117,20 +117,22 @@ __global__ void row_quant_bf16_kernel(__nv_bfloat16* __restrict__ x,
     //   printf("out value i: %d index: %d\n", i, input_idx + i * vec_size);
     // }
     
-    FP8_TYPE reg_out[8];
+    // FP8_TYPE reg_out[8];
+    __nv_fp8_storage_t reg_out[8];
 
 #pragma unroll
     for (uint32_t j = 0; j < vec_size; ++j) {
       // float val = static_cast<float>(pack_x[j]);
       float val = fmaxf(fminf(__bfloat162float(pack_x[j]) * scale, 448.0),-448.0);
-      reg_out[j] = FP8_TYPE(val);
+      // reg_out[j] = FP8_TYPE(val);
+      reg_out[j] =  __nv_cvt_float_to_fp8(val, __NV_SATFINITE, __NV_E4M3);
 
       // if (tid == 0 && token_idx == 0 && i == 0 && j == 1){
       if (tid == 0 && token_idx == 0 ){
           // printf("pack value i: %d j: %d pack_value: %f\n", i, j, __bfloat162float(pack_x[j]));
           printf("float value i: %d j: %d val: %f\n", i, j, val);
           // printf("scale value : %f\n", scale);
-          printf("fp8 i: %d, j: %d, %f \n", i, j,  __half2float(__nv_cvt_fp8_to_halfraw(uint8_t(reg_out[j]), __NV_E4M3)));
+          printf("fp8 i: %d, j: %d, %f \n", i, j,  __half2float(__nv_cvt_fp8_to_halfraw(reg_out[j], __NV_E4M3)));
       }
       // reg_out[j] = __nv_cvt_float_to_fp8(val, __NV_SATFINITE, __NV_E4M3);
       // reg_out[j] = __nv_cvt_float_to_fp8( -250.046509f, __NV_SATFINITE, __NV_E4M3);
@@ -140,6 +142,7 @@ __global__ void row_quant_bf16_kernel(__nv_bfloat16* __restrict__ x,
 
 #pragma unroll
     for (uint32_t j = 0; j < vec_size; ++j) {
+      // y[output_idx + i * vec_size + j] = __nv_fp8_e4m3(reg_out[j]);
       y[output_idx + i * vec_size + j] = reg_out[j];
       // y[output_idx + i * vec_size + j] =  static_cast<FP8_TYPE>(-250.046509);
     }
@@ -163,7 +166,7 @@ void row_quant_bf16(torch::Tensor x, torch::Tensor y, torch::Tensor s) {
 
   row_quant_bf16_kernel<<<grid, block, 0, stream>>>(
         static_cast<__nv_bfloat16*>(x.data_ptr()),
-        static_cast<FP8_TYPE*>(y.data_ptr()),
+        static_cast<__nv_fp8_storage_t*>(y.data_ptr()),
         static_cast<float*>(s.data_ptr()),
         num_tokens,
         hidden_dim
