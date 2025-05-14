@@ -151,25 +151,32 @@ x_scale = torch.empty((batch_size,1), device=device, dtype=torch.float32)
 # print(x[0, :])
 # indices = torch.nonzero(torch.eq(x[0, :], -0.8281))
 # print(indices)
-print("-" * 85)
+# print("-" * 85)
 
-lib.row_quant_bf16(x, y, x_scale)
-print(x[0, :8])
-print(x[0,2048:2048+8])
-print(y[0, 2048:2048+8])
-# print(x_scale)
-print("-" * 85)
-
-
-triton_xq, triton_scale = triton_row_quant(x)
-print(1/triton_scale[0])
-print(x[0, :8])
-print(x[0,2048:2048+8])
-print(triton_xq[0, 2048:2048+8])
+# lib.row_quant_bf16(x, y, x_scale)
+# # print(x[0, :8])
+# # print(x[0,2048:2048+8])
+# print(y[0, 256:256+8])
+# # print(y[0, 2048:2048+256])
+# # print(y[0, 2048+256:2048+256+8])
+# # print(x_scale)
+# print("-" * 85)
 
 
-# n_repeat = 100
-# benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
-# benchmark_func(lib.row_quant_bf16, x, y, x_scale, n_repeat=n_repeat)
+# triton_xq, triton_scale = triton_row_quant(x)
+# # print(1/triton_scale[0])
+# print(x[0, 256:256+8])
+# # print(x[0,2048:2048+8])
+# print(triton_xq[0, 256:256+8])
+# # print(triton_xq[0, 2048:2048+8])
+# # print(triton_xq[0, 2048:2048+256])
+# # print(triton_xq[0, 2048+256:2048+256+8])
+# # print(triton_scale)
+
+# print(torch.equal(x_scale, triton_scale))
+
+n_repeat = 100
+benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
+benchmark_func(lib.row_quant_bf16, x, y, x_scale, n_repeat=n_repeat)
 
 

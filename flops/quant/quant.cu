@@ -53,7 +53,7 @@ __inline__ __device__ T blockReduceMax(T val)
 
     __syncthreads();
 
-    val = (threadIdx.x < (blockDim.x / 32.f)) ? shared[lane] : -1e20f;
+    val = (lane < (blockDim.x / 32.f)) ? shared[lane] : -1e20f;
     val = warpReduceMax(val);
 
     return val;
@@ -98,6 +98,10 @@ __global__ void row_quant_bf16_kernel(__nv_bfloat16* __restrict__ x,
 
   max_value = blockReduceMax(max_value);
 
+  // if (tid == 32 && token_idx == 0){
+  //   printf("max value %f\n", max_value);
+  // }
+
   __shared__ float blockmax;
   if (tid == 0){
     blockmax = max_value / 448.0f;
@@ -113,7 +117,7 @@ __global__ void row_quant_bf16_kernel(__nv_bfloat16* __restrict__ x,
     
     __nv_bfloat16 pack_x[8]; 
     LDST128(pack_x[0]) = LDST128(x[input_idx + i * vec_size]);
-    // if (tid == 0 && token_idx == 0 ){
+    // if (tid == 32 && token_idx == 0 ){
     //   printf("out value i: %d index: %d\n", i, input_idx + i * vec_size);
     // }
     
@@ -128,24 +132,27 @@ __global__ void row_quant_bf16_kernel(__nv_bfloat16* __restrict__ x,
       reg_out[j] =  __nv_cvt_float_to_fp8(val, __NV_SATFINITE, __NV_E4M3);
 
       // if (tid == 0 && token_idx == 0 && i == 0 && j == 1){
-      if (tid == 0 && token_idx == 0 ){
-          // printf("pack value i: %d j: %d pack_value: %f\n", i, j, __bfloat162float(pack_x[j]));
-          printf("float value i: %d j: %d val: %f\n", i, j, val);
-          // printf("scale value : %f\n", scale);
-          printf("fp8 i: %d, j: %d, %f \n", i, j,  __half2float(__nv_cvt_fp8_to_halfraw(reg_out[j], __NV_E4M3)));
-      }
+      // if (tid == 32 && token_idx == 0 ){
+      //     printf("pack value i: %d j: %d pack_value: %f\n", i, j, __bfloat162float(pack_x[j]));
+      //     printf("float value i: %d j: %d val: %f\n", i, j, val);
+      //     printf("scale value : %f\n", scale);
+      //     printf("fp8 i: %d, j: %d, %f \n", i, j,  __half2float(__nv_cvt_fp8_to_halfraw(reg_out[j], __NV_E4M3)));
+      // }
       // reg_out[j] = __nv_cvt_float_to_fp8(val, __NV_SATFINITE, __NV_E4M3);
       // reg_out[j] = __nv_cvt_float_to_fp8( -250.046509f, __NV_SATFINITE, __NV_E4M3);
       // printf("j %d, val %f\n", j, val);
       // y[output_idx + i * vec_size + j] = FP8_TYPE(val / blockmax);
     }
 
-#pragma unroll
-    for (uint32_t j = 0; j < vec_size; ++j) {
-      // y[output_idx + i * vec_size + j] = __nv_fp8_e4m3(reg_out[j]);
-      y[output_idx + i * vec_size + j] = reg_out[j];
-      // y[output_idx + i * vec_size + j] =  static_cast<FP8_TYPE>(-250.046509);
-    }
+// #pragma unroll
+//     for (uint32_t j = 0; j < vec_size; ++j) {
+//       // y[output_idx + i * vec_size + j] = __nv_fp8_e4m3(reg_out[j]);
+//       y[output_idx + i * vec_size + j] = reg_out[j];
+//       // y[output_idx + i * vec_size + j] =  static_cast<FP8_TYPE>(-250.046509);
+//     }
+    
+    LDST128(y[output_idx + i * vec_size]) = LDST128(reg_out[0]);
+    
   }  
   
   
