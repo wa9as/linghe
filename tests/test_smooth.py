@@ -8,7 +8,8 @@ from flops.utils.benchmark import *
 device = 'cuda:0'
 dtype = torch.bfloat16
 
-x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+# x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/tmp_flops/forward_1.pkl', tile=False)
 
 
 batch_size, in_dim = x.shape 
@@ -16,8 +17,10 @@ out_dim, in_dim = w.shape
 
 org_out = fp16_forward(x, w.t())
 
-# modes = ['direct','global','channel','dynamic','reuse']
-modes = ['reuse']
+
+
+modes = ['direct','global','channel','channel backward', 'channel update', 'dynamic','reuse']
+# modes = ['channel', 'channel backward', 'channel update']
 for mode in modes:
     if mode == 'direct':
         xq, wq, scale = torch_smooth_direct_quant(x,w,torch.float8_e4m3fn)
@@ -31,10 +34,29 @@ for mode in modes:
 
     elif mode == 'channel':
         xq, wq, x_scale, w_scale = torch_smooth_quant(x,w,torch.float8_e4m3fn)
+        # print(f"x.size() {x.size()}")
+        # print(f"w.size() {w.size()}")
+        # print(f"x_scale.size() {x_scale.size()}")
+        # print(f"w_scale.size() {w_scale.size()}")
+    
         xdq = xq.to(dtype)*x_scale
         wdq = wq.to(dtype)*w_scale
         opt_out = xdq@wdq.t()
         quant_check(org_out, xq, wq, opt_out,mode)
+
+    elif mode == 'channel backward':
+        # print(f"y.size() {y.size()}")
+        # print(f"w.size() {w.size()}")
+        yq, wq, y_scale, w_scale = torch_smooth_quant(y,w.t(),torch.float8_e4m3fn)
+
+        quant_check(org_out, yq, wq, org_out,mode)
+
+    elif mode == 'channel update':
+        # print(f"y.size() {y.size()}")
+        # print(f"x.size() {x.size()}")
+        yq, xq, y_scale, x_scale = torch_smooth_quant(y.t(),x.t(),torch.float8_e4m3fn)
+
+        quant_check(org_out, yq, xq, org_out,mode)
 
     elif mode == 'dynamic':
         xq,wq,yq,ytq,o, dx, dw = dynamic_quant_f_and_b(x,w,y)
@@ -56,7 +78,7 @@ for mode in modes:
         quant_check(ref_dx, yq, wq, dx,mode)
         quant_check(ref_dw, ytq, xq, dw,mode)
 
-        impl = 'reuse'
+        impl = 'none'
         if impl == 'reuse':
             o, dx, dw, smooth_scale = reused_smooth_quant_f_and_b(x,w,y)
             output_check(ref_o, o, mode)

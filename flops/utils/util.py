@@ -335,9 +335,14 @@ def read_and_tile(filename, tile=True):
     device = 'cuda:0'
     dtype = torch.bfloat16
     d = torch.load(filename, weights_only=True)
-    x = d['x'][0].to(dtype).to(device)
+    # x = d['x'][0].to(dtype).to(device)
+    # w = d['w'].to(dtype).to(device)
+    # y = d['y'][0].to(dtype).to(device)
+    x = d['x']
+    y = d['y']
+    x = x.view(-1, x.size(2)).to(dtype).to(device)
     w = d['w'].to(dtype).to(device)
-    y = d['y'][0].to(dtype).to(device)
+    y = y.view(-1, y.size(2)).to(dtype).to(device)
 
     if tile:
         min_block = 256

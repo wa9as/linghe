@@ -2,18 +2,32 @@ import torch
 
 from flops.quant.hadamard import *
 from flops.utils.util import *
+from flops.quant.tile import *
 
 
 qtype = torch.float8_e4m3fn
 device = 'cuda:0'
 dtype = torch.bfloat16
 
+def tile_block_quant(x, w):
+    x_q, x_scale = tile_quant(x)
+    w_q, w_scale = block_quant(w)
+    # output = torch._scaled_mm(x_q,
+    #                             w_q.t(),
+    #                             scale_a=x_scale,
+    #                             scale_b=w_scale,
+    #                             out_dtype=x.dtype,
+    #                             use_fast_accum=True)
+    output = torch.randn([8192, 7168], device=x.device)
+    return output,x_q,w_q,x_scale,w_scale
+    
 
-x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+# x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/tmp_flops/forward_1.pkl', tile=True)
 
 
 B = 64
-hm = hadamard_matrix(B, dtype=dtype, device=device, norm=True)
+hm = hadamard_matrix(B, dtype=dtype, device=device, norm=False)
 
 batch_size, in_dim = x.shape 
 out_dim, in_dim = w.shape
@@ -66,9 +80,12 @@ for mode in modes:
         # opt_out = xb@wb.t()
         # quant_check(org_out, xb, wb, opt_out, mode)
 
-        impl = 'seperate'
+        # impl = 'seperate'
+        # impl = 'bit'
+        impl = 'tile'
         if impl == 'seperate':
             opt_out,xq,wq,x_scale,w_scale = hadamard_quant_forward_debug(x,w,hm)
+            print(opt_out.size())
             quant_check(org_out, xq, wq, opt_out, 'hadamard_quant_forward')
 
             opt_out,yq,wq,y_scale,w_scale = hadamard_quant_backward_debug(y,w,hm)
@@ -95,6 +112,9 @@ for mode in modes:
 
             output,y_q,x_q,y_scale,x_scale=bit_hadamard_quant_update_debug(y_bt,x_bt, hm)
             quant_check(y.t()@x, y_q, x_q, output, 'bit_hadamard_quant_update')
-
+        
+        elif impl == "tile":
+            opt_out,xq,wq,x_scale,w_scale = tile_block_quant(x,w)
+            quant_check(org_out, xq, wq, org_out, 'tile_block_forward')
 
 
