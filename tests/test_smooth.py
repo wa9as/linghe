@@ -19,8 +19,8 @@ org_out = fp16_forward(x, w.t())
 
 
 
-# modes = ['direct','global','channel','channel backward', 'channel update', 'dynamic','reuse']
-modes = ['channel', 'channel backward', 'channel update']
+# modes = ['direct','global','channel','channel_backward', 'channel_update', 'dynamic','reuse']
+modes = ['channel', 'channel_backward', 'channel_update']
 for mode in modes:
     if mode == 'direct':
         xq, wq, scale = torch_smooth_direct_quant(x,w,torch.float8_e4m3fn)
@@ -39,12 +39,12 @@ for mode in modes:
         # print(f"x_scale.size() {x_scale.size()}")
         # print(f"w_scale.size() {w_scale.size()}")
     
-        # xdq = xq.to(dtype)*x_scale
-        # wdq = wq.to(dtype)*w_scale
-        # opt_out = xdq@wdq.t()
-        # quant_check(org_out, xq, wq, opt_out,mode)
+        xdq = xq.to(dtype)*x_scale
+        wdq = wq.to(dtype)*w_scale
+        opt_out = xdq@wdq.t()
+        quant_check(org_out, xq, wq, opt_out,mode)
 
-    elif mode == 'channel backward':
+    elif mode == 'channel_backward':
         # print(f"y.size() {y.size()}")
         # print(f"w.size() {w.size()}")
         yq, wq, y_scale, w_scale = torch_smooth_quant(y,w.t(),torch.float8_e4m3fn)
@@ -55,7 +55,7 @@ for mode in modes:
         opt_out = ydq@wdq.t()
         quant_check(y@w, yq, wq, opt_out, mode)
 
-    elif mode == 'channel update':
+    elif mode == 'channel_update':
         # print(f"y.size() {y.size()}")
         # print(f"x.size() {x.size()}")
         yq, xq, y_scale, x_scale = torch_smooth_quant(y.t(),x.t(),torch.float8_e4m3fn)

@@ -19,6 +19,26 @@ def torch_channel_quant(x,w, dtype):
     w_q = (w/w_scale).to(dtype)
     return x_q,w_q,x_scale,w_scale
 
+def torch_tile_block_quant(x,w,B,dtype):
+    fmax = torch.finfo(dtype).max
+    x = x.clone()
+    w = w.clone()
+    M, K = x.shape 
+    N, K = w.shape
+
+    xp = torch.reshape(x.contiguous(),(M,K//B,B))
+    x_scale = torch.amax(torch.abs(xp).float(),dim=2)/fmax
+    xq = (xp/x_scale[:,:,None]).to(dtype)
+    xq = torch.reshape(xq,(M,K)).contiguous()
+
+    wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
+    w_scale = torch.amax(torch.amax(torch.abs(wp).float(),dim=2),dim=2)/fmax
+    wq = (wp/w_scale[:,:,None,None]).to(dtype)
+    wq = wq.permute(0,2,1,3)
+    wq = torch.reshape(wq,(K,N)).t().contiguous()
+
+    return xq,wq,x_scale,w_scale
+
 # direct quant without scaling to 448
 def torch_smooth_direct_quant(x, w, dtype):
     # w:[bs, in]  w:[out, in]
@@ -152,6 +172,40 @@ def torch_hadamard_tensor_quant(x,w,hm,dtype):
     # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
     w_scale = torch.max(torch.abs(wp).float())/fmax
     wq = (wp/w_scale).to(dtype)
+
+    return xq, wq, x_scale, w_scale
+
+
+def torch_hadamard_block_quant(x,w,hm,dtype):
+    fmax = torch.finfo(dtype).max
+    x = x.clone()
+    w = w.clone()
+    M, K = x.shape 
+    N, K = w.shape
+    B = hm.size(0)
+
+    xp = torch.reshape(x,(M//B,B,K//B,B)).permute(0,2,1,3)
+
+    xp = xp@hm
+
+    x_scale = torch.amax(torch.amax(torch.abs(xp).float(),dim=2),dim=2)/fmax
+    # print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
+    xq = (xp/x_scale[:,:,None,None]).to(dtype)
+
+    xq = xq.view(torch.int8).permute(0,2,1,3)
+    xq = torch.reshape(xq,(M,K)).view(torch.float8_e4m3fn)
+
+
+    wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
+    wp = hm@wp
+
+    w_scale = torch.amax(torch.amax(torch.abs(wp).float(),dim=2),dim=2)/fmax
+    # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
+    wq = (wp/w_scale[:,:,None,None]).to(dtype)
+
+    wq = wq.view(torch.int8).permute(0,2,1,3)
+    wq = torch.reshape(wq,(K,N)).t().contiguous().view(torch.float8_e4m3fn)
+
 
     return xq, wq, x_scale, w_scale
 
