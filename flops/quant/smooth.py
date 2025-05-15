@@ -89,7 +89,7 @@ def smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, smooth_scale_ptr, M, N, K, H:
     pid = tl.program_id(axis=0)
     # col-wise read, col-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     m = tl.cdiv(M, H)
     for i in range(m):
         x = tl.load(x_ptr+offs)
@@ -98,7 +98,7 @@ def smooth_nt_kernel(x_ptr, xs_ptr, w_ptr, ws_ptr, smooth_scale_ptr, M, N, K, H:
 
     n = tl.cdiv(N, H)
     offs = (pid*W + tl.arange(0, H)[:,None]*K + tl.arange(0, W)[None,:]).to(tl.int64)
-    w_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    w_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     for i in range(n):
         w = tl.load(w_ptr+offs)
         w_max = tl.maximum(tl.max(tl.abs(w), axis=0),w_max)
@@ -187,7 +187,7 @@ def smooth_nn_kernel(y_ptr, ys_ptr, w_ptr, ws_ptr, M, N, K, H: tl.constexpr, W: 
     # y: col-wise read, col-wise write
     # w: row-wise read, col-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
-    y_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    y_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     m = tl.cdiv(M, H)
     for i in range(m):
         y = tl.load(y_ptr+offs)
@@ -195,7 +195,7 @@ def smooth_nn_kernel(y_ptr, ys_ptr, w_ptr, ws_ptr, M, N, K, H: tl.constexpr, W: 
         offs += H*N
 
     k = tl.cdiv(K, H)
-    w_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    w_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     offs = pid*W*K + tl.arange(0, W)[:,None]*K + tl.arange(0, H)[None,:]
     for i in range(k):
         w = tl.load(w_ptr+offs)
@@ -280,7 +280,7 @@ def smooth_tn_kernel(y_ptr, ys_ptr, x_ptr, xs_ptr, M, N, K, H: tl.constexpr, W: 
     # y: row-wise read, col-wise write
     # x: row-wise read, col-wise write
     n = tl.cdiv(N, H)
-    y_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    y_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     for i in range(n):
         y = tl.load(y_ptr+offs)
@@ -288,7 +288,7 @@ def smooth_tn_kernel(y_ptr, ys_ptr, x_ptr, xs_ptr, M, N, K, H: tl.constexpr, W: 
         offs += H
 
     k = tl.cdiv(K, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     offs = pid*W*K + tl.arange(0, W)[:,None]*K + tl.arange(0, H)[None,:]
     for i in range(k):
         x = tl.load(x_ptr+offs)
@@ -466,7 +466,7 @@ def slide_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexp
     # row-wise read, row-wise write
     offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-20
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     n = tl.cdiv(N, H)
     for i in range(n):
         x = tl.load(x_ptr+offs)
@@ -520,7 +520,7 @@ def slide_smooth_quant_tma_kernel(x_desc_ptr, q_desc_ptr, ss_ptr, qs_ptr, M, N, 
     # offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     offs = pid*W*N
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-20
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     n = tl.cdiv(N, H)
     for i in range(n):
         # x = tl.load(x_ptr+offs)
@@ -596,7 +596,7 @@ def slide_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: t
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-9
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1.17e-38
     m = tl.cdiv(M, H)
     for i in range(m):
         x = tl.load(x_ptr+offs)
@@ -738,7 +738,7 @@ def fused_smooth_kernel_nt(x_ptr, xb_ptr, xm_ptr, w_ptr, wb_ptr, wm_ptr, smooth_
     for i in range(m):
         x = tl.load(x_ptrs)
         x = x * w_scale
-        xs_max = tl.maximum(tl.max(tl.abs(x), axis=1), 1e-9)
+        xs_max = tl.maximum(tl.max(tl.abs(x), axis=1), 1.17e-38)
         tl.store(xs_ptrs, x)
         tl.store(xs_max_ptrs, xs_max)
         x_ptrs += H*K
@@ -752,7 +752,7 @@ def fused_smooth_kernel_nt(x_ptr, xb_ptr, xm_ptr, w_ptr, wb_ptr, wm_ptr, smooth_
     for i in range(n):
         w = tl.load(w_ptrs)
         ws = w * x_scale
-        ws_max = tl.maximum(tl.max(tl.abs(ws), axis=1), 1e-9)
+        ws_max = tl.maximum(tl.max(tl.abs(ws), axis=1), 1.17e-38)
         tl.store(ws_ptrs, ws)
         tl.store(ws_max_ptrs, ws_max)
         w_ptrs += H*K

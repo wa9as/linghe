@@ -297,7 +297,7 @@ def fused_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BLOCK_SIZE: 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
     offs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
     n = tl.cdiv(N, BLOCK_SIZE)
-    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+1e-9
+    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+1.17e-38
     for i in range(n):
         x = tl.load(x_ptr+offs)
         if SIDE == 0:
@@ -323,11 +323,13 @@ def fused_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BLOCK_SIZE: 
 
 
 
-def triton_fused_hadamard(x, hm, hm_side=1, op_side=0, R=2):
-    # for x in y = x @ w, op_side = 0, hm_side=1
-    # for wT in dx = y @ wT, hm_side=1: hm_side = 0 in logical format, but hm_side will be 1 with transpose format
-    # for yT in dwT = yT @ x, hm_side=1, op_side = 0
-    # for x in dwT = yT @ x, hm_side=1, op_side = 1
+def triton_fused_hadamard(x, hm, op_side=0, hm_side=1, R=2):
+    # y = x @ w
+    #   x: op_side = 0, hm_side=1
+    #   w: op_side = 1, hm_side=1
+    # dx = y @ wT, 
+    #   y: op_side = 0, hm_side=1
+
     M, N = x.shape
     x_b = torch.empty((M,N),dtype=x.dtype,device=x.device)
     if op_side == 0:
@@ -367,7 +369,7 @@ def fused_transpose_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BL
     offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
     toffs = pid*BLOCK_SIZE*M + tl.arange(0, BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
     m = tl.cdiv(M, BLOCK_SIZE)
-    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+1e-9
+    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+1.17e-38
     for i in range(m):
         x = tl.trans(tl.load(x_ptr+offs))
         if SIDE == 0:
@@ -393,10 +395,12 @@ def fused_transpose_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BL
         toffs += R*BLOCK_SIZE
 
 
-def triton_fused_transpose_hadamard(x, hm, hm_side=1, op_side=0, R=2):
-    # for wT in dx = y @ wT, op_side = 0, hm_side = 1: hm_side = 0 in logical format, but hm_side will be 1 with transpose format
-    # for yT in dwT = yT @ x, op_side = 0, hm_side = 0
-    # for x in dwT = yT @ x, op_side = 1, hm_side = 1
+def triton_fused_transpose_hadamard(x, hm, op_side=0, hm_side=1, R=2):
+    # dx = y @ wT
+    #   wT: op_side = 1, hm_side = 1
+    # dwT = yT @ x:
+    #   yT: op_side = 0, hm_side = 0
+    #   x: op_side = 1, hm_side = 1
     M, N = x.shape
     x_b = torch.empty((N,M),dtype=x.dtype,device=x.device)
     if op_side == 0:
@@ -424,7 +428,7 @@ def triton_fused_transpose_hadamard(x, hm, hm_side=1, op_side=0, R=2):
 
 
 """
-write h@x and h@w as well, bit for BIlateral Transform
+write h@x and h@w, bit for BIlateral Transform
 y = x @ w
 dx = y @ wT
 dwT = yT @ x
