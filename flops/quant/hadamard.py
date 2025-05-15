@@ -427,6 +427,114 @@ def triton_fused_transpose_hadamard(x, hm, op_side=0, hm_side=1, R=2):
     return x_q,x_s
 
 
+
+# y = x @ w
+# dx = y @ wT
+# dwT = yT @ x
+def triton_hadamard_blockwise_quant_x(x, hm):
+    # apply hadamard transformation and quantization for x
+    # y = x @ w: x->x@h and blockwise quant
+    # dwT = yT @ x: x->xT@h and blockwise quant
+    M, N = x.shape
+    B = hm.size(0)
+    device = x.device 
+    x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
+    xt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
+    x_scale = torch.empty((M//B,N//B),dtype=torch.float32,device=device)
+    xt_scale = torch.empty((N//B,M//B),dtype=torch.float32,device=device)
+
+    BLOCK_SIZE = hm.size(0)
+    R = 1
+    # grid = lambda META: (N//BLOCK_SIZE, )
+    # hadamard_blockwise_quant_kernel[grid](
+    #     x, 
+    #     hm,
+    #     x_q,
+    #     xt_q,
+    #     x_scale, 
+    #     xt_scale,
+    #     M,
+    #     N,
+    #     BLOCK_SIZE,
+    #     R,
+    #     num_stages=6,
+    #     num_warps=4
+    # )
+    return x_q,xt_q,x_scale,xt_scale
+
+
+
+# y = x @ w
+# dx = y @ wT
+# dwT = yT @ x
+def triton_hadamard_blockwise_quant_w(w, hm):
+    # apply hadamard transformation and quantization for w
+    # y = x @ w: w->w@h and blockwise quant
+    # dx = y @ wT: w->h@wT and blockwise quant
+    M, N = w.shape
+    B = hm.size(0)
+    device = w.device
+    w_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
+    wt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
+    w_scale = torch.empty((M//B,N//B),dtype=torch.float32,device=device)
+    wt_scale = torch.empty((N//B,M//B),dtype=torch.float32,device=device)
+
+    BLOCK_SIZE = hm.size(0)
+    R = 1
+    # grid = lambda META: (M//BLOCK_SIZE, )
+    # hadamard_blockwise_quant_kernel[grid](
+    #     w, 
+    #     hm,
+    #     w_q,
+    #     wt_q,
+    #     w_scale, 
+    #     wt_scale,
+    #     M,
+    #     N,
+    #     BLOCK_SIZE,
+    #     R,
+    #     num_stages=6,
+    #     num_warps=4
+    # )
+    return w_q,wt_q,w_scale,wt_scale
+
+
+# y = x @ w
+# dx = y @ wT
+# dwT = yT @ x
+def triton_hadamard_blockwise_quant_y(y, hm):
+    # apply hadamard transformation and quantization for dy
+    # dx = y @ wT: y->y@h and blockwise quant
+    # dwT = yT @ x: y->h@yT and blockwise quant
+    M, N = y.shape
+    B = hm.size(0)
+    device = y.device
+    y_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
+    yt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
+    y_scale = torch.empty((M//B,N//B),dtype=torch.float32,device=device)
+    yt_scale = torch.empty((N//B,M//B),dtype=torch.float32,device=device)
+
+    BLOCK_SIZE = hm.size(0)
+    R = 1
+    # grid = lambda META: (N//BLOCK_SIZE, )
+    # hadamard_blockwise_quant_kernel[grid](
+    #     y, 
+    #     hm,
+    #     y_q,
+    #     yt_q,
+    #     y_scale, 
+    #     yt_scale,
+    #     M,
+    #     N,
+    #     BLOCK_SIZE,
+    #     R,
+    #     num_stages=6,
+    #     num_warps=4
+    # )
+    return y_q,yt_q,y_scale,yt_scale
+
+
+
 """
 write h@x and h@w, bit for BIlateral Transform
 y = x @ w

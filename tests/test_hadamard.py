@@ -75,14 +75,8 @@ for mode in modes:
         wdq = wq.to(torch.float32).t()*w_scales
         opt_out = xdq@wdq
 
-        # print('x',x[:4,:4])
-        # print('w',w[:4,:4])
-        # print('xq',xq[:4,:4])
-        # print('wq',wq[:4,:4])
-        # print('org',org_out[:4,:4])
-        # print('opt',opt_out[:4,:4])
-
         quant_check(org_out, xq, wq, opt_out, mode)
+
 
     elif mode == 'channel':
 
