@@ -433,8 +433,8 @@ def triton_fused_transpose_hadamard(x, hm, op_side=0, hm_side=1, R=2):
 # dwT = yT @ x
 def triton_hadamard_quant_x(x, hm):
     # apply hadamard transformation and quantization for x
-    # y = x @ w: x->x@h and blockwise quant
-    # dwT = yT @ x: x->xT@h and blockwise quant
+    # y = x @ w: x->x@h and rowwise quant
+    # dwT = yT @ x: x->xT@h and rowwise quant
     M, N = x.shape
     B = hm.size(0)
     device = x.device 
@@ -467,10 +467,10 @@ def triton_hadamard_quant_x(x, hm):
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_hadamard_blockwise_quant_w(w, hm):
+def triton_hadamard_quant_w(w, hm):
     # apply hadamard transformation and quantization for w
-    # y = x @ w: w->w@h and blockwise quant
-    # dx = y @ wT: w->h@wT and blockwise quant
+    # y = x @ w: w->w@h and rowwise quant
+    # dx = y @ wT: w->h@wT and rowwise quant
     M, N = w.shape
     B = hm.size(0)
     device = w.device
@@ -482,7 +482,7 @@ def triton_hadamard_blockwise_quant_w(w, hm):
     BLOCK_SIZE = hm.size(0)
     R = 1
     # grid = lambda META: (M//BLOCK_SIZE, )
-    # hadamard_blockwise_quant_kernel[grid](
+    # hadamard_quant_kernel[grid](
     #     w, 
     #     hm,
     #     w_q,
@@ -502,10 +502,10 @@ def triton_hadamard_blockwise_quant_w(w, hm):
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_hadamard_blockwise_quant_y(y, hm):
+def triton_hadamard_quant_y(y, hm):
     # apply hadamard transformation and quantization for dy
-    # dx = y @ wT: y->y@h and blockwise quant
-    # dwT = yT @ x: y->h@yT and blockwise quant
+    # dx = y @ wT: y->y@h and rowwise quant
+    # dwT = yT @ x: y->h@yT and rowwise quant
     M, N = y.shape
     B = hm.size(0)
     device = y.device
@@ -517,7 +517,7 @@ def triton_hadamard_blockwise_quant_y(y, hm):
     BLOCK_SIZE = hm.size(0)
     R = 1
     # grid = lambda META: (N//BLOCK_SIZE, )
-    # hadamard_blockwise_quant_kernel[grid](
+    # hadamard_quant_kernel[grid](
     #     y, 
     #     hm,
     #     y_q,
