@@ -41,7 +41,7 @@ elif mode == 'bb':
     x_scales = torch.randn((M//B, K//B),dtype=torch.float32, device=device)
     w_scales = torch.randn((N//B, K//B),dtype=torch.float32, device=device)
     fp8_gemm(x_f8, x_scales, w_f8, w_scales, dtype)
-    benchmark_func(fp8_gemm, x_f8, x_scales, w_f8, w_scales, dtype, n_repeat=n_repeat, ref_flops=ref_flops)
+    benchmark_func(fp8_gemm, x_f8, w_f8, x_scales, w_scales, out_dtype=dtype, n_repeat=n_repeat, ref_flops=ref_flops)
 
 elif mode == 'quant':
     benchmark_func(block_quant, x,n_repeat=n_repeat)

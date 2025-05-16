@@ -235,13 +235,13 @@ def fp8_gemm_tt_kernel(
     tl.store(c_ptrs, c, mask=mask)
 
 
-def fp8_gemm(a: torch.Tensor, a_s: torch.Tensor, b: torch.Tensor, b_s: torch.Tensor, dtype: torch.types):
+def fp8_gemm(a: torch.Tensor, b: torch.Tensor, a_s: torch.Tensor, b_s: torch.Tensor, out_dtype=torch.bfloat16):
     assert a.is_contiguous() and b.is_contiguous()
     assert a_s.is_contiguous() and b_s.is_contiguous()
     K = a.size(-1)
     M = a.numel() // K
     N = b.size(0)
-    c = a.new_empty(*a.size()[:-1], N, dtype=dtype)
+    c = a.new_empty(*a.size()[:-1], N, dtype=out_dtype)
     a_tile_scale = a_s.size(0) == a.size(0)
     b_tile_scale = b_s.size(0) == b.size(0)
     block_size = K // a_s.size(-1)

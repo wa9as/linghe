@@ -431,7 +431,7 @@ def triton_fused_transpose_hadamard(x, hm, op_side=0, hm_side=1, R=2):
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_hadamard_blockwise_quant_x(x, hm):
+def triton_hadamard_quant_x(x, hm):
     # apply hadamard transformation and quantization for x
     # y = x @ w: x->x@h and blockwise quant
     # dwT = yT @ x: x->xT@h and blockwise quant
@@ -440,13 +440,13 @@ def triton_hadamard_blockwise_quant_x(x, hm):
     device = x.device 
     x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
     xt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
-    x_scale = torch.empty((M//B,N//B),dtype=torch.float32,device=device)
-    xt_scale = torch.empty((N//B,M//B),dtype=torch.float32,device=device)
+    x_scale = torch.empty((M,1),dtype=torch.float32,device=device)
+    xt_scale = torch.empty((1,N),dtype=torch.float32,device=device)
 
     BLOCK_SIZE = hm.size(0)
     R = 1
     # grid = lambda META: (N//BLOCK_SIZE, )
-    # hadamard_blockwise_quant_kernel[grid](
+    # hadamard_quant_kernel[grid](
     #     x, 
     #     hm,
     #     x_q,
@@ -476,8 +476,8 @@ def triton_hadamard_blockwise_quant_w(w, hm):
     device = w.device
     w_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
     wt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
-    w_scale = torch.empty((M//B,N//B),dtype=torch.float32,device=device)
-    wt_scale = torch.empty((N//B,M//B),dtype=torch.float32,device=device)
+    w_scale = torch.empty((1,M),dtype=torch.float32,device=device)
+    wt_scale = torch.empty((1,N),dtype=torch.float32,device=device)
 
     BLOCK_SIZE = hm.size(0)
     R = 1
@@ -511,8 +511,8 @@ def triton_hadamard_blockwise_quant_y(y, hm):
     device = y.device
     y_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
     yt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
-    y_scale = torch.empty((M//B,N//B),dtype=torch.float32,device=device)
-    yt_scale = torch.empty((N//B,M//B),dtype=torch.float32,device=device)
+    y_scale = torch.empty((1,M),dtype=torch.float32,device=device)
+    yt_scale = torch.empty((1,N),dtype=torch.float32,device=device)
 
     BLOCK_SIZE = hm.size(0)
     R = 1
