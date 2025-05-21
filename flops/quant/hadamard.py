@@ -464,8 +464,8 @@ def hadamard_quant_kernel(
         col_max = tl.max(abs_x, axis=0)
         max_col = tl.maximum(max_col, col_max)
     
-    scale_row = 448.0 / max_row
-    scale_col = 448.0 / max_col
+    scale_row = 448.0 / tl.where(max_row > 1e-9, max_row, 1.0)
+    scale_col = 448.0 / tl.where(max_col > 1e-9, max_col, 1.0)
     tl.store(x_scale_ptr + offs_m, max_row / 448.0, mask=mask_m)
     tl.store(xt_scale_ptr + offs_n, max_col / 448.0, mask=mask_n)
     
@@ -478,7 +478,7 @@ def hadamard_quant_kernel(
         xq = (x_hm.to(tl.float32) * scale_row[:, None]).to(xq_ptr.dtype.element_ty)
         tl.store(xq_ptr + offs_m[:, None] * N + offs_n[None, :], xq, mask=mask)
         xtq = (x_hm.to(tl.float32) * scale_col[None, :]).to(xtq_ptr.dtype.element_ty)
-        tl.store(xtq_ptr + offs_n[:, None] * M + offs_m[None, :], xtq, mask=mask_n[:, None] & mask_m[None, :])
+        tl.store(xtq_ptr + offs_n[:, None] * M + offs_m[None, :], xtq, mask=mask)
 
 
 # y = x @ w
