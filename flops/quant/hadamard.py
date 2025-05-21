@@ -880,7 +880,8 @@ def hadamard_quant_update(y,x,hm):
 
 
 def hadamard_quant_forward_megatron(x,w,hm):
-    x_q, x_scale, w_q, w_scale = triton_hadamard_quant_nt_megatron(x, w, hm)
+    x_q, _, x_scale, _ = triton_hadamard_quant_x(x, hm)
+    w_q, _, w_scale, _ = triton_hadamard_quant_w(w, hm)
     output = torch._scaled_mm(x_q,
                                     w_q.t(),
                                     scale_a=x_scale,
@@ -892,7 +893,8 @@ def hadamard_quant_forward_megatron(x,w,hm):
 
 
 def hadamard_quant_backward_megatron(y,w,hm):
-    y_q, y_scale, w_q, w_scale = triton_hadamard_quant_nn_megatron(y, w, hm)
+    y_q, _, y_scale, _ = triton_hadamard_quant_y(y, hm)
+    w_q, _, w_scale, _ = triton_hadamard_quant_w(w.t(), hm)
     output = torch._scaled_mm(y_q,
                                     w_q.t(),
                                     scale_a=y_scale,
@@ -904,7 +906,8 @@ def hadamard_quant_backward_megatron(y,w,hm):
 
 
 def hadamard_quant_update_megatron(y,x,hm):
-    y_q, y_scale, x_q, x_scale = triton_hadamard_quant_tn_megatron(y, x, hm)
+    y_q, _, y_scale, _ = triton_hadamard_quant_y(y.t(), hm)
+    x_q, _, x_scale, _ = triton_hadamard_quant_x(x.t(), hm)
     output = torch._scaled_mm(y_q,
                                     x_q.t(),
                                     scale_a=y_scale,
@@ -949,10 +952,11 @@ def hadamard_quant_update_debug(y,x,hm):
 
 
 def hadamard_quant_forward_debug_megatron(x, w, hm):
-    x_q, x_scale, w_q, w_scale = triton_hadamard_quant_nt_megatron(x, w, hm)
+    x_q, _, x_scale, _ = triton_hadamard_quant_x(x, hm)
+    w_q, _, w_scale, _ = triton_hadamard_quant_w(w, hm)
     output = torch._scaled_mm(x_q,
                                     w_q.t(),
-                                    scale_a=x_scale,
+                                    scale_a=x_scale.t(),
                                     scale_b=w_scale,
                                     out_dtype=x.dtype,
                                     use_fast_accum=True
@@ -961,7 +965,8 @@ def hadamard_quant_forward_debug_megatron(x, w, hm):
 
 
 def hadamard_quant_backward_debug_megatron(y,w,hm):
-    y_q, y_scale, w_q, w_scale = triton_hadamard_quant_nn_megatron(y, w, hm)
+    y_q, _, y_scale, _ = triton_hadamard_quant_y(y, hm)
+    w_q, _, w_scale, _ = triton_hadamard_quant_w(w.t(), hm)
     output = torch._scaled_mm(y_q,
                                     w_q.t(),
                                     scale_a=y_scale,
@@ -973,7 +978,8 @@ def hadamard_quant_backward_debug_megatron(y,w,hm):
 
 
 def hadamard_quant_update_debug_megatron(y, x, hm):
-    y_q, y_scale, x_q, x_scale = triton_hadamard_quant_tn_megatron(y, x, hm)
+    y_q, _, y_scale, _ = triton_hadamard_quant_y(y.t(), hm)
+    x_q, _, x_scale, _ = triton_hadamard_quant_x(x.t(), hm)
     output = torch._scaled_mm(y_q,
                                     x_q.t(),
                                     scale_a=y_scale,
@@ -988,12 +994,6 @@ def triton_hadamard_quant_nt_nn_tn(x,w,y,hm):
     triton_hadamard_quant_nt(x, w, hm)
     triton_hadamard_quant_nn(y, w, hm)
     triton_hadamard_quant_tn(y, x, hm)
-
-
-def triton_hadamard_quant_nt_nn_tn_megatron(x,w,y,hm):
-    triton_hadamard_quant_nt_megatron(x, w, hm)
-    triton_hadamard_quant_nn_megatron(y, w, hm)
-    triton_hadamard_quant_tn_megatron(y, x, hm)
 
 
 def fp8_hadamard_f_and_b(x,w,y,hm):
@@ -1042,26 +1042,38 @@ def triton_fused_hadamard_quant_tn(y, x, hm):
 
 def triton_hadamard_quant_nt_megatron(x, w, hm):
     x_q, _, x_scale, _ = triton_hadamard_quant_x(x, hm)
-    w_q, _, w_scale, _ = triton_hadamard_quant_w(w, hm)
-    return x_q, x_scale.t(), w_q, w_scale
+    w_q, wt_q, w_scale, wt_scale = triton_hadamard_quant_w(w, hm)
+    return x_q, x_scale.t(), w_q, w_scale, wt_q, wt_scale
 
 
 def triton_hadamard_quant_nn_megatron(y, w, hm):
     y_q, _, y_scale, _ = triton_hadamard_quant_y(y, hm)
-    w_q, _, w_scale, _ = triton_hadamard_quant_w(w.t(), hm)
-    return y_q, y_scale, w_q, w_scale
+    _, wt_q, _, wt_scale = triton_hadamard_quant_w(w, hm)
+    return y_q, y_scale, wt_q, wt_scale
 
 
 def triton_hadamard_quant_tn_megatron(y, x, hm):
-    y_q, _, y_scale, _ = triton_hadamard_quant_y(y.t(), hm)
-    x_q, _, x_scale, _ = triton_hadamard_quant_x(x.t(), hm)
-    return y_q, y_scale, x_q, x_scale
+    _, yt_q, _, yt_scale = triton_hadamard_quant_y(y, hm)
+    _, xt_q, _, xt_scale = triton_hadamard_quant_x(x, hm)
+    return yt_q, yt_scale.t(), xt_q, xt_scale
+
+
+def triton_hadamard_quant_nt_nn_tn_megatron(x, w, y, hm):
+    x_q, xt_q, x_scale, xt_scale = triton_hadamard_quant_x(x, hm)
+    w_q, wt_q, w_scale, wt_scale = triton_hadamard_quant_w(w, hm)
+    y_q, yt_q, y_scale, yt_scale = triton_hadamard_quant_y(y, hm)
+    return (
+        (x_q, x_scale.t(), w_q, w_scale),
+        (y_q, y_scale, wt_q, wt_scale),
+        (yt_q, yt_scale.t(), xt_q, xt_scale)
+    )
 
 
 def triton_fused_hadamard_quant_nt_nn_tn(x,w,y,hm):
     triton_fused_hadamard_quant_nt(x, w, hm)
     triton_fused_hadamard_quant_nn(y, w, hm)
     triton_fused_hadamard_quant_tn(y, x, hm)
+
 
 def fp8_fused_hadamard_f_and_b(x,w,y,hm):
     fused_hadamard_quant_forward(x, w, hm)
