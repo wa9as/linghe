@@ -2,6 +2,9 @@ import math
 import torch 
 
 
+def round_up(x, b=16):
+    return ((x-1)//b+1)*b
+
 
 def torch_tensor_quant(x,w, dtype):
     fmax = torch.finfo(dtype).max

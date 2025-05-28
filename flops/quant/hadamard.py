@@ -4,7 +4,7 @@ import triton
 import triton.language as tl
 from triton import Config
 from flops.quant.channel import row_quant_kernel
-
+from flops.utils.util import round_up
 
 
 def hadamard_matrix(n, device='cuda:0', dtype=torch.bfloat16, norm=False):
@@ -297,7 +297,7 @@ def fused_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BLOCK_SIZE: 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:,None]*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None,:])
     offs = pid*BLOCK_SIZE*N + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
     n = tl.cdiv(N, BLOCK_SIZE)
-    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+1.17e-38
+    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+5.27e-36
     for i in range(n):
         x = tl.load(x_ptr+offs)
         if SIDE == 0:
@@ -322,8 +322,8 @@ def fused_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BLOCK_SIZE: 
         offs += R*BLOCK_SIZE
 
 
-
-def triton_fused_hadamard(x, hm, op_side=0, hm_side=1, R=2):
+# add out for `_cast_master_weights_to_fp8_hadamard_scaling`
+def triton_fused_hadamard(x, hm, out=None, op_side=0, hm_side=1, R=2):
     # y = x @ w
     #   x: op_side = 0, hm_side=1
     #   w: op_side = 1, hm_side=1
@@ -336,7 +336,15 @@ def triton_fused_hadamard(x, hm, op_side=0, hm_side=1, R=2):
         x_s = torch.empty((M,1),dtype=torch.float32,device=x.device)
     else:
         x_s = torch.empty((1,M),dtype=torch.float32,device=x.device)
-    x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=x.device)
+    if out is None:
+        x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=x.device)
+    else:
+        out_dtype = out.dtype
+        x_q = out.view((M,N)).view(torch.float8_e4m3fn)
+        if x_q.device != x.device:
+            x_q = x_q.to(x.device)
+        if hm.device != x.device:
+            hm = hm.to(x.device)
     BLOCK_SIZE = hm.size(0)
     SIDE = hm_side
     grid = lambda META: (M//BLOCK_SIZE, )
@@ -353,6 +361,8 @@ def triton_fused_hadamard(x, hm, op_side=0, hm_side=1, R=2):
         num_stages=6,
         num_warps=4
     )
+    if out is not None:
+        x_q = x_q.view(out_dtype)
     return x_q,x_s
 
 
@@ -369,7 +379,7 @@ def fused_transpose_hadamard_kernel(x_ptr, b_ptr, s_ptr, q_ptr, hm_ptr, M, N, BL
     offs = pid*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:,None]*N + tl.arange(0, BLOCK_SIZE)[None,:]
     toffs = pid*BLOCK_SIZE*M + tl.arange(0, BLOCK_SIZE)[:,None]*M + tl.arange(0, BLOCK_SIZE)[None,:]
     m = tl.cdiv(M, BLOCK_SIZE)
-    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+1.17e-38
+    maxs = tl.zeros((BLOCK_SIZE,),dtype=tl.float32)+5.27e-36
     for i in range(m):
         x = tl.trans(tl.load(x_ptr+offs))
         if SIDE == 0:
@@ -438,10 +448,12 @@ def triton_hadamard_quant_x(x, hm):
     M, N = x.shape
     B = hm.size(0)
     device = x.device 
-    x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
-    xt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
-    x_scale = torch.empty((M,1),dtype=torch.float32,device=device)
-    xt_scale = torch.empty((1,N),dtype=torch.float32,device=device)
+    M = round_up(M)  # round up for _scaled_mm
+    N = round_up(N)  # round up for _scaled_mm
+    x_q = torch.ones((M,N),dtype=torch.float8_e4m3fn,device=device)
+    xt_q = torch.ones((N,M),dtype=torch.float8_e4m3fn,device=device)
+    x_scale = torch.ones((M,1),dtype=torch.float32,device=device)
+    xt_scale = torch.ones((1,N),dtype=torch.float32,device=device)
 
     BLOCK_SIZE = hm.size(0)
     R = 1
@@ -474,6 +486,8 @@ def triton_hadamard_quant_w(w, hm):
     M, N = w.shape
     B = hm.size(0)
     device = w.device
+    M = round_up(M, 16)  # round up for _scaled_mm
+    N = round_up(N, 16)  # round up for _scaled_mm
     w_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
     wt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
     w_scale = torch.empty((1,M),dtype=torch.float32,device=device)
@@ -509,6 +523,8 @@ def triton_hadamard_quant_y(y, hm):
     M, N = y.shape
     B = hm.size(0)
     device = y.device
+    M = round_up(M, 16)  # round up for _scaled_mm
+    N = round_up(N, 16)  # round up for _scaled_mm
     y_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=device)
     yt_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=device)
     y_scale = torch.empty((1,M),dtype=torch.float32,device=device)

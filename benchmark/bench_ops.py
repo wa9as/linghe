@@ -16,6 +16,9 @@ from torch.profiler import profile, record_function, ProfilerActivity
 M, N, K = 8192, 4096, 13312
 # M, N, K = 4096, 4096, 6144
 # M, N, K = 4096, 4096, 4096
+# M, N, K = 4096, 4096, 2048
+
+# M, N, K = M-1, N-1, K-1
 
 dtype = torch.bfloat16
 device = 'cuda:0'
@@ -27,7 +30,7 @@ w = torch.randn(N, K, dtype=dtype, device=device)
 
 x_f8 = x.to(torch.float8_e4m3fn)
 w_f8 = w.to(torch.float8_e4m3fn)
-mode = 'bb'
+mode = 'transpose'
 
 if mode == 'gemm':
 
@@ -61,16 +64,14 @@ elif mode == 'quant':
 elif mode == 'transpose':
     benchmark_func(fp16_transpose, x, n_repeat=n_repeat)
     benchmark_func(triton_transpose,x, n_repeat=n_repeat)
-    benchmark_func(triton_opt_transpose,x, n_repeat=n_repeat)
+    benchmark_func(triton_block_transpose,x, n_repeat=n_repeat)
 
-
-    benchmark_func(triton_row_quant, x, n_repeat=n_repeat)
-    benchmark_func(triton_transpose_row_quant, x, n_repeat=n_repeat)
-
+    # benchmark_func(triton_opt_transpose,x, n_repeat=n_repeat)
 
     benchmark_func(fp8_transpose, x_f8, n_repeat=n_repeat)
     benchmark_func(triton_transpose,x_f8, n_repeat=n_repeat)
-    benchmark_func(triton_opt_transpose,x_f8, n_repeat=n_repeat)
+    benchmark_func(triton_block_transpose,x_f8, n_repeat=n_repeat)
+    # benchmark_func(triton_opt_transpose,x_f8, n_repeat=n_repeat)
 
 else:
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]) as prof:
