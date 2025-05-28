@@ -1,5 +1,5 @@
 import torch 
-from flops.quant.smooth import *
+from flops.quant.smooth.reused_smooth import *
 from flops.utils.util import *
 from flops.utils.benchmark import *
 

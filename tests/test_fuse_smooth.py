@@ -1,8 +1,7 @@
 import torch 
 
-from flops.quant.hadamard import *
+from flops.quant.smooth.naive_smooth import smooth_quant_forward, smooth_quant_backward, smooth_quant_update
 from flops.utils.util import *
-from bench_h800_smooth import smooth_quant_forward, smooth_quant_backward, smooth_quant_update
 
 def setup_seed(seed):
      torch.manual_seed(seed)
