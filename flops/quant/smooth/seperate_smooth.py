@@ -72,12 +72,15 @@ smooth scale is updated by square root of x's column-wise maxs, and set in weigh
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_smooth_quant_x(x, smooth_scale):
+def triton_smooth_quant_x(x, smooth_scale, transpose=True):
+    assert x.size(1) == smooth_scale.size(0)
 
     x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale)
 
-
-    xt_q = triton_block_pad_transpose(x_q)  # x_q has be padded
+    if transpose:
+        xt_q = triton_block_pad_transpose(x_q)  # x_q has be padded
+    else:
+        xt_q = None 
     xt_scale = smooth_scale
 
     # if torch.isnan(x_q).count_nonzero()>0:
@@ -94,7 +97,9 @@ def triton_smooth_quant_x(x, smooth_scale):
 # dx = y @ wT
 # dwT = yT @ x
 def triton_smooth_quant_y(x, smooth_scale, transpose_smooth_scale, reverse=True):
-    assert reverse
+    assert reverse, "args `smooth_scale` and `transpose_smooth_scale` must be reciprocal of its truth in triton_smooth_quant_y"
+    assert x.size(1) == smooth_scale.size(0)
+    assert x.size(0) == transpose_smooth_scale.size(0)
     x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale, reverse=True)
     xt_q, xt_scale = triton_reused_transpose_smooth_quant(x, transpose_smooth_scale, reverse=True)
 

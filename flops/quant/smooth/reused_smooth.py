@@ -72,7 +72,7 @@ def triton_reused_smooth_quant(x, smooth_scale, reverse=False):
     M, N = x.shape
     device = x.device 
     x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
-    x_scale = torch.empty((M,1), device=device, dtype=torch.float32)
+    x_scale = torch.empty((M,), device=device, dtype=torch.float32)
     if N%128 == 0:
         EVEN = True
         H = max([x for x in [128,256,512,1024] if N%x == 0])
@@ -158,7 +158,7 @@ def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False):
     M, N = x.shape
     device = x.device 
     x_q = torch.zeros((N, M), device=device, dtype=torch.float8_e4m3fn)
-    x_scale = torch.zeros((1,N), device=device, dtype=torch.float32)
+    x_scale = torch.zeros((N,), device=device, dtype=torch.float32)
     if M%128 == 0 and N%16 == 0:
         EVEN = True 
         H = max([x for x in [128,256,512] if M%x == 0])

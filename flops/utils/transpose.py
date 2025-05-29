@@ -34,7 +34,7 @@ def triton_transpose(x):
     t = torch.empty((N, M),device=device,dtype=x.dtype) 
     if M%64 == 0 and N%64 == 0:
         EVEN = True 
-        if x.dtype == torch.float8_e4m3fn:
+        if x.dtype.itemsize == 1:
             H = max([x for x in [64,128,256,512] if M%x == 0])
             W = 32
             num_stages = 6
@@ -46,7 +46,7 @@ def triton_transpose(x):
             num_warps = 8 
     else:
         EVEN = False
-        if x.dtype == torch.float8_e4m3fn:
+        if x.dtype.itemsize == 1:
             H = 64
             W = 32
             num_stages = 5
@@ -94,7 +94,7 @@ def triton_block_transpose(x):
     t = torch.empty((N, M),device=device,dtype=x.dtype) 
     if M%64 == 0 and N%64 == 0:
         EVEN = True 
-        if x.dtype == torch.float8_e4m3fn:
+        if x.dtype.itemsize == 1:
             H = max([x for x in [64,128,256,512] if M%x == 0])
             W = 32
             num_stages = 5
@@ -106,7 +106,7 @@ def triton_block_transpose(x):
             num_warps = 8 # max(4, H//32)
     else:
         EVEN = False
-        if x.dtype == torch.float8_e4m3fn:
+        if x.dtype.itemsize == 1:
             H = 64
             W = 32
             num_stages = 5
@@ -157,7 +157,7 @@ def triton_block_pad_transpose(x, pad=None):
     t = torch.zeros((N, pad),device=device,dtype=x.dtype) 
     if pad%64 == 0 and N%64 == 0:
         EVEN = True 
-        if x.dtype == torch.float8_e4m3fn:
+        if x.dtype.itemsize == 1:
             H = max([x for x in [64,128,256,512] if pad%x == 0])
             W = 32
             num_stages = 5
@@ -169,7 +169,7 @@ def triton_block_pad_transpose(x, pad=None):
             num_warps = 8 # max(4, H//32)
     else:
         EVEN = False
-        if x.dtype == torch.float8_e4m3fn:
+        if x.dtype.itemsize == 1:
             H = 64
             W = 32
             num_stages = 5
@@ -218,7 +218,7 @@ def opt_transpose_kernel(x_ptr, t_ptr, M, N, D, H: tl.constexpr, W: tl.constexpr
 def triton_opt_transpose(x):
     M, N = x.shape
     device = x.device
-    D = 0 if x.dtype == torch.float8_e4m3fn else 1
+    D = 0 if x.dtype.itemsize == 1 else 1
     t = torch.empty((N, M),device=device,dtype=x.dtype)
     grid = lambda META: (N//META["W"], )
     opt_transpose_kernel[grid](
