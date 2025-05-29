@@ -93,10 +93,10 @@ def triton_smooth_quant_x(x, smooth_scale):
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_smooth_quant_y(x, smooth_scale, transpose_smooth_scale):
-
-    x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale)
-    xt_q, xt_scale = triton_reused_transpose_smooth_quant(x, transpose_smooth_scale)
+def triton_smooth_quant_y(x, smooth_scale, transpose_smooth_scale, reverse=True):
+    assert reverse
+    x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale, reverse=True)
+    xt_q, xt_scale = triton_reused_transpose_smooth_quant(x, transpose_smooth_scale, reverse=True)
 
     # if torch.isnan(xt_q).count_nonzero()>0:
     #     print(f'{xt_q.float().max()=}')
