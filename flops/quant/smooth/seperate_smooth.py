@@ -5,7 +5,7 @@ import triton
 import triton.language as tl
 from triton import Config
 from flops.quant.channel.channel import row_quant_kernel
-from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_smooth_quant
+from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_smooth_quant, triton_reused_transpose_pad_smooth_quant
 from flops.utils.transpose import triton_transpose,triton_block_transpose,triton_block_pad_transpose
 from flops.utils.util import round_up
 
@@ -67,18 +67,22 @@ def triton_calc_smooth_scale(x):
 """
 divide x by smooth_scale and row-wise quantization
 smooth scale is updated by square root of x's column-wise maxs, and set in weight's x_maxs attr
+
+transpose: transpose quantized x for wgrad
+pad: # pad M to be multiplier of 16, including quant scales and transposed x
+
 """
 
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_smooth_quant_x(x, smooth_scale, transpose=True):
+def triton_smooth_quant_x(x, smooth_scale, transpose=True, pad=False):
     assert x.size(1) == smooth_scale.size(0)
 
-    x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale)
+    x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale, pad_scale=pad)
 
     if transpose:
-        xt_q = triton_block_pad_transpose(x_q)  # x_q has be padded
+        xt_q = triton_block_pad_transpose(x_q, pad=pad)  
     else:
         xt_q = None 
     xt_scale = smooth_scale
@@ -90,21 +94,36 @@ def triton_smooth_quant_x(x, smooth_scale, transpose=True):
     return x_q,xt_q,x_scale,xt_scale
 
 
+def triton_smooth_quant_w(w, smooth_scale, transpose=True):
+    assert w.size(1) == smooth_scale.size(0)
 
+    w_q,w_scale = triton_reused_smooth_quant(w, smooth_scale, pad_scale=False)
+
+    if transpose:
+        wt_q = triton_block_pad_transpose(w_q, pad=False)  # x_q has be padded
+    else:
+        wt_q = None 
+    wt_scale = smooth_scale
+
+    # if torch.isnan(w_q).count_nonzero()>0:
+    #     print(f'{w_q.float().max()=}')
+    #     raise ValueError('triton_smooth_quant_w nan')
+
+    return w_q,wt_q,w_scale,wt_scale
 
 
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_smooth_quant_y(x, smooth_scale, transpose_smooth_scale, reverse=True):
-    assert reverse, "args `smooth_scale` and `transpose_smooth_scale` must be reciprocal of its truth in triton_smooth_quant_y"
-    assert x.size(1) == smooth_scale.size(0)
-    assert x.size(0) == transpose_smooth_scale.size(0)
-    x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale, reverse=True)
-    xt_q, xt_scale = triton_reused_transpose_smooth_quant(x, transpose_smooth_scale, reverse=True)
+def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True, pad=False):
+    assert reverse, "args `smooth_scale` and `transpose_smooth_scale` must be reciprocal in triton_smooth_quant_y"
+    assert y.size(1) == smooth_scale.size(0)
+    assert pad or y.size(0) == transpose_smooth_scale.size(0)
+    y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
+    yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=True, pad=pad)
 
-    # if torch.isnan(xt_q).count_nonzero()>0:
-    #     print(f'{xt_q.float().max()=}')
+    # if torch.isnan(yt_q).count_nonzero()>0:
+    #     print(f'{yt_q.float().max()=}')
     #     raise ValueError('triton_smooth_quant_yT nan')
 
-    return x_q,xt_q,x_scale,xt_scale
+    return y_q,yt_q,y_scale,yt_scale

@@ -4,6 +4,7 @@ import torch
 import triton
 import triton.language as tl
 from triton import Config
+from flops.utils.util import round_up
 
 
 # os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
@@ -149,21 +150,20 @@ def block_pad_transpose_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr, W: tl.con
 pad x for scaled_mm
 M of x should be mutiplier of 16
 """
-def triton_block_pad_transpose(x, pad=None):
+def triton_block_pad_transpose(x, pad=True):
     M, N = x.shape
-    if pad is None:
-        pad = M 
+    P = round_up(M) if pad else M 
     device = x.device
-    t = torch.zeros((N, pad),device=device,dtype=x.dtype) 
-    if pad%64 == 0 and N%64 == 0:
+    t = torch.zeros((N, P),device=device,dtype=x.dtype) 
+    if M%64 == 0 and N%64 == 0:
         EVEN = True 
         if x.dtype.itemsize == 1:
-            H = max([x for x in [64,128,256,512] if pad%x == 0])
+            H = max([x for x in [64,128,256,512] if M%x == 0])
             W = 32
             num_stages = 5
             num_warps = 8
         else:
-            H = max([x for x in [64,128,256] if pad%x == 0])
+            H = max([x for x in [64,128,256] if M%x == 0])
             W = 16
             num_stages = 5
             num_warps = 8 # max(4, H//32)
@@ -180,10 +180,10 @@ def triton_block_pad_transpose(x, pad=None):
             num_stages = 5
             num_warps = 8 
 
-    grid = lambda META: ((pad-1)//H+1, (N-1)//W+1)
+    grid = lambda META: ((M-1)//H+1, (N-1)//W+1)
     block_pad_transpose_kernel[grid](
         x, t,
-        M, N, pad,
+        M, N, P,
         H, W,
         EVEN,
         num_stages=num_stages,
