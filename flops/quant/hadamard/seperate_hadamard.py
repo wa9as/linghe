@@ -2,11 +2,6 @@ import math
 import torch
 import triton
 import triton.language as tl
-from triton import Config
-from flops.quant.channel.channel import row_quant_kernel
-from flops.utils.util import round_up
-
-
 
 
 
@@ -28,7 +23,7 @@ def hadamard_quant_row_kernel(
 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:, None] * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None, :])
 
-    max_val = tl.zeros((R * BLOCK_SIZE,), dtype=tl.float32)
+    max_val = tl.zeros((R * BLOCK_SIZE,), dtype=tl.float32) + 1.17e-38
 
     num_col_blocks = tl.cdiv(N, BLOCK_SIZE)
     for col_block in range(num_col_blocks):
@@ -36,24 +31,26 @@ def hadamard_quant_row_kernel(
         cols = col_start + tl.arange(0, BLOCK_SIZE)
         mask_cols = cols < N
 
-        x = tl.load(x_ptr + rows[:, None] * N + cols[None, :], mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
+        offs = rows[:, None] * N + cols[None, :]
+        x = tl.load(x_ptr + offs, mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
         x_transformed = tl.dot(x, hm)
-        current_max = tl.max(tl.abs(x_transformed.to(tl.float32)), axis=1)
+        current_max = tl.max(tl.abs(x_transformed), axis=1)
         max_val = tl.maximum(max_val, current_max)
 
     scale = max_val / 448.0
     tl.store(x_scale_ptr + rows, scale, mask=mask_rows)
-    s = 448.0 / tl.where(max_val==0.0, 1.17e-38, max_val)
+    s = 448.0 / tl.where(max_val > 0, max_val, 1.0)
 
     for col_block in range(num_col_blocks):
         col_start = col_block * BLOCK_SIZE
         cols = col_start + tl.arange(0, BLOCK_SIZE)
         mask_cols = cols < N
 
-        x = tl.load(x_ptr + rows[:, None] * N + cols[None, :], mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
+        offs = rows[:, None] * N + cols[None, :]
+        x = tl.load(x_ptr + offs, mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
         x_transformed = tl.dot(x, hm)
-        quantized = (x_transformed.to(tl.float32) * s[:, None]).to(x_q_ptr.dtype.element_ty)
-        tl.store(x_q_ptr + rows[:, None] * N + cols[None, :], quantized, mask=mask_rows[:, None] & mask_cols[None, :])
+        quantized = (x_transformed * s[:, None]).to(x_q_ptr.dtype.element_ty)
+        tl.store(x_q_ptr + offs, quantized, mask=mask_rows[:, None] & mask_cols[None, :])
 
 
 @triton.jit
@@ -74,7 +71,7 @@ def hadamard_quant_col_kernel(
 
     hm = tl.load(hm_ptr + tl.arange(0, BLOCK_SIZE)[:, None] * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[None, :])
 
-    max_val = tl.zeros((R * BLOCK_SIZE,), dtype=tl.float32)
+    max_val = tl.zeros((R * BLOCK_SIZE,), dtype=tl.float32) + 1.17e-38
 
     num_row_blocks = tl.cdiv(M, BLOCK_SIZE)
     for row_block in range(num_row_blocks):
@@ -82,24 +79,28 @@ def hadamard_quant_col_kernel(
         rows = row_start + tl.arange(0, BLOCK_SIZE)
         mask_rows = rows < M
 
-        x = tl.load(x_ptr + rows[:, None] * N + cols[None, :], mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
+        offs = rows[:, None] * N + cols[None, :]
+        x = tl.load(x_ptr + offs, mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
         x_transformed = tl.dot(hm, x)
-        current_max = tl.max(tl.abs(x_transformed.to(tl.float32)), axis=0)
+        current_max = tl.max(tl.abs(x_transformed), axis=0)
         max_val = tl.maximum(max_val, current_max)
 
     scale = max_val / 448.0
     tl.store(xt_scale_ptr + cols, scale, mask=mask_cols)
-    s = 448.0 / tl.where(max_val==0.0, 1.17e-38, max_val)
+    s = 448.0 / tl.where(max_val > 0, max_val, 1.0)
 
     for row_block in range(num_row_blocks):
         row_start = row_block * BLOCK_SIZE
         rows = row_start + tl.arange(0, BLOCK_SIZE)
         mask_rows = rows < M
 
-        x = tl.load(x_ptr + rows[:, None] * N + cols[None, :], mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
+        offs = rows[:, None] * N + cols[None, :]
+        x = tl.load(x_ptr + offs, mask=mask_rows[:, None] & mask_cols[None, :], other=0.0)
         x_transformed = tl.dot(hm, x)
-        quantized = (x_transformed.to(tl.float32) * s[None, :]).to(xt_q_ptr.dtype.element_ty)
-        tl.store(xt_q_ptr + cols[:, None] * M + rows[None, :], quantized, mask=mask_cols[:, None] & mask_rows[None, :])
+        quantized = (x_transformed * s[None, :]).to(xt_q_ptr.dtype.element_ty)
+        quantized_t = tl.trans(quantized)
+        store_offs = cols[:, None] * M + rows[None, :]
+        tl.store(xt_q_ptr + store_offs, quantized_t, mask=mask_cols[:, None] & mask_rows[None, :])
 
 
 # y = x @ w
@@ -158,12 +159,13 @@ def triton_hadamard_quant_w(w, hm):
     # dx = y @ wT: w->h@wT and rowwise quant
     M, N = w.shape
     device = w.device
-    BLOCK_SIZE = hm.size(0)
-    R = 1
     w_q = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=device)
     wt_q = torch.empty((N, M), dtype=torch.float8_e4m3fn, device=device)
-    w_scale = torch.empty((1, M), dtype=torch.float32, device=device)
-    wt_scale = torch.empty((1, N), dtype=torch.float32, device=device)
+    w_scale = torch.empty((M, 1), dtype=torch.float32, device=device)
+    wt_scale = torch.empty((N, 1), dtype=torch.float32, device=device)
+
+    BLOCK_SIZE = hm.size(0)
+    R = 1
     
     grid_row = lambda META: (triton.cdiv(M, R*BLOCK_SIZE), )
     hadamard_quant_row_kernel[grid_row](
@@ -178,7 +180,7 @@ def triton_hadamard_quant_w(w, hm):
         num_stages=6,
         num_warps=4
     )
-    
+
     grid_col = lambda META: (triton.cdiv(N, R*BLOCK_SIZE), )
     hadamard_quant_col_kernel[grid_col](
         w, 
@@ -193,7 +195,7 @@ def triton_hadamard_quant_w(w, hm):
         num_warps=4
     )
     
-    return w_q, wt_q, w_scale, wt_scale
+    return w_q, wt_q, w_scale.view(1, -1), wt_scale.view(1, -1)
 
 
 # y = x @ w
@@ -210,7 +212,7 @@ def triton_hadamard_quant_y(y, hm):
     y_q = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=device)
     yt_q = torch.empty((N, M), dtype=torch.float8_e4m3fn, device=device)
     y_scale = torch.empty((M, 1), dtype=torch.float32, device=device)
-    yt_scale = torch.empty((1, N), dtype=torch.float32, device=device)
+    yt_scale = torch.empty((N, 1), dtype=torch.float32, device=device)
     
     grid_row = lambda META: (triton.cdiv(M, R*BLOCK_SIZE), )
     hadamard_quant_row_kernel[grid_row](
@@ -225,7 +227,7 @@ def triton_hadamard_quant_y(y, hm):
         num_stages=6,
         num_warps=4
     )
-    
+
     grid_col = lambda META: (triton.cdiv(N, R*BLOCK_SIZE), )
     hadamard_quant_col_kernel[grid_col](
         y, 
@@ -240,8 +242,7 @@ def triton_hadamard_quant_y(y, hm):
         num_warps=4
     )
     
-    return y_q, yt_q, y_scale, yt_scale
-
+    return y_q, yt_q, y_scale.view(-1, 1), yt_scale.view(1, -1)
 
 
 def triton_hadamard_quant_nt_megatron(x, w, hm):
@@ -315,13 +316,14 @@ def hadamard_quant_forward_debug_megatron(x, w, hm):
 
 def hadamard_quant_backward_debug_megatron(y, w, hm):
     y_q, y_scale, wt_q, wt_scale = triton_hadamard_quant_nn_megatron(y, w, hm)
-    output = torch._scaled_mm(y_q,
+    output = torch._scaled_mm(
+                                    y_q,
                                     wt_q.t(),
                                     scale_a=y_scale,
                                     scale_b=wt_scale,
                                     out_dtype=y.dtype,
                                     use_fast_accum=True
-    )
+                                )
     return output, y_q, wt_q.t(), y_scale, wt_scale
 
 
