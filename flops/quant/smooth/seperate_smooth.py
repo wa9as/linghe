@@ -41,23 +41,22 @@ def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N
 def triton_calc_smooth_scale(x):
     M, N = x.shape
     device = x.device 
-    x_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)  # 
+    x_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
     x_inv_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
-    # H = max([x for x in [128,256,512] if M%x == 0])
-    H = 256
+    H = 512
     W = 16
     if M%H == 0 and N%W == 0:
         EVEN = True 
     else:
         EVEN = False
-    grid = lambda META: ((N-1)//W+1, )
+    grid = lambda META: (triton.cdiv(N, W), )
     calc_smooth_scale_kernel[grid](
         x,
         x_smooth_scale,
         x_inv_smooth_scale,
         M, N,
         H, W, EVEN,
-        num_stages=5,
+        num_stages=4,
         num_warps=4
     )
     return x_smooth_scale, x_inv_smooth_scale
@@ -87,29 +86,8 @@ def triton_smooth_quant_x(x, smooth_scale, transpose=True, pad=False):
         xt_q = None 
     xt_scale = smooth_scale
 
-    # if torch.isnan(x_q).count_nonzero()>0:
-    #     print(f'{x_q.float().max()=}')
-    #     raise ValueError('triton_smooth_quant_x nan')
-
     return x_q,xt_q,x_scale,xt_scale
 
-
-def triton_smooth_quant_w(w, smooth_scale, transpose=True):
-    assert w.size(1) == smooth_scale.size(0)
-
-    w_q,w_scale = triton_reused_smooth_quant(w, smooth_scale, pad_scale=False)
-
-    if transpose:
-        wt_q = triton_block_pad_transpose(w_q, pad=False)  # x_q has be padded
-    else:
-        wt_q = None 
-    wt_scale = smooth_scale
-
-    # if torch.isnan(w_q).count_nonzero()>0:
-    #     print(f'{w_q.float().max()=}')
-    #     raise ValueError('triton_smooth_quant_w nan')
-
-    return w_q,wt_q,w_scale,wt_scale
 
 
 # y = x @ w
@@ -122,8 +100,15 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
     y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
     yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=True, pad=pad)
 
-    # if torch.isnan(yt_q).count_nonzero()>0:
-    #     print(f'{yt_q.float().max()=}')
-    #     raise ValueError('triton_smooth_quant_yT nan')
-
     return y_q,yt_q,y_scale,yt_scale
+
+
+def triton_smooth_quant_partial_w(w, smooth_scale, w_q, w_scale, offset=0):
+    M,N = w_q.shape 
+    assert w.size(1) == smooth_scale.size(0)
+    size = w.numel()
+    m = size//N
+    w_q_slice = w_q.view(-1)[offset:offset+size].view(m,N).view(torch.float8_e4m3fn)
+    w_scale_slice = w_scale[offset//N:(offset+size)//N]
+    w_q,w_scale = triton_reused_smooth_quant(w, smooth_scale, x_q=w_q_slice, x_scale=w_scale_slice, pad_scale=False)
+

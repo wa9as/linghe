@@ -33,30 +33,31 @@ def triton_transpose(x):
     M, N = x.shape
     device = x.device
     t = torch.empty((N, M),device=device,dtype=x.dtype) 
-    if M%64 == 0 and N%64 == 0:
+
+    H = max([x for x in [1,64,128,256,512] if M%x == 0])
+    if H > 1:
         EVEN = True 
         if x.dtype.itemsize == 1:
-            H = max([x for x in [64,128,256,512] if M%x == 0])
             W = 32
-            num_stages = 6
-            num_warps = 2
+            num_stages = 5
+            num_warps = 8
         else:
-            H = max([x for x in [64,128,256] if M%x == 0])
             W = 16
             num_stages = 5
             num_warps = 8 
     else:
-        EVEN = False
+        EVEN = False 
         if x.dtype.itemsize == 1:
             H = 64
             W = 32
             num_stages = 5
-            num_warps = 2
+            num_warps = 4
         else:
-            H = 256
+            H = 128
             W = 16
             num_stages = 5
             num_warps = 8 
+
 
     grid = lambda META: ((N-1)//W+1, )
     transpose_kernel[grid](
@@ -93,20 +94,19 @@ def triton_block_transpose(x):
     M, N = x.shape
     device = x.device
     t = torch.empty((N, M),device=device,dtype=x.dtype) 
-    if M%64 == 0 and N%64 == 0:
+    H = max([x for x in [1,64,128,256,512] if M%x == 0])
+    if H > 1:
         EVEN = True 
         if x.dtype.itemsize == 1:
-            H = max([x for x in [64,128,256,512] if M%x == 0])
             W = 32
             num_stages = 5
             num_warps = 8
         else:
-            H = max([x for x in [64,128,256] if M%x == 0])
             W = 16
             num_stages = 5
-            num_warps = 8 # max(4, H//32)
+            num_warps = 8 
     else:
-        EVEN = False
+        EVEN = False 
         if x.dtype.itemsize == 1:
             H = 64
             W = 32
@@ -117,6 +117,7 @@ def triton_block_transpose(x):
             W = 16
             num_stages = 5
             num_warps = 8 
+
 
     grid = lambda META: ((M-1)//H+1, (N-1)//W+1)
     block_transpose_kernel[grid](
@@ -155,20 +156,20 @@ def triton_block_pad_transpose(x, pad=True):
     P = round_up(M) if pad else M 
     device = x.device
     t = torch.zeros((N, P),device=device,dtype=x.dtype) 
-    if M%64 == 0 and N%64 == 0:
+
+    H = max([x for x in [1,64,128,256,512] if M%x == 0])
+    if H > 1:
         EVEN = True 
         if x.dtype.itemsize == 1:
-            H = max([x for x in [64,128,256,512] if M%x == 0])
             W = 32
             num_stages = 5
             num_warps = 8
         else:
-            H = max([x for x in [64,128,256] if M%x == 0])
             W = 16
             num_stages = 5
-            num_warps = 8 # max(4, H//32)
+            num_warps = 8 
     else:
-        EVEN = False
+        EVEN = False 
         if x.dtype.itemsize == 1:
             H = 64
             W = 32

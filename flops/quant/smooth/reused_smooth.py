@@ -68,20 +68,23 @@ def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constex
 
 
 # smooth_scale: w_max/tl.sqrt(x_max*w_max)
-def triton_reused_smooth_quant(x, smooth_scale, reverse=False, pad_scale=False):
+def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=False, pad_scale=False):
     M, N = x.shape
     device = x.device 
-    x_q = torch.zeros((M, N), device=device, dtype=torch.float8_e4m3fn)
-    scale_size = round_up(M,b=16) if pad_scale else M
-    x_scale = torch.zeros((scale_size,), device=device, dtype=torch.float32)
-    if N%128 == 0:
+    if x_q is None:
+        x_q = torch.zeros((M, N), device=device, dtype=torch.float8_e4m3fn)
+    if x_scale is None:
+        scale_size = round_up(M, b=16) if pad_scale else M
+        x_scale = torch.zeros((scale_size,), device=device, dtype=torch.float32)
+    W = 8 if M < 132*10 else 16
+    H = 512 if W == 16 else 1024
+    # H = 512
+    # W = 16
+    if N%H == 0 and M%W == 0:
         EVEN = True
-        H = max([x for x in [128,256,512,1024] if N%x == 0])
     else:
-        EVEN = False 
-        H = 256
-    W = 16
-    grid = lambda META: (M//W, )
+        EVEN = False
+    grid = lambda META: (triton.cdiv(M, W), )
     reused_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -161,16 +164,16 @@ def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False):
     device = x.device 
     x_q = torch.zeros((N, M), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.zeros((N,), device=device, dtype=torch.float32)
-    if M%128 == 0 and N%16 == 0:
+    H = max([x for x in [1,128,256,512] if M%x == 0])
+    W = max([x for x in [1,16] if N%x == 0])
+    if H > 1 and W > 1:
         EVEN = True 
-        H = max([x for x in [128,256,512] if M%x == 0])
-        W = 16
     else:
         EVEN = False 
         H = 256
         W = 16
 
-    grid = lambda META: (N//W, )
+    grid = lambda META: (triton.cdiv(N, W), )
     reused_transpose_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -251,16 +254,16 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
     P = round_up(M) if pad else M
     x_q = torch.zeros((N, P), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.zeros((N,), device=device, dtype=torch.float32)
-    if M%128 == 0 and N%16 == 0:
+    H = max([x for x in [1,64,128,256] if M%x == 0])
+    W = max([x for x in [1,16,32] if M%x == 0])
+    if H > 1 and W > 1: 
         EVEN = True 
-        H = max([x for x in [128,256,512] if M%x == 0])
-        W = 16
     else:
         EVEN = False 
-        H = 256
-        W = 16
+        H = 256 if H == 1 else H
+        W = 32 if W == 1 else W
 
-    grid = lambda META: (N//W, )
+    grid = lambda META: (triton.cdiv(N, W), )
     reused_transpose_pad_smooth_quant_kernel[grid](
         x,
         x_q,
