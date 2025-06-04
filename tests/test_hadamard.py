@@ -1,16 +1,16 @@
 import torch 
 
-from flops.quant.hadamard import *
+from flops.quant.hadamard.naive_hadamard import *
 from flops.utils.util import *
-from flops.quant.tile import *
-
+from flops.quant.block.block import *
+from flops.quant.block.group import *
 
 qtype = torch.float8_e4m3fn
 device = 'cuda:0'
 dtype = torch.bfloat16
 
 def tile_block_quant(x, w):
-    x_q, x_scale = tile_quant(x)
+    x_q, x_scale = group_quant(x)
     w_q, w_scale = block_quant(w)
     # output = torch._scaled_mm(x_q,
     #                             w_q.t(),
@@ -36,6 +36,7 @@ org_out = fp16_forward(x, w.t())
 
 # modes = ['direct', 'tensor', 'block', 'channel']
 modes = ['channel']
+megatron = True
 for mode in modes:
     if mode == 'direct':
         xq,wq,x_scale,w_scale = torch_hadamard_direct_quant(x,w,hm,qtype)
@@ -91,20 +92,37 @@ for mode in modes:
         # opt_out = xb@wb.t()
         # quant_check(org_out, xb, wb, opt_out, mode)
 
-        # impl = 'seperate'
+        impl = 'seperate'
         # impl = 'bit'
-        impl = 'bit'
+        # impl = 'bit'
         if impl == 'seperate':
-            opt_out,xq,wq,x_scale,w_scale = hadamard_quant_forward_debug(x,w,hm)
-            print(opt_out.size())
-            quant_check(org_out, xq, wq, opt_out, 'hadamard_quant_forward')
+            
+            if megatron:
+                from flops.quant.hadamard.seperate_hadamard import *
+                
+                opt_out,xq,wq,x_scale,w_scale = hadamard_quant_forward_debug_megatron(x,w,hm)
+                quant_check(org_out, xq, wq, opt_out, 'hadamard_quant_forward_megatron')
 
-            opt_out,yq,wq,y_scale,w_scale = hadamard_quant_backward_debug(y,w,hm)
-            quant_check(y@w, yq, wq, opt_out, 'hadamard_quant_backward')
+                opt_out,yq,wq,y_scale,w_scale = hadamard_quant_backward_debug_megatron(y,w,hm)
+                quant_check(y@w, yq, wq, opt_out, 'hadamard_quant_backward_megatron')
 
-            opt_out,yq,xq,y_scale,x_scale = hadamard_quant_update_debug(y,x,hm)
-            quant_check(y.t()@x, yq, xq, opt_out, 'hadamard_quant_update')
+                opt_out,yq,xq,y_scale,x_scale = hadamard_quant_update_debug_megatron(y,x,hm)
+                quant_check(y.t()@x, yq, xq, opt_out, 'hadamard_quant_update_megatron')
+
+            else:
+                opt_out,xq,wq,x_scale,w_scale = hadamard_quant_forward_debug(x,w,hm)
+                print(opt_out.size())
+                quant_check(org_out, xq, wq, opt_out, 'hadamard_quant_forward')
+
+                opt_out,yq,wq,y_scale,w_scale = hadamard_quant_backward_debug(y,w,hm)
+                quant_check(y@w, yq, wq, opt_out, 'hadamard_quant_backward')
+
+                opt_out,yq,xq,y_scale,x_scale = hadamard_quant_update_debug(y,x,hm)
+                quant_check(y.t()@x, yq, xq, opt_out, 'hadamard_quant_update')
+        
         elif impl == 'fused':
+            from flops.quant.hadamard.fused_hadamard import *
+
             output,x_q,x_s,w_q,w_s = fused_hadamard_quant_forward_debug(x, w, hm)
             quant_check(org_out, x_q, w_q, output, 'fuse_hadamard_quant_forward')
 
@@ -115,12 +133,14 @@ for mode in modes:
             quant_check(y.t()@x, y_q, x_q, output, 'fuse_hadamard_quant_update')
 
         elif impl == 'bit':
-            output,x_bt,w_bt,x_q,w_q,x_scale,w_scale = bit_hadamard_quant_forward_debug(x, w, hm)
+            from flops.quant.hadamard.duplex_hadamard import *
+
+            output,x_bt,w_bt,x_q,w_q,x_scale,w_scale = duplex_hadamard_quant_forward_debug(x, w, hm)
             quant_check(org_out, x_q, w_q, output, 'bit_hadamard_quant_forward')
 
-            output,y_bt,y_q,w_q,y_scale,w_scale=bit_hadamard_quant_backward_debug(y, w_bt, hm)
+            output,y_bt,y_q,w_q,y_scale,w_scale=duplex_hadamard_quant_backward_debug(y, w_bt, hm)
             quant_check(y@w, y_q, w_q, output, 'bit_hadamard_quant_backward')
 
-            output,y_q,x_q,y_scale,x_scale=bit_hadamard_quant_update_debug(y_bt,x_bt, hm)
+            output,y_q,x_q,y_scale,x_scale=duplex_hadamard_quant_update_debug(y_bt,x_bt, hm)
             quant_check(y.t()@x, y_q, x_q, output, 'bit_hadamard_quant_update')
         

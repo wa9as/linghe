@@ -1,8 +1,10 @@
 import torch 
 from flops.utils.util import *
 from flops.utils.benchmark import benchmark_func
-from flops.quant.hadamard import *
-
+from flops.quant.hadamard.naive_hadamard import *
+from flops.quant.hadamard.seperate_hadamard import *
+from flops.quant.hadamard.fused_hadamard import *
+from flops.quant.hadamard.duplex_hadamard import *
 
 # 5b: hidden_size:4k  seq_length:8K shape:(M,N,K)
 # qkv: 8192, 6144, 4096
@@ -82,7 +84,7 @@ def benchmark_with_shape(shape):
     benchmark_func(fp8_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
     benchmark_func(fp8_fused_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
     benchmark_func(fp8_hadamard_f_and_b_megatron, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
-    # benchmark_func(fp8_bit_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(fp8_duplex_hadamard_f_and_b, x, w, y, hm, n_repeat=n_repeat, ref_time=ref_time,ref_flops=batch_size*in_dim*out_dim*6)
 
 
 
