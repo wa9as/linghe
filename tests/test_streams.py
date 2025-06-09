@@ -1,5 +1,5 @@
 import torch
-from flops.quant.hadamard import triton_fused_hadamard
+from flops.quant.hadamard.fused_hadamard import triton_fused_hadamard
 
 
 

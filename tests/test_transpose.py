@@ -30,6 +30,6 @@ w_f8 = w.to(torch.float8_e4m3fn)
 
 ref_output = x_f8.t().contiguous()
 # opt_output = triton_block_transpose(x_f8)
-opt_output = triton_block_pad_transpose(x_f8, pad=4096)
+opt_output = triton_block_pad_transpose(x_f8, pad=True)
 torch.cuda.synchronize()
 output_check(ref_output.float(),opt_output[:,:M].float(),'transpose')

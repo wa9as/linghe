@@ -7,9 +7,6 @@ from flops.quant.channel.channel import row_quant_kernel
 from flops.utils.util import round_up
 
 
-
-
-
 """
 write h@x and h@w, duplex for BIlateral Transform
 y = x @ w

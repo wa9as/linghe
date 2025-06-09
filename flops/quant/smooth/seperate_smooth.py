@@ -93,12 +93,15 @@ def triton_smooth_quant_x(x, smooth_scale, transpose=True, pad=False):
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True, pad=False):
-    assert reverse, "args `smooth_scale` and `transpose_smooth_scale` must be reciprocal in triton_smooth_quant_y"
+def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True, transpose=True,  pad=False):
+    assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     assert y.size(1) == smooth_scale.size(0)
-    assert pad or y.size(0) == transpose_smooth_scale.size(0)
     y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
-    yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=True, pad=pad)
+    if transpose:
+        assert pad or y.size(0) == transpose_smooth_scale.size(0)
+        yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=True, pad=pad)
+    else:
+        yt_q, yt_scale = None, None
 
     return y_q,yt_q,y_scale,yt_scale
 

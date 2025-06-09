@@ -10,8 +10,8 @@ qtype = torch.float8_e4m3fn
 device = 'cuda:0'
 dtype = torch.bfloat16
 
-def tile_block_quant(x, w):
-    x_q, x_scale = tile_quant(x)
+def group_block_quant(x, w):
+    x_q, x_scale = group_quant(x)
     w_q, w_scale = block_quant(w)
     # output = torch._scaled_mm(x_q,
     #                             w_q.t(),
