@@ -80,7 +80,6 @@ if 'rescale' in modes:
     output_check(yt_scale_ref, yt_scale.float(), 'rescale_scale')
 
 
-<<<<<<< HEAD
 # modes = ['direct','global','channel','channel_backward', 'channel_update', 'dynamic','reuse']
 # modes = ['channel', 'channel_backward', 'channel_update']
 modes = ['seperate']
@@ -183,6 +182,4 @@ for mode in modes:
 
             # xqt = triton_transpose(xq)
             # print((xqt.float().t().contiguous()-xq.float()).abs().mean()/x.float().abs().mean())
-=======
->>>>>>> 0a95b672ed4ab4709f74e8c8b27256c19865cf8b
 
