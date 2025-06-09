@@ -2,6 +2,7 @@
 import torch 
 from flops.quant.smooth.naive_smooth import *
 from flops.quant.smooth.reused_smooth import *
+from flops.quant.smooth.seperate_smooth import *
 from flops.utils.util import *
 from flops.utils.benchmark import benchmark_func
 
@@ -32,7 +33,7 @@ def benchmark_with_shape(shape):
 
     print(f'\ndevice:{gpu}  M:{batch_size}  N:{out_dim}  K:{in_dim}')
 
-
+    '''
     benchmark_func(triton_smooth_quant_nt, x,w)
     # benchmark_func(triton_smooth_quant_nn, y,w)
     # benchmark_func(triton_smooth_quant_tn, y,x)
@@ -40,10 +41,22 @@ def benchmark_with_shape(shape):
 
     ref_time = benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
     benchmark_func(smooth_quant_forward, x, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
-    # ref_time = benchmark_func(fp16_backward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
-    # benchmark_func(smooth_quant_backward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
-    # ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
-    # benchmark_func(smooth_quant_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_backward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    benchmark_func(smooth_quant_backward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    benchmark_func(smooth_quant_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    
+    ref_time = benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    benchmark_func(seperate_smooth_quant_forward, x, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_forward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    benchmark_func(seperate_smooth_quant_backward, y, w, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
+    benchmark_func(seperate_smooth_quant_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
+    '''
+    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(smooth_quant_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(seperate_smooth_quant_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6, ref_time=ref_time)
 
     # benchmark_func(triton_slide_smooth_quant,x,xw_smooth_scale)
     # benchmark_func(triton_slide_smooth_quant,w,1/xw_smooth_scale)
@@ -67,13 +80,13 @@ def benchmark_with_shape(shape):
     # ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
     # benchmark_func(reused_smooth_quant_update, y, x_f8, xw_smooth_scale, x_s, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
 
-    # ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
-    # benchmark_func(reused_smooth_quant_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6)
+    benchmark_func(reused_smooth_quant_f_and_b, x, w, y, xw_smooth_scale, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*6, ref_time=ref_time)
 
 
 
 
-benchmark_with_shape([4096, 4096, 6144 ])
+benchmark_with_shape([8192, 6144, 4096])
 
 # for shape in [[8192, 6144, 4096], [8192, 4096, 4096], [8192, 13312, 4096], [8192, 4096, 13312],
 #             [8192, 10240, 8192],[8192, 8192, 8192],[8192, 34048, 8192],[8192, 4096, 34048]]:

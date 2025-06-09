@@ -20,7 +20,8 @@ org_out = fp16_forward(x, w.t())
 
 
 # modes = ['direct','global','channel','channel_backward', 'channel_update', 'dynamic','reuse']
-modes = ['channel', 'channel_backward', 'channel_update']
+# modes = ['channel', 'channel_backward', 'channel_update']
+modes = ['seperate']
 for mode in modes:
     if mode == 'direct':
         xq, wq, scale = torch_smooth_direct_quant(x,w,torch.float8_e4m3fn)
@@ -61,6 +62,18 @@ for mode in modes:
         yq, xq, y_scale, x_scale = torch_smooth_quant(y.t(),x.t(),torch.float8_e4m3fn)
 
         quant_check(org_out, yq, xq, org_out,mode)
+    
+    elif mode == 'seperate':
+        from flops.quant.smooth.seperate_smooth import *
+
+        opt_out,xq,wq,x_scale,w_scale = seperate_smooth_quant_forward(x,w)
+        quant_check(org_out, xq, wq, opt_out, 'seperate_smooth_quant_forward')
+
+        opt_out,yq,wq,y_scale,w_scale = seperate_smooth_quant_backward(y,w)
+        quant_check(y@w, yq, wq, opt_out, 'seperate_smooth_quant_backward')
+
+        opt_out,yq,xq,y_scale,x_scale = seperate_smooth_quant_update(y,x)
+        quant_check(y.t()@x, yq, xq, opt_out, 'seperate_smooth_quant_update')
 
     elif mode == 'dynamic':
         xq,wq,yq,ytq,o, dx, dw = dynamic_quant_f_and_b(x,w,y)
