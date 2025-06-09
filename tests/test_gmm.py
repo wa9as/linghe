@@ -1,6 +1,6 @@
 import os 
 import torch 
-from flops.core.smooth_quant_linear import QuantLinear
+from flops.facade.smooth_quant_linear import QuantLinear
 from flops.utils.benchmark import benchmark_func
 from flops.utils.pad import triton_batch_slice_and_pad
 from flops.quant.smooth import triton_smooth_quant_nt,smooth_quant_forward,triton_slide_smooth_quant

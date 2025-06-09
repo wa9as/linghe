@@ -42,22 +42,6 @@ def torch_tile_block_quant(x,w,B,dtype):
 
     return xq,wq,x_scale,w_scale
 
-# direct quant without scaling to 448
-def torch_smooth_direct_quant(x, w, dtype):
-    # w:[bs, in]  w:[out, in]
-    x = x.clone()
-    w = w.clone()
-    fmax = torch.finfo(dtype).max
-    x_max = torch.max(torch.abs(x).float(), dim=0, keepdim=True)[0]
-    w_max = torch.max(torch.abs(w).float(), dim=0, keepdim=True)[0]
-    scale = (x_max/w_max)**0.5
-    x_max_ = x_max/scale
-    w_max_ = w_max*scale
-    x_q = (x*(1.0/scale).to(x.dtype)).to(dtype)
-    w_q = (w*(scale).to(x.dtype)).to(dtype)
-
-    return x_q, w_q, scale
-
 # quant with scaling to 448
 def torch_smooth_tensor_quant(x, w, dtype):
     # w:[bs, in]  w:[out, in]
@@ -124,31 +108,6 @@ def torch_hadamard_transform(x, hm):
     xp = xp.permute(0,2,1,3)
     xp = torch.reshape(xp,(M,K))
     return xp 
-
-def torch_hadamard_direct_quant(x,w,hm,dtype):
-    x = x.clone()
-    w = w.clone()
-    M, K = x.shape 
-    N, K = w.shape
-    B = hm.size(0)
-
-    xp = torch.reshape(x,(M//B,B,K//B,B)).permute(0,2,1,3)
-
-    xp = xp@hm
-    xp = xp.permute(0,2,1,3)
-    xp = torch.reshape(xp,(M,K))
-
-    x_scale = 1.0
-    xq = (xp/x_scale).to(dtype)
-
-    wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
-    wp = hm@wp
-    wp = wp.permute(0,2,1,3)
-    wp = torch.reshape(wp,(K,N)).t().contiguous()
-    w_scale = 1/256
-    wq = (wp/w_scale).to(dtype)
-
-    return xq, wq, x_scale, w_scale
 
 def torch_hadamard_tensor_quant(x,w,hm,dtype):
     fmax = torch.finfo(dtype).max
@@ -240,7 +199,7 @@ def torch_hadamard_channel_quant(x,w,hm,dtype):
 
 
 # token-wise and channel-wise
-def dynamic_quant_f_and_b(x,w,y):
+def torch_channel_quant_f_and_b(x,w,y):
     M,K = x.shape 
     N,K = w.shape 
     M,N = y.shape 
@@ -280,6 +239,7 @@ def dynamic_quant_f_and_b(x,w,y):
                                     out_dtype=torch.bfloat16,
                                     use_fast_accum=True)
     return xq,wq,yq,ytq,o,dx,dw
+
 
 
 
@@ -363,7 +323,6 @@ def fp16_f_and_b(x,w,y):
     dw = y.t()@x
     dx = y@w
     return o, dx, dw
-
 
 
 
