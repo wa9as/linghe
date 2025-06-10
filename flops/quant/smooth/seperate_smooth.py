@@ -1,14 +1,13 @@
 
 import math
+from types import TracebackType
 import torch
 import triton
 import triton.language as tl
 from triton import Config
 from flops.quant.channel.channel import row_quant_kernel
-from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_smooth_quant, triton_reused_transpose_pad_smooth_quant
-from flops.utils.transpose import triton_transpose,triton_block_transpose,triton_block_pad_transpose
-from flops.utils.util import round_up
-
+from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_pad_smooth_quant
+from flops.utils.transpose import triton_block_pad_transpose
 
 @triton.jit
 def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
@@ -36,9 +35,9 @@ def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N
         col_max = tl.max(abs_x, axis=0)
         x_max = tl.maximum(x_max, col_max)
     
-    maxs = tl.sqrt(tl.maximum(x_max, 1e-12))
+    maxs = tl.sqrt(tl.maximum(x_max, 5.27e-36))
     scale = tl.where(maxs < 4.0, 1.0, maxs)
-    inv_scale = 1.0 / tl.maximum(scale, 1e-12)
+    inv_scale = 1.0 / tl.maximum(scale, 5.27e-36)
     
     tl.store(smooth_scale_ptr + pid * W + col_offs, scale)
     tl.store(inv_smooth_scale_ptr + pid * W + col_offs, inv_scale)
@@ -50,8 +49,8 @@ def triton_calc_smooth_scale(x):
     device = x.device 
     x_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
     x_inv_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
-    H = 512
-    W = 16
+    H = 512 if M >= 512 else 256
+    W = 32 if N >= 2048 else 16
     if M%H == 0 and N%W == 0:
         EVEN = True 
     else:
@@ -99,11 +98,12 @@ def triton_smooth_quant_x(x, smooth_scale, transpose=True, pad=False):
 def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True, transpose=True,  pad=False):
     assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     #assert y.size(1) == smooth_scale.size(0)
-    y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
     if transpose:
         #assert pad or y.size(0) == transpose_smooth_scale.size(0)
-        yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=True, pad=pad)
+        yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=reverse, pad=pad)
+        y_q, y_scale = None, None
     else:
+        y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=reverse, pad_scale=pad)
         yt_q, yt_scale = None, None
 
     return y_q, yt_q, y_scale, yt_scale
@@ -122,9 +122,9 @@ def triton_smooth_quant_partial_w(w, smooth_scale, w_q, w_scale, offset=0):
 
 
 def seperate_smooth_quant_forward(x, w):
-    w_smooth_scale, w_inv_smooth_scale = triton_calc_smooth_scale(w)
-    x_q, _, x_scale, _ = triton_smooth_quant_x(x, w_inv_smooth_scale)
-    w_q, _, w_scale, _ = triton_smooth_quant_x(w, w_smooth_scale, transpose=True)
+    x_smooth_scale, x_inv_smooth_scale = triton_calc_smooth_scale(x)
+    x_q, _, x_scale, _ = triton_smooth_quant_x(x, x_inv_smooth_scale, transpose=False)
+    w_q, _, w_scale, _ = triton_smooth_quant_x(w, x_smooth_scale, transpose=False)
 
     output = torch._scaled_mm(
         x_q,
@@ -139,9 +139,9 @@ def seperate_smooth_quant_forward(x, w):
 
 def seperate_smooth_quant_backward(y, w):
     y_smooth_scale, y_inv_smooth_scale = triton_calc_smooth_scale(y)
-    y_q, _, y_scale, _ = triton_smooth_quant_y(y, y_smooth_scale, y_inv_smooth_scale)
-    wt_q, _, wt_scale, _ = triton_smooth_quant_x(w.t(), y_inv_smooth_scale, transpose=False)
-
+    y_q, _, y_scale, _ = triton_smooth_quant_x(y, y_smooth_scale, transpose=False)
+    _, wt_q, _, wt_scale = triton_smooth_quant_y(w, y_smooth_scale, y_inv_smooth_scale)
+    
     output = torch._scaled_mm(
         y_q,
         wt_q.t(),
@@ -151,13 +151,13 @@ def seperate_smooth_quant_backward(y, w):
         use_fast_accum=True
     )
     
-    return output, y_q, wt_q.t(), y_scale, wt_scale
+    return output, y_q, wt_q, y_scale, wt_scale
 
 
 def seperate_smooth_quant_update(y, x):
-    x_smooth_scale, x_inv_smooth_scale = triton_calc_smooth_scale(x)
-    _, yt_q, _, yt_scale = triton_smooth_quant_y(y, x_smooth_scale, x_inv_smooth_scale)
-    _, xt_q, _, xt_scale = triton_smooth_quant_x(x, x_inv_smooth_scale)
+    y_smooth_scale, y_inv_smooth_scale = triton_calc_smooth_scale(y)
+    _, yt_q, _, yt_scale = triton_smooth_quant_y(y, y_inv_smooth_scale, y_smooth_scale)
+    _, xt_q, _, xt_scale = triton_smooth_quant_y(x, y_smooth_scale, y_inv_smooth_scale)
 
     output = torch._scaled_mm(
         yt_q,
@@ -171,24 +171,25 @@ def seperate_smooth_quant_update(y, x):
     return output, yt_q, xt_q, yt_scale, xt_scale
 
 
+
 def seperate_smooth_quant_f_and_b(x, w, y):
-    w_smooth_scale, w_inv_smooth_scale = triton_calc_smooth_scale(w)
     x_smooth_scale, x_inv_smooth_scale = triton_calc_smooth_scale(x)
     y_smooth_scale, y_inv_smooth_scale = triton_calc_smooth_scale(y)
-    
-    x_q, xt_q, x_scale, xt_scale = triton_smooth_quant_x(x, w_inv_smooth_scale)
-    w_q, _, w_scale, _ = triton_smooth_quant_x(w, w_smooth_scale, transpose=True)
+
+    x_q, _, x_scale, _ = triton_smooth_quant_x(x, x_inv_smooth_scale, transpose=False)
+    w_q, _, w_scale, _ = triton_smooth_quant_x(w, x_smooth_scale, transpose=False)
     torch._scaled_mm(
         x_q,
         w_q.t(),
-        scale_a=x_scale.unsqueeze(1),
+        scale_a=x_scale.view(-1, 1),
         scale_b=w_scale.view(1, -1),
         out_dtype=x.dtype,
         use_fast_accum=True
     )
 
-    y_q, _, y_scale, _ = triton_smooth_quant_y(y, y_smooth_scale, y_inv_smooth_scale)
-    wt_q, _, wt_scale, _ = triton_smooth_quant_x(w.t(), y_inv_smooth_scale, transpose=False)
+    y_q, _, y_scale, _ = triton_smooth_quant_x(y, y_smooth_scale, transpose=False)
+    _, wt_q, _, wt_scale = triton_smooth_quant_y(w, y_smooth_scale, y_inv_smooth_scale)
+    
     torch._scaled_mm(
         y_q,
         wt_q.t(),
@@ -198,8 +199,9 @@ def seperate_smooth_quant_f_and_b(x, w, y):
         use_fast_accum=True
     )
 
-    _, yt_q, _, yt_scale = triton_smooth_quant_y(y, x_smooth_scale, x_inv_smooth_scale)
-    _, xt_q, _, xt_scale = triton_smooth_quant_x(x, x_inv_smooth_scale, transpose=True)
+    _, yt_q, _, yt_scale = triton_smooth_quant_y(y, y_inv_smooth_scale, y_smooth_scale)
+    _, xt_q, _, xt_scale = triton_smooth_quant_y(x, y_smooth_scale, y_inv_smooth_scale)
+
     torch._scaled_mm(
         yt_q,
         xt_q.t(),
