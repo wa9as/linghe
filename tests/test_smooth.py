@@ -15,7 +15,7 @@ N, K = w.shape
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['rescale']
+modes = ['seperate']
 
 
 if 'torch_tensor' in modes:

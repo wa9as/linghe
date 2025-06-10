@@ -7,6 +7,7 @@ from flops.quant.channel.channel import row_quant_kernel
 from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_pad_smooth_quant
 from flops.utils.transpose import triton_block_pad_transpose
 
+
 @triton.jit
 def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
     pid = tl.program_id(axis=0)

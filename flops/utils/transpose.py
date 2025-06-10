@@ -131,20 +131,31 @@ def triton_block_transpose(x):
     return t
 
 
-
-
 @triton.jit
 def block_pad_transpose_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
     rid = tl.program_id(axis=0)
     cid = tl.program_id(axis=1)
-    offs = rid*H*N + cid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:] 
-    toffs = rid*H + cid*P*W + tl.arange(0, W)[:,None]*P + tl.arange(0, H)[None,:]
+
+    row_base = rid * H
+    col_base = cid * W
+    
+    offs = col_base + tl.arange(0, W) + (row_base + tl.arange(0, H)[:, None]) * N
+    toffs = row_base + tl.arange(0, H) + (col_base + tl.arange(0, W)[:, None]) * P
+    
     if EVEN:
-        y = tl.trans(tl.load(x_ptr+offs))
-        tl.store(t_ptr+toffs, y)
+        block = tl.load(x_ptr + offs, boundary_check=(0, 1))
+        transposed = tl.trans(block)
+        tl.store(t_ptr + toffs, transposed, boundary_check=(0, 1))
     else:
-        y = tl.trans(tl.load(x_ptr+offs, mask=(cid*W+tl.arange(0, W)[None,:] < N) & (rid*H+tl.arange(0, H)[:,None] < M) ))
-        tl.store(t_ptr+toffs, y, mask=(cid*W+tl.arange(0, W)[:,None] < N) & (rid*H+tl.arange(0, H)[None,:] < M))
+        row_mask = (row_base + tl.arange(0, H)) < M
+        col_mask = (col_base + tl.arange(0, W)) < N
+        mask = row_mask[:, None] & col_mask[None, :]
+        
+        block = tl.load(x_ptr + offs, mask=mask)
+        transposed = tl.trans(block)
+        
+        t_mask = col_mask[:, None] & row_mask[None, :]
+        tl.store(t_ptr + toffs, transposed, mask=t_mask)
 
 
 """
@@ -156,32 +167,22 @@ def triton_block_pad_transpose(x, pad=True):
     P = round_up(M) if pad else M 
     device = x.device
     t = torch.zeros((N, P),device=device,dtype=x.dtype) 
-
+    
     H = max([x for x in [1,64,128,256,512] if M%x == 0])
     if H > 1:
-        EVEN = True 
-        if x.dtype.itemsize == 1:
-            W = 32
-            num_stages = 5
-            num_warps = 8
-        else:
-            W = 16
-            num_stages = 5
-            num_warps = 8 
+        EVEN = True
+        W = 32 if x.dtype.itemsize == 1 else 16
+        num_stages = 3
+        num_warps = 8
     else:
-        EVEN = False 
-        if x.dtype.itemsize == 1:
-            H = 64
-            W = 32
-            num_stages = 5
-            num_warps = 4
-        else:
-            H = 128
-            W = 16
-            num_stages = 5
-            num_warps = 8 
-
-    grid = lambda META: ((M-1)//H+1, (N-1)//W+1)
+        EVEN = False
+        H = 64 if x.dtype.itemsize == 1 else 128
+        W = 32 if x.dtype.itemsize == 1 else 16
+        num_stages = 3
+        num_warps = 8 if x.dtype.itemsize == 1 else 8
+    
+    grid = ((M + H - 1) // H, (N + W - 1) // W)
+    
     block_pad_transpose_kernel[grid](
         x, t,
         M, N, P,

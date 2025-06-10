@@ -10,83 +10,93 @@ from flops.utils.transpose import triton_transpose,triton_block_transpose,triton
 from flops.utils.util import round_up
 
 
-
 @triton.jit
-def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def reused_smooth_quant_kernel(
+    x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr
+):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
-    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
+    offs = pid * W * N + tl.arange(0, W)[:, None] * N + tl.arange(0, H)[None, :]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,), dtype=tl.float32)
     n = tl.cdiv(N, H)
     for i in range(n):
         if EVEN:
-            x = tl.load(x_ptr+offs)
-            smooth_scale = tl.load(ss_ptr+soffs)
+            x = tl.load(x_ptr + offs)
+            smooth_scale = tl.load(ss_ptr + soffs)
         else:
-            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            mask = (i * H + tl.arange(0, H)[None, :] < N) & (pid * W + tl.arange(0, W)[:, None] < M)
             other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<N, other=other)
+            x = tl.load(x_ptr + offs, mask=mask, other=0.0)
+            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < N, other=other)
+        
         if REVERSE:
-            x = x.to(tl.float32) * smooth_scale
+            x_val = x.to(tl.float32) * smooth_scale
         else:
-            x = x.to(tl.float32) / smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=1),x_max)
-        offs += H 
+            x_val = x.to(tl.float32) / smooth_scale
+        
+        abs_x = tl.abs(x_val)
+        row_max = tl.max(abs_x, axis=1)
+        x_max = tl.maximum(row_max, x_max)
+        
+        offs += H
         soffs += H
 
+    scale = x_max / 448.0
     if ROUND:
-        scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-    else:
-        scale = x_max/448.0
-    tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
+        scale = tl.exp2(tl.ceil(tl.log2(scale)))
+    
+    tl.store(qs_ptr + pid * W + tl.arange(0, W), scale)
+    inv_scale = (1.0 / scale)[:, None]
 
-    s = (1.0/scale)[:,None]
-
-    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
+    offs = pid * W * N + tl.arange(0, W)[:, None] * N + tl.arange(0, H)[None, :]
     soffs = tl.arange(0, H)
+    
     for i in range(n):
         if EVEN:
-            x = tl.load(x_ptr+offs)
-            smooth_scale = tl.load(ss_ptr+soffs)
+            x = tl.load(x_ptr + offs)
+            smooth_scale = tl.load(ss_ptr + soffs)
         else:
-            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            mask = (i * H + tl.arange(0, H)[None, :] < N) & (pid * W + tl.arange(0, W)[:, None] < M)
             other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<N, other=other)
-
+            x = tl.load(x_ptr + offs, mask=mask, other=0.0)
+            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < N, other=other)
+        
+        x_f32 = x.to(tl.float32)
         if REVERSE:
-            xq = (x.to(tl.float32) * smooth_scale * s).to(q_ptr.dtype.element_ty)
+            xq = (x_f32 * smooth_scale * inv_scale).to(q_ptr.dtype.element_ty)
         else:
-            xq = (x.to(tl.float32) / smooth_scale * s).to(q_ptr.dtype.element_ty)
-
+            xq = (x_f32 / smooth_scale * inv_scale).to(q_ptr.dtype.element_ty)
+        
         if EVEN:
-            tl.store(q_ptr+offs, xq)
+            tl.store(q_ptr + offs, xq)
         else:
-            tl.store(q_ptr+offs, xq, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
-        offs += H 
+            tl.store(q_ptr + offs, xq, mask=mask)
+        
+        offs += H
         soffs += H
-
 
 
 # smooth_scale: w_max/tl.sqrt(x_max*w_max)
 def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=False, pad_scale=False, round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
-    device = x.device 
+    device = x.device
+    
     if x_q is None:
-        x_q = torch.zeros((M, N), device=device, dtype=torch.float8_e4m3fn)
+        x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    
     if x_scale is None:
-        scale_size = round_up(M, b=16) if pad_scale else M
-        x_scale = torch.zeros((scale_size,), device=device, dtype=torch.float32)
+        scale_size = triton.cdiv(M, 16) * 16 if pad_scale else M
+        x_scale = torch.empty((scale_size,), device=device, dtype=torch.float32)
+    
     W = 8 if M < 132*10 else 16
     H = 512 if W == 16 else 1024
     # H = 512
     # W = 16
-    if N%H == 0 and M%W == 0:
-        EVEN = True
-    else:
-        EVEN = False
-    grid = lambda META: (triton.cdiv(M, W), )
+    EVEN = (N % H == 0) and (M % W == 0)
+    grid = (triton.cdiv(M, W),)
+    
     reused_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -97,12 +107,11 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=
         EVEN,
         reverse,
         round_scale,
-        num_stages=5,
-        num_warps=4
+        num_stages=3,
+        num_warps=8
     )
-
-    return x_q,x_scale
-
+    
+    return x_q, x_scale
 
 
 @triton.jit
@@ -192,78 +201,86 @@ def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False):
     return x_q,x_scale
 
 
-
 @triton.jit
 def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,), dtype=tl.float32) + 5.27e-36
     m = tl.cdiv(M, H)
+    
     for i in range(m):
         if EVEN:
-            x = tl.load(x_ptr+offs)
-            smooth_scale = tl.load(ss_ptr+soffs)[:,None]
+            x = tl.load(x_ptr + offs)
+            smooth_scale = tl.load(ss_ptr + soffs)[:, None]
         else:
-            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0,H)[:,None]<M) & (pid*W+tl.arange(0,W)[None,:]<N))
-            other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<M, other=other)[:,None]
+            mask = (i*H + tl.arange(0, H)[:, None] < M) & (pid*W + tl.arange(0, W)[None, :] < N)
+            x = tl.load(x_ptr + offs, mask=mask, other=0.0)
+            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs<M, other=(0.0 if REVERSE else 1e30))[:, None]
+        
         if REVERSE:
             x = x * smooth_scale
         else:
-            x = x / smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
-        offs += H*N 
+            inv_scale = 1.0 / smooth_scale
+            x = x * inv_scale
+        col_max = tl.max(tl.abs(x), axis=0)
+        x_max = tl.maximum(col_max, x_max)
+        offs += H*N
         soffs += H
 
-    scale = (x_max/448.0)
+    scale = x_max / 448.0
     if EVEN:
-        tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
+        tl.store(qs_ptr + pid*W + tl.arange(0, W), scale)
     else:
-        tl.store(qs_ptr+pid*W+tl.arange(0, W), scale, mask=pid*W+tl.arange(0,W)<N)
+        store_mask = pid*W + tl.arange(0, W) < N
+        tl.store(qs_ptr + pid*W + tl.arange(0, W), scale, mask=store_mask)
 
-
-    s = (1.0/scale)[:,None]
-    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
+    s = (1.0 / scale)[:, None]
+    offs = pid*W + tl.arange(0, H)[:, None]*N + tl.arange(0, W)[None, :]
     soffs = tl.arange(0, H)
-    toffs = pid*W*M + tl.arange(0, W)[:,None]*P + tl.arange(0, H)[None,:]
+    toffs = pid*W*M + tl.arange(0, W)[:, None]*P + tl.arange(0, H)[None, :]
+    
     for i in range(m):
         if EVEN:
-            x = tl.trans(tl.load(x_ptr+offs))
-            smooth_scale = tl.load(ss_ptr+soffs)
+            x = tl.trans(tl.load(x_ptr + offs))
+            smooth_scale = tl.load(ss_ptr + soffs)
         else:
-            x = tl.trans(tl.load(x_ptr+offs, mask=(i*H+tl.arange(0,H)[:,None]<M) & (pid*W+tl.arange(0,W)[None,:]<N)))
-            other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<M, other=other)
-
+            mask = (i*H + tl.arange(0, H)[:, None] < M) & (pid*W + tl.arange(0, W)[None, :] < N)
+            x = tl.trans(tl.load(x_ptr + offs, mask=mask, other=0.0))
+            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs<M, other=(0.0 if REVERSE else 1e30))
+        
         if REVERSE:
-            x = (x*smooth_scale*s).to(q_ptr.dtype.element_ty)
+            x = (x * smooth_scale * s).to(q_ptr.dtype.element_ty)
         else:
-            x = (x/smooth_scale*s).to(q_ptr.dtype.element_ty)
+            inv_scale = 1.0 / smooth_scale
+            x = (x * inv_scale * s).to(q_ptr.dtype.element_ty)
+        
         if EVEN:
-            tl.store(q_ptr+toffs, x)
+            tl.store(q_ptr + toffs, x)
         else:
-            tl.store(q_ptr+toffs, x, mask=(i*H+tl.arange(0,H)[None,:]<M) & (pid*W+tl.arange(0,W)[:,None]<N))
+            store_mask = (i*H + tl.arange(0, H)[None, :] < M) & (pid*W + tl.arange(0, W)[:, None] < N)
+            tl.store(q_ptr + toffs, x, mask=store_mask)
+        
         offs += H*N
         toffs += H
         soffs += H
 
-
-
 def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad=False):
     # col-wise read, row-wise write
     M, N = x.shape
-    device = x.device 
+    device = x.device
     P = round_up(M) if pad else M
-    x_q = torch.zeros((N, P), device=device, dtype=torch.float8_e4m3fn)
-    x_scale = torch.zeros((N,), device=device, dtype=torch.float32)
-    H = max([x for x in [1,64,128,256] if M%x == 0])
-    W = max([x for x in [1,16,32] if N%x == 0])
-    if H > 1 and W > 1: 
-        EVEN = True 
+    x_q = torch.empty((N, P), device=device, dtype=torch.float8_e4m3fn)
+    x_scale = torch.empty((N,), device=device, dtype=torch.float32)
+    
+    H = max([x for x in [1, 64, 128, 256] if M % x == 0], default=1)
+    W = max([x for x in [1, 16, 32] if N % x == 0], default=1)
+    
+    if H > 1 and W > 1:
+        EVEN = True
     else:
-        EVEN = False 
+        EVEN = False
         H = 256 if H == 1 else H
         W = 32 if W == 1 else W
 
@@ -281,7 +298,6 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
     )
 
     return x_q,x_scale
-
 
 
 @triton.jit
