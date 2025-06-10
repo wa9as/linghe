@@ -11,14 +11,12 @@ from flops.utils.util import round_up
 
 
 @triton.jit
-def reused_smooth_quant_kernel(
-    x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr
-):
+def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
     offs = pid * W * N + tl.arange(0, W)[:, None] * N + tl.arange(0, H)[None, :]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,), dtype=tl.float32)
+    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
     n = tl.cdiv(N, H)
     for i in range(n):
         if EVEN:
@@ -87,7 +85,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=
         x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     
     if x_scale is None:
-        scale_size = triton.cdiv(M, 16) * 16 if pad_scale else M
+        scale_size = round_up(M, b=16) if pad_scale else M
         x_scale = torch.empty((scale_size,), device=device, dtype=torch.float32)
     
     W = 8 if M < 132*10 else 16
@@ -95,7 +93,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=
     # H = 512
     # W = 16
     EVEN = (N % H == 0) and (M % W == 0)
-    grid = (triton.cdiv(M, W),)
+    grid = lambda META: (triton.cdiv(M, W), )
     
     reused_smooth_quant_kernel[grid](
         x,

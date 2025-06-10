@@ -143,9 +143,9 @@ def block_pad_transpose_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr, W: tl.con
     toffs = row_base + tl.arange(0, H) + (col_base + tl.arange(0, W)[:, None]) * P
     
     if EVEN:
-        block = tl.load(x_ptr + offs, boundary_check=(0, 1))
+        block = tl.load(x_ptr + offs)
         transposed = tl.trans(block)
-        tl.store(t_ptr + toffs, transposed, boundary_check=(0, 1))
+        tl.store(t_ptr + toffs, transposed)
     else:
         row_mask = (row_base + tl.arange(0, H)) < M
         col_mask = (col_base + tl.arange(0, W)) < N
@@ -166,7 +166,7 @@ def triton_block_pad_transpose(x, pad=True):
     M, N = x.shape
     P = round_up(M) if pad else M 
     device = x.device
-    t = torch.zeros((N, P),device=device,dtype=x.dtype) 
+    t = torch.empty((N, P),device=device,dtype=x.dtype) 
     
     H = max([x for x in [1,64,128,256,512] if M%x == 0])
     if H > 1:
@@ -181,8 +181,7 @@ def triton_block_pad_transpose(x, pad=True):
         num_stages = 3
         num_warps = 8 if x.dtype.itemsize == 1 else 8
     
-    grid = ((M + H - 1) // H, (N + W - 1) // W)
-    
+    grid = lambda META: ((M-1)//H+1, (N-1)//W+1)
     block_pad_transpose_kernel[grid](
         x, t,
         M, N, P,
