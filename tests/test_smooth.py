@@ -127,14 +127,20 @@ for mode in modes:
     elif mode == 'seperate':
         from flops.quant.smooth.seperate_smooth import *
 
-        opt_out,xq,wq,x_scale,w_scale = seperate_smooth_quant_forward(x,w)
-        quant_check(org_out, xq, wq, opt_out, 'seperate_smooth_quant_forward')
+        #opt_out,xq,wq,x_scale,w_scale = seperate_smooth_quant_forward(x,w)
+        #quant_check(org_out, xq, wq, opt_out, 'seperate_smooth_quant_forward')
 
-        opt_out,yq,wq,y_scale,w_scale = seperate_smooth_quant_backward(y,w)
-        quant_check(y@w, yq, wq, opt_out, 'seperate_smooth_quant_backward')
+        #opt_out,yq,wq,y_scale,w_scale = seperate_smooth_quant_backward(y,w)
+        #quant_check(y@w, yq, wq, opt_out, 'seperate_smooth_quant_backward')
 
-        opt_out,yq,xq,y_scale,x_scale = seperate_smooth_quant_update(y,x)
-        quant_check(y.t()@x, yq, xq, opt_out, 'seperate_smooth_quant_update')
+        #opt_out,yq,xq,y_scale,x_scale = seperate_smooth_quant_update(y,x)
+        #quant_check(y.t()@x, yq, xq, opt_out, 'seperate_smooth_quant_update')
+
+        ref_o, ref_dx, ref_dw = fp16_f_and_b(x,w,y)
+        o, dx, dw = seperate_smooth_quant_f_and_b(x,w,y)
+        output_check(ref_o, o, mode)
+        output_check(ref_dx, dx, mode)
+        output_check(ref_dw, dw, mode)
 
     elif mode == 'dynamic':
         xq,wq,yq,ytq,o, dx, dw = dynamic_quant_f_and_b(x,w,y)
