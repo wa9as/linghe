@@ -295,6 +295,7 @@ def reused_transpose_pad_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_sc
         org_smooth_scale = tl.load(org_smooth_scale_ptr + pid*W + tl.arange(0, W))[None,:]
     else:
         org_smooth_scale = tl.load(org_smooth_scale_ptr + pid*W + tl.arange(0, W), mask=pid*W + tl.arange(0, W)<N, other=1e30)[None,:]
+
     m = tl.cdiv(M, H)
     for i in range(m):
         if EVEN:
@@ -318,6 +319,7 @@ def reused_transpose_pad_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_sc
         tl.store(transpose_quant_scale_ptr+pid*W+tl.arange(0, W), scale, mask=pid*W+tl.arange(0,W)<N)
 
     s = (1.0/scale)[None,:]
+
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
     toffs = pid*W*M + tl.arange(0, W)[:,None]*P + tl.arange(0, H)[None,:]

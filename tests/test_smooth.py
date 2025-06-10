@@ -69,12 +69,12 @@ if 'torch_reuse' in modes:
 
 if 'rescale' in modes:
     from flops.quant.smooth.reused_smooth import *
-    org_smooth_scale = torch.ones((K,),device=device,dtype=torch.float32)
-    y_q,y_scale = triton_reused_smooth_quant(y, org_smooth_scale, reverse=True, pad_scale=False, round_scale=True)
+    org_smooth_scale = torch.ones((N,),device=device,dtype=torch.float32)
+    y_q, y_scale = triton_reused_smooth_quant(y, org_smooth_scale, reverse=True, pad_scale=False, round_scale=True)
     transpose_smooth_scale = torch.ones((M,),device=device,dtype=torch.float32)
     yt_q,yt_scale = triton_reused_transpose_pad_rescale_smooth_quant(y_q, org_smooth_scale, y_scale, transpose_smooth_scale, reverse=True, pad=False)
     y_tmp = (y.to(torch.float32)*transpose_smooth_scale[:,None]).t().contiguous()
-    yt_scale_ref = torch.exp2(torch.ceil(torch.log2(y_tmp.amax(dim=1)/448)))
+    yt_scale_ref = torch.exp2(torch.ceil(torch.log2(y_tmp.abs().amax(dim=1)/448+1e-30)))
     yt_q_ref = (y_tmp/yt_scale_ref[:,None]).to(torch.float8_e4m3fn).to(torch.float32)
     output_check(yt_q_ref, yt_q.float(), 'rescale_data')
     output_check(yt_scale_ref, yt_scale.float(), 'rescale_scale')
