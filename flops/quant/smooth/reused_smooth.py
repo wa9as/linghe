@@ -280,8 +280,8 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
         M, N, P,
         H, W, 
         EVEN, reverse,
-        num_stages=5,
-        num_warps=4
+        num_stages=3,
+        num_warps=8
     )
 
     return x_q,x_scale

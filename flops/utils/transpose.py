@@ -159,14 +159,14 @@ def triton_block_pad_transpose(x, pad=True):
     if H > 1:
         EVEN = True
         W = 32 if x.dtype.itemsize == 1 else 16
-        num_stages = 3
-        num_warps = 8
     else:
         EVEN = False
         H = 64 if x.dtype.itemsize == 1 else 128
         W = 32 if x.dtype.itemsize == 1 else 16
-        num_stages = 3
-        num_warps = 8 if x.dtype.itemsize == 1 else 8
+    
+    if not EVEN or (pad and P > M):
+        with torch.no_grad():
+            t.fill_(0)
     
     grid = lambda META: ((M-1)//H+1, (N-1)//W+1)
     block_pad_transpose_kernel[grid](
@@ -174,8 +174,8 @@ def triton_block_pad_transpose(x, pad=True):
         M, N, P,
         H, W,
         EVEN,
-        num_stages=num_stages,
-        num_warps=num_warps
+        num_stages=3,
+        num_warps=8
     )
     return t
 

@@ -199,9 +199,9 @@ def seperate_smooth_quant_f_and_b(x, w, y, w_smooth_scale):
     )
     
     # ===== forward =====
-    # Calc smooth scale from x and update w_smooth
+    # Calc smooth scale from x
     x_smooth_scale, _ = triton_calc_smooth_scale(x)
-
+    
     # Quant x using inverse smooth scale
     x_q, _, x_scale, _ = triton_smooth_quant_x(
         x, 
@@ -223,7 +223,7 @@ def seperate_smooth_quant_f_and_b(x, w, y, w_smooth_scale):
     w_smooth_scale = x_smooth_scale.clone().detach()
     
     # ===== dgrad =====
-    # Smooth and quant y for gradient calculation
+    # Smooth and quant y for gradient calc
     y_smooth_scale, y_inv_smooth_scale = triton_calc_smooth_scale(y)
     y_q, _, y_scale, _ = triton_smooth_quant_x(
         y,
