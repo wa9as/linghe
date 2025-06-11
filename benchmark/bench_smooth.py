@@ -1,4 +1,5 @@
 
+import torch
 from flops.quant.smooth.naive_smooth import *
 from flops.quant.smooth.reused_smooth import *
 from flops.quant.smooth.seperate_smooth import *
