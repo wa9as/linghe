@@ -10,7 +10,7 @@ from flops.utils.transpose import triton_block_pad_transpose
 """
 megatron fp8 training steps:
 step 0: init w smooth scale w_smooth
-step 1: smooth and quant w when w is updated
+v
 step 2: in forward step, columnwise smooth x and rowwise quant x, calc y=x@w; meanwhile, record the columnwise max of x, it is used to update w_smooth
 step 3: in dgrad step, columnwise smooth y and rowwise quant y, transpose x, calc dx=y@wT 
 step 4: in wgrad step, dequant then smooth an then quant y_q to get yt_q, calc dw=yT@x
@@ -112,12 +112,11 @@ def triton_smooth_quant_x(x, smooth_scale, transpose=True, pad=False):
 def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True, transpose=True,  pad=False):
     assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     #assert y.size(1) == smooth_scale.size(0)
+    y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=reverse, pad_scale=pad)
     if transpose:
         #assert pad or y.size(0) == transpose_smooth_scale.size(0)
         yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=reverse, pad=pad)
-        y_q, y_scale = None, None
     else:
-        y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=reverse, pad_scale=pad)
         yt_q, yt_scale = None, None
 
     return y_q, yt_q, y_scale, yt_scale
@@ -148,6 +147,7 @@ def seperate_smooth_quant_forward(x, w):
         out_dtype=x.dtype,
         use_fast_accum=True
     )
+    
     return output, x_q, w_q, x_scale, w_scale
 
 
@@ -185,13 +185,32 @@ def seperate_smooth_quant_update(y, x):
     return output, yt_q, xt_q, yt_scale, xt_scale
 
 
+def seperate_smooth_quant_f_and_b(x, w, y, w_smooth_scale):
+    # Initialize w_smooth_scale if not provided
+    if w_smooth_scale is None:
+        w_smooth_scale, _ = triton_calc_smooth_scale(w)
+    
+    # Smooth and quant weights using w_smooth
+    w_q, _, w_scale, _ = triton_smooth_quant_x(
+        w, 
+        1/w_smooth_scale,
+        transpose=False, 
+        pad=False
+    )
+    
+    # ===== forward =====
+    # Calc smooth scale from x and update w_smooth
+    x_smooth_scale, _ = triton_calc_smooth_scale(x)
 
-def seperate_smooth_quant_f_and_b(x, w, y):
-    x_smooth_scale, x_inv_smooth_scale = triton_calc_smooth_scale(x)
-    y_smooth_scale, y_inv_smooth_scale = triton_calc_smooth_scale(y)
-
-    x_q, _, x_scale, _ = triton_smooth_quant_x(x, x_inv_smooth_scale, transpose=False)
-    w_q, _, w_scale, _ = triton_smooth_quant_x(w, x_smooth_scale, transpose=False)
+    # Quant x using inverse smooth scale
+    x_q, _, x_scale, _ = triton_smooth_quant_x(
+        x, 
+        w_smooth_scale, 
+        transpose=False, 
+        pad=False
+    )
+    
+    # y=x_q@w_q
     o = torch._scaled_mm(
         x_q,
         w_q.t(),
@@ -201,9 +220,29 @@ def seperate_smooth_quant_f_and_b(x, w, y):
         use_fast_accum=True
     )
 
-    y_q, _, y_scale, _ = triton_smooth_quant_x(y, y_smooth_scale, transpose=False)
-    _, wt_q, _, wt_scale = triton_smooth_quant_y(w, y_smooth_scale, y_inv_smooth_scale)
+    w_smooth_scale = x_smooth_scale.clone().detach()
     
+    # ===== dgrad =====
+    # Smooth and quant y for gradient calculation
+    y_smooth_scale, y_inv_smooth_scale = triton_calc_smooth_scale(y)
+    y_q, _, y_scale, _ = triton_smooth_quant_x(
+        y,
+        y_inv_smooth_scale,
+        transpose=False,
+        pad=False
+    )
+    
+    # Transpose and quant weights
+    _, wt_q, _, wt_scale = triton_smooth_quant_y(
+        w,
+        y_smooth_scale,
+        y_inv_smooth_scale,
+        reverse=True,
+        transpose=True,
+        pad=False
+    )
+    
+    # dx=y@wT
     dx = torch._scaled_mm(
         y_q,
         wt_q.t(),
@@ -213,9 +252,27 @@ def seperate_smooth_quant_f_and_b(x, w, y):
         use_fast_accum=True
     )
 
-    _, yt_q, _, yt_scale = triton_smooth_quant_y(y, x_inv_smooth_scale, x_smooth_scale)
-    _, xt_q, _, xt_scale = triton_smooth_quant_y(x, x_smooth_scale, x_inv_smooth_scale)
+    # ===== wgrad =====
+    # Prepare transposed y and x for weight gradient
+    _, yt_q, _, yt_scale = triton_smooth_quant_y(
+        y,
+        y_inv_smooth_scale,
+        y_smooth_scale,
+        reverse=True,
+        transpose=True,
+        pad=False
+    )
 
+    _, xt_q, _, xt_scale = triton_smooth_quant_y(
+        x,
+        y_smooth_scale,
+        y_inv_smooth_scale,
+        reverse=True,
+        transpose=True,
+        pad=False
+    )
+    
+    # dw=yT@x
     dw = torch._scaled_mm(
         yt_q,
         xt_q.t(),
@@ -224,5 +281,5 @@ def seperate_smooth_quant_f_and_b(x, w, y):
         out_dtype=y.dtype,
         use_fast_accum=True
     )
-
-    return o, dx, dw
+    
+    return o, dx, dw, w_smooth_scale

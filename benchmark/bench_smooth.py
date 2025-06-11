@@ -1,5 +1,6 @@
 
-import torch 
+import torch
+from triton.language.standard import xor_sum 
 from flops.quant.smooth.naive_smooth import *
 from flops.quant.smooth.reused_smooth import *
 from flops.quant.smooth.seperate_smooth import *
@@ -35,9 +36,9 @@ def benchmark_with_shape(shape):
     print(f'\ndevice:{gpu}  M:{M}  N:{N}  K:{K}')
 
 
-    benchmark_func(triton_smooth_quant_y, y, yw_smooth_scale, yx_smooth_scale, reverse=True, transpose=True, pad=False, n_repeat=n_repeat)
-    benchmark_func(triton_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=False, round_scale=True, n_repeat=n_repeat)
-    benchmark_func(triton_reused_transpose_pad_rescale_smooth_quant, y_q, yw_smooth_scale, yx_smooth_scale, yx_smooth_scale, reverse=True, pad=False, n_repeat=n_repeat)
+    # benchmark_func(triton_smooth_quant_y, y, yw_smooth_scale, yx_smooth_scale, reverse=True, transpose=True, pad=False, n_repeat=n_repeat)
+    # benchmark_func(triton_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=False, round_scale=True, n_repeat=n_repeat)
+    # benchmark_func(triton_reused_transpose_pad_rescale_smooth_quant, y_q, yw_smooth_scale, yx_smooth_scale, yx_smooth_scale, reverse=True, pad=False, n_repeat=n_repeat)
 
 
     # benchmark_func(triton_smooth_quant_nt, x,w)
@@ -60,7 +61,7 @@ def benchmark_with_shape(shape):
     # benchmark_func(seperate_smooth_quant_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
 
     ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6)
-    benchmark_func(seperate_smooth_quant_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
+    benchmark_func(seperate_smooth_quant_f_and_b, x, w, y, xw_smooth_scale, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
 
     # benchmark_func(triton_slide_smooth_quant,x,xw_smooth_scale)
     # benchmark_func(triton_slide_smooth_quant,w,1/xw_smooth_scale)
@@ -84,8 +85,8 @@ def benchmark_with_shape(shape):
     # ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=M*K*N*2)
     # benchmark_func(reused_smooth_quant_update, y, x_f8, xw_smooth_scale, x_s, n_repeat=n_repeat, ref_flops=M*K*N*2, ref_time=ref_time)
 
-    # ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6)
-    # benchmark_func(reused_smooth_quant_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
+    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6)
+    benchmark_func(reused_smooth_quant_f_and_b, x, w, y, xw_smooth_scale, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
 
 
 

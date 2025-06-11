@@ -135,27 +135,14 @@ def triton_block_transpose(x):
 def block_pad_transpose_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
     rid = tl.program_id(axis=0)
     cid = tl.program_id(axis=1)
-
-    row_base = rid * H
-    col_base = cid * W
-    
-    offs = col_base + tl.arange(0, W) + (row_base + tl.arange(0, H)[:, None]) * N
-    toffs = row_base + tl.arange(0, H) + (col_base + tl.arange(0, W)[:, None]) * P
-    
+    offs = rid*H*N + cid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:] 
+    toffs = rid*H + cid*P*W + tl.arange(0, W)[:,None]*P + tl.arange(0, H)[None,:]
     if EVEN:
-        block = tl.load(x_ptr + offs)
-        transposed = tl.trans(block)
-        tl.store(t_ptr + toffs, transposed)
+        y = tl.trans(tl.load(x_ptr+offs))
+        tl.store(t_ptr+toffs, y)
     else:
-        row_mask = (row_base + tl.arange(0, H)) < M
-        col_mask = (col_base + tl.arange(0, W)) < N
-        mask = row_mask[:, None] & col_mask[None, :]
-        
-        block = tl.load(x_ptr + offs, mask=mask)
-        transposed = tl.trans(block)
-        
-        t_mask = col_mask[:, None] & row_mask[None, :]
-        tl.store(t_ptr + toffs, transposed, mask=t_mask)
+        y = tl.trans(tl.load(x_ptr+offs, mask=(cid*W+tl.arange(0, W)[None,:] < N) & (rid*H+tl.arange(0, H)[:,None] < M) ))
+        tl.store(t_ptr+toffs, y, mask=(cid*W+tl.arange(0, W)[:,None] < N) & (rid*H+tl.arange(0, H)[None,:] < M))
 
 
 """

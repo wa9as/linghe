@@ -14,64 +14,55 @@ from flops.utils.util import round_up
 def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
-    offs = pid * W * N + tl.arange(0, W)[:, None] * N + tl.arange(0, H)[None, :]
+    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     soffs = tl.arange(0, H)
     x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
     n = tl.cdiv(N, H)
     for i in range(n):
         if EVEN:
-            x = tl.load(x_ptr + offs)
-            smooth_scale = tl.load(ss_ptr + soffs)
+            x = tl.load(x_ptr+offs)
+            smooth_scale = tl.load(ss_ptr+soffs)
         else:
-            mask = (i * H + tl.arange(0, H)[None, :] < N) & (pid * W + tl.arange(0, W)[:, None] < M)
+            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
             other = 0.0 if REVERSE else 1e30
-            x = tl.load(x_ptr + offs, mask=mask, other=0.0)
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < N, other=other)
-        
+            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<N, other=other)
         if REVERSE:
-            x_val = x.to(tl.float32) * smooth_scale
+            x = x.to(tl.float32) * smooth_scale
         else:
-            x_val = x.to(tl.float32) / smooth_scale
-        
-        abs_x = tl.abs(x_val)
-        row_max = tl.max(abs_x, axis=1)
-        x_max = tl.maximum(row_max, x_max)
-        
-        offs += H
+            x = x.to(tl.float32) / smooth_scale
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=1),x_max)
+        offs += H 
         soffs += H
 
-    scale = x_max / 448.0
     if ROUND:
-        scale = tl.exp2(tl.ceil(tl.log2(scale)))
-    
-    tl.store(qs_ptr + pid * W + tl.arange(0, W), scale)
-    inv_scale = (1.0 / scale)[:, None]
+        scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+    else:
+        scale = x_max/448.0
+    tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
 
-    offs = pid * W * N + tl.arange(0, W)[:, None] * N + tl.arange(0, H)[None, :]
+    s = (1.0/scale)[:,None]
+
+    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     soffs = tl.arange(0, H)
-    
     for i in range(n):
         if EVEN:
-            x = tl.load(x_ptr + offs)
-            smooth_scale = tl.load(ss_ptr + soffs)
+            x = tl.load(x_ptr+offs)
+            smooth_scale = tl.load(ss_ptr+soffs)
         else:
-            mask = (i * H + tl.arange(0, H)[None, :] < N) & (pid * W + tl.arange(0, W)[:, None] < M)
+            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
             other = 0.0 if REVERSE else 1e30
-            x = tl.load(x_ptr + offs, mask=mask, other=0.0)
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < N, other=other)
-        
-        x_f32 = x.to(tl.float32)
+            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<N, other=other)
+
         if REVERSE:
-            xq = (x_f32 * smooth_scale * inv_scale).to(q_ptr.dtype.element_ty)
+            xq = (x.to(tl.float32) * smooth_scale * s).to(q_ptr.dtype.element_ty)
         else:
-            xq = (x_f32 / smooth_scale * inv_scale).to(q_ptr.dtype.element_ty)
-        
+            xq = (x.to(tl.float32) / smooth_scale * s).to(q_ptr.dtype.element_ty)
+
         if EVEN:
-            tl.store(q_ptr + offs, xq)
+            tl.store(q_ptr+offs, xq)
         else:
-            tl.store(q_ptr + offs, xq, mask=mask)
-        
-        offs += H
+            tl.store(q_ptr+offs, xq, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+        offs += H 
         soffs += H
 
 
@@ -205,64 +196,56 @@ def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N,
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,), dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
     m = tl.cdiv(M, H)
-    
     for i in range(m):
         if EVEN:
-            x = tl.load(x_ptr + offs)
-            smooth_scale = tl.load(ss_ptr + soffs)[:, None]
+            x = tl.load(x_ptr+offs)
+            smooth_scale = tl.load(ss_ptr+soffs)[:,None]
         else:
-            mask = (i*H + tl.arange(0, H)[:, None] < M) & (pid*W + tl.arange(0, W)[None, :] < N)
-            x = tl.load(x_ptr + offs, mask=mask, other=0.0)
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs<M, other=(0.0 if REVERSE else 1e30))[:, None]
-        
+            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0,H)[:,None]<M) & (pid*W+tl.arange(0,W)[None,:]<N))
+            other = 0.0 if REVERSE else 1e30
+            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<M, other=other)[:,None]
         if REVERSE:
             x = x * smooth_scale
         else:
-            inv_scale = 1.0 / smooth_scale
-            x = x * inv_scale
-        col_max = tl.max(tl.abs(x), axis=0)
-        x_max = tl.maximum(col_max, x_max)
-        offs += H*N
+            x = x / smooth_scale
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
+        offs += H*N 
         soffs += H
 
-    scale = x_max / 448.0
+    scale = (x_max/448.0)
     if EVEN:
-        tl.store(qs_ptr + pid*W + tl.arange(0, W), scale)
+        tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
     else:
-        store_mask = pid*W + tl.arange(0, W) < N
-        tl.store(qs_ptr + pid*W + tl.arange(0, W), scale, mask=store_mask)
+        tl.store(qs_ptr+pid*W+tl.arange(0, W), scale, mask=pid*W+tl.arange(0,W)<N)
 
-    s = (1.0 / scale)[:, None]
-    offs = pid*W + tl.arange(0, H)[:, None]*N + tl.arange(0, W)[None, :]
+
+    s = (1.0/scale)[:,None]
+    offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    toffs = pid*W*M + tl.arange(0, W)[:, None]*P + tl.arange(0, H)[None, :]
-    
+    toffs = pid*W*M + tl.arange(0, W)[:,None]*P + tl.arange(0, H)[None,:]
     for i in range(m):
         if EVEN:
-            x = tl.trans(tl.load(x_ptr + offs))
-            smooth_scale = tl.load(ss_ptr + soffs)
+            x = tl.trans(tl.load(x_ptr+offs))
+            smooth_scale = tl.load(ss_ptr+soffs)
         else:
-            mask = (i*H + tl.arange(0, H)[:, None] < M) & (pid*W + tl.arange(0, W)[None, :] < N)
-            x = tl.trans(tl.load(x_ptr + offs, mask=mask, other=0.0))
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs<M, other=(0.0 if REVERSE else 1e30))
-        
+            x = tl.trans(tl.load(x_ptr+offs, mask=(i*H+tl.arange(0,H)[:,None]<M) & (pid*W+tl.arange(0,W)[None,:]<N)))
+            other = 0.0 if REVERSE else 1e30
+            smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<M, other=other)
+
         if REVERSE:
-            x = (x * smooth_scale * s).to(q_ptr.dtype.element_ty)
+            x = (x*smooth_scale*s).to(q_ptr.dtype.element_ty)
         else:
-            inv_scale = 1.0 / smooth_scale
-            x = (x * inv_scale * s).to(q_ptr.dtype.element_ty)
-        
+            x = (x/smooth_scale*s).to(q_ptr.dtype.element_ty)
         if EVEN:
-            tl.store(q_ptr + toffs, x)
+            tl.store(q_ptr+toffs, x)
         else:
-            store_mask = (i*H + tl.arange(0, H)[None, :] < M) & (pid*W + tl.arange(0, W)[:, None] < N)
-            tl.store(q_ptr + toffs, x, mask=store_mask)
-        
+            tl.store(q_ptr+toffs, x, mask=(i*H+tl.arange(0,H)[None,:]<M) & (pid*W+tl.arange(0,W)[:,None]<N))
         offs += H*N
         toffs += H
         soffs += H
+
 
 def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad=False):
     # col-wise read, row-wise write
@@ -459,7 +442,3 @@ def reused_smooth_quant_f_and_b(x, w, y, smooth_scale):
     reused_smooth_quant_forward(x,w, smooth_scale)
     reused_smooth_quant_backward(y,w, smooth_scale)
     reused_smooth_quant_update(y,x, smooth_scale)
-
-
-
-
