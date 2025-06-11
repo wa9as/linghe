@@ -69,6 +69,7 @@ if 'torch_reuse' in modes:
 
 if 'rescale' in modes:
     from flops.quant.smooth.reused_smooth import *
+    from flops.quant.smooth.seperate_smooth import *
     org_smooth_scale = torch.ones((N,),device=device,dtype=torch.float32)
     y_q, y_scale = triton_reused_smooth_quant(y, org_smooth_scale, reverse=True, pad_scale=False, round_scale=True)
     transpose_smooth_scale = torch.ones((M,),device=device,dtype=torch.float32)
