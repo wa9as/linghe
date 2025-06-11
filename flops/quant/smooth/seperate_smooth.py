@@ -7,6 +7,21 @@ from flops.quant.channel.channel import row_quant_kernel
 from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_pad_smooth_quant
 from flops.utils.transpose import triton_block_pad_transpose
 
+"""
+megatron fp8 training steps:
+step 0: init w smooth scale w_smooth
+step 1: smooth and quant w when w is updated
+step 2: in forward step, columnwise smooth x and rowwise quant x, calc y=x@w; meanwhile, record the columnwise max of x, it is used to update w_smooth
+step 3: in dgrad step, columnwise smooth y and rowwise quant y, transpose x, calc dx=y@wT 
+step 4: in wgrad step, dequant then smooth an then quant y_q to get yt_q, calc dw=yT@x
+
+alternative (it's not suitable for fp8 combine):
+step 4: in wgrad step, rowwise smooth y and columnwise quant y and transpose to get yt_q, calc dw=yT@x
+
+"""
+
+
+
 
 @triton.jit
 def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
