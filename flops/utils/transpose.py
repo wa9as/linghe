@@ -131,6 +131,8 @@ def triton_block_transpose(x):
     return t
 
 
+
+
 @triton.jit
 def block_pad_transpose_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
     rid = tl.program_id(axis=0)
@@ -167,8 +169,8 @@ def triton_block_pad_transpose(x, pad=True):
         M, N, P,
         H, W,
         EVEN,
-        num_stages=3,
-        num_warps=8
+        num_stages=num_stages,
+        num_warps=num_warps
     )
     return t
 

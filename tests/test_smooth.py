@@ -85,8 +85,7 @@ if 'seperate' in modes:
     from flops.quant.smooth.seperate_smooth import *
     mode = 'seperate'
     ref_o, ref_dx, ref_dw = fp16_f_and_b(x,w,y)
-    # Init w smooth scale w_smooth
-    w_smooth_scale, w_inv_smooth_scale = triton_calc_smooth_scale(w)
+    w_smooth_scale = torch.ones((N,),device=device,dtype=torch.float32)
     o, dx, dw, _ = seperate_smooth_quant_f_and_b(x,w,y,w_smooth_scale)
     output_check(ref_o, o, mode)
     output_check(ref_dx, dx, mode)
