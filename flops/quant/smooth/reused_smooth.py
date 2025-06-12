@@ -24,7 +24,8 @@ def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constex
             x = tl.load(x_ptr+offs)
             smooth_scale = tl.load(ss_ptr+soffs)
         else:
-            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            # x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            x = tl.load(x_ptr+offs, mask=pid*W+tl.arange(0, W)[:,None]<M)
             other = 0.0 if REVERSE else 1e30
             smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<N, other=other)
         if REVERSE:
@@ -39,8 +40,9 @@ def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constex
         scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
     else:
         scale = x_max/448.0
-    tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
 
+    tl.store(qs_ptr+pid*W+tl.arange(0, W), scale)
+        
     s = (1.0/scale)[:,None]
 
     offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
@@ -50,7 +52,8 @@ def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constex
             x = tl.load(x_ptr+offs)
             smooth_scale = tl.load(ss_ptr+soffs)
         else:
-            x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            # x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            x = tl.load(x_ptr+offs, mask=pid*W+tl.arange(0, W)[:,None]<M)
             other = 0.0 if REVERSE else 1e30
             smooth_scale = tl.load(ss_ptr+soffs, mask=soffs<N, other=other)
 
@@ -62,31 +65,30 @@ def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constex
         if EVEN:
             tl.store(q_ptr+offs, xq)
         else:
-            tl.store(q_ptr+offs, xq, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            # tl.store(q_ptr+offs, xq, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
+            tl.store(q_ptr+offs, xq, mask=pid*W+tl.arange(0, W)[:,None]<M)
         offs += H 
         soffs += H
 
 
-
-# smooth_scale: w_max/tl.sqrt(x_max*w_max)
 def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=False, pad_scale=False, round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
+    assert N%1024 == 0
+    assert pad_scale or M%32==0, "scale should be padding to be multiple of 32"
     device = x.device 
     if x_q is None:
-        x_q = torch.zeros((M, N), device=device, dtype=torch.float8_e4m3fn)
+        x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    scale_size = round_up(M, b=32) if pad_scale else M
     if x_scale is None:
-        scale_size = round_up(M, b=16) if pad_scale else M
-        x_scale = torch.zeros((scale_size,), device=device, dtype=torch.float32)
-    W = 8 if M < 132*10 else 16
-    H = 512 if W == 16 else 1024
-    # H = 512
-    # W = 16
-    if N%H == 0 and M%W == 0:
+        x_scale = torch.empty((scale_size,), device=device, dtype=torch.float32)
+    W = 8 if M <= 132*8 else 16
+    H = 1024
+    if M%W == 0 and scale_size==M:
         EVEN = True
     else:
         EVEN = False
-    grid = lambda META: (triton.cdiv(M, W), )
+    grid = lambda META: (triton.cdiv(scale_size, W), )
     reused_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -103,6 +105,61 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=
 
     return x_q,x_scale
 
+
+
+@triton.jit
+def opt_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N: tl.constexpr, W: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # row-wise read, row-wise write
+    smooth_scale = tl.load(ss_ptr+tl.arange(0, N))
+    for i in range(W):
+        x = tl.load(x_ptr+pid*W*N+i*N+tl.arange(0, N), mask=pid*W+i<M)
+        if REVERSE:
+            x = x.to(tl.float32) * smooth_scale
+        else:
+            x = x.to(tl.float32) / smooth_scale
+        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+        else:
+            scale = x_max/448.0
+
+        tl.store(qs_ptr+pid*W+i, scale)
+        
+        s = 1.0/scale
+        xq = (x*s).to(q_ptr.dtype.element_ty)
+
+        tl.store(q_ptr+pid*W*N+i*N+tl.arange(0, N), xq, mask=pid*W+i<M)
+
+def triton_opt_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=False, pad_scale=False, round_scale=False):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    print(f'triton_opt_reused_smooth_quant {x.shape=}')
+    if M==65536:
+        raise ValueError(f'M is too large {x.shape=}')
+    assert pad_scale or M%32==0, "scale should be padding to be multiple of 32"
+    device = x.device 
+    if x_q is None:
+        x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    scale_size = round_up(M, b=32) if pad_scale else M
+    if x_scale is None:
+        x_scale = torch.empty((scale_size,), device=device, dtype=torch.float32)
+    W = triton.cdiv(scale_size, 132)
+    grid = lambda META: (132, )
+    opt_reused_smooth_quant_kernel[grid](
+        x,
+        x_q,
+        smooth_scale,
+        x_scale,
+        M, N,
+        W,
+        reverse,
+        round_scale,
+        num_stages=3,
+        num_warps=8
+    )
+    return x_q,x_scale
 
 
 @triton.jit
@@ -255,7 +312,7 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
     # col-wise read, row-wise write
     M, N = x.shape
     device = x.device 
-    P = round_up(M) if pad else M
+    P = round_up(M,b=32) if pad else M
     x_q = torch.zeros((N, P), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.zeros((N,), device=device, dtype=torch.float32)
     H = max([x for x in [1,64,128,256] if M%x == 0])
@@ -358,7 +415,7 @@ def triton_reused_transpose_pad_rescale_smooth_quant(x_q, org_smooth_scale, org_
     assert reverse
     M, N = x_q.shape
     device = x_q.device 
-    P = round_up(M) if pad else M
+    P = round_up(M,b=32) if pad else M
     xt_q = torch.zeros((N, P), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.zeros((N,), device=device, dtype=torch.float32)
     H = max([x for x in [1,64,128,256] if M%x == 0])

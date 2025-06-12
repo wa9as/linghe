@@ -9,7 +9,7 @@ from flops.utils.util import *
 
 
 for i in range(0, 1):
-    M, N, K = 4096, 4096, 4096
+    M, N, K = 8192, 8192, 8192
     dtype = torch.bfloat16
     n_repeat = 1000
 
@@ -21,6 +21,5 @@ for i in range(0, 1):
     x_f8 = (448*x/xrs).to(torch.float8_e4m3fn)
     w_f8 = (448*w/wcs).to(torch.float8_e4m3fn)
 
-    benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, name=f'M:{M}')
-    benchmark_func(torch_fp16_vector_scaled_mm, x_f8, w_f8.t(), xrs, wcs.t(), n_repeat=n_repeat, name=f'M:{M}')
-    benchmark_func(torch_fp16_scaler_scaled_mm, x_f8, w_f8.t(), xrs[0], wcs[0], n_repeat=n_repeat, name=f'M:{M}')
+    ref_time=benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, name=f'M:{M}')
+    benchmark_func(torch_fp16_vector_scaled_mm, x_f8, w_f8.t(), xrs, wcs.t(), n_repeat=n_repeat, ref_time=ref_time, name=f'M:{M}')
