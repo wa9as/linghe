@@ -34,16 +34,16 @@ def benchmark_with_shape(shape):
 
     print(f'\ndevice:{gpu}  M:{M}  N:{N}  K:{K}')
 
-
-    # benchmark_func(triton_smooth_quant_y, y, yw_smooth_scale, yx_smooth_scale, reverse=True, transpose=True, pad=False, n_repeat=n_repeat)
-    # benchmark_func(triton_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=False, round_scale=True, n_repeat=n_repeat)
+    # benchmark_func(triton_calc_smooth_scale, x, n_repeat=n_repeat)
+    benchmark_func(triton_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=True, round_scale=True, n_repeat=n_repeat)
+    benchmark_func(triton_opt_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=True, round_scale=True, n_repeat=n_repeat)
     # benchmark_func(triton_reused_transpose_pad_rescale_smooth_quant, y_q, yw_smooth_scale, yx_smooth_scale, yx_smooth_scale, reverse=True, pad=False, n_repeat=n_repeat)
-
+    # benchmark_func(triton_smooth_quant_x, x, xw_smooth_scale, transpose=True, pad=True, n_repeat=n_repeat)
+    # benchmark_func(triton_smooth_quant_y, y, yw_smooth_scale, yx_smooth_scale, reverse=True, transpose=True, pad=False, n_repeat=n_repeat)
 
     # benchmark_func(triton_smooth_quant_nt, x,w)
     # benchmark_func(triton_smooth_quant_nn, y,w)
     # benchmark_func(triton_smooth_quant_tn, y,x)
-
 
     # ref_time = benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, ref_flops=M*K*N*2)
     # benchmark_func(smooth_quant_forward, x, w, n_repeat=n_repeat, ref_flops=M*K*N*2, ref_time=ref_time)
@@ -90,7 +90,7 @@ def benchmark_with_shape(shape):
 
 
 
-benchmark_with_shape([2048, 8192, 2048])
+benchmark_with_shape([2047, 8192, 8192])
 
 # for shape in [[8192, 6144, 4096], [8192, 4096, 4096], [8192, 13312, 4096], [8192, 4096, 13312],
 #             [8192, 10240, 8192],[8192, 8192, 8192],[8192, 34048, 8192],[8192, 4096, 34048]]:

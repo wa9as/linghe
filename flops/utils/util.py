@@ -3,6 +3,7 @@ import torch
 
 
 def round_up(x, b=16):
+    assert b==32
     return ((x-1)//b+1)*b
 
 
@@ -390,28 +391,6 @@ def read_and_tile(filename, tile=True):
 
     return x,w,y
 
-
-
-def torch_fp16_post_vector_scaled_mm(x, weight, x_scale, weight_scale, one):
-    output = torch._scaled_mm(x,
-                                    weight,
-                                    scale_a=one,
-                                    scale_b=one,
-                                    out_dtype=torch.bfloat16,
-                                    use_fast_accum=True)
-    output = output * x_scale * weight_scale
-    return output
-
-def torch_fp32_post_vector_scaled_mm(x, weight, x_scale, weight_scale, one):
-    output = torch._scaled_mm(x,
-                                    weight,
-                                    scale_a=one,
-                                    scale_b=one,
-                                    out_dtype=torch.float32,
-                                    use_fast_accum=True)
-    output = output * x_scale * weight_scale
-    output = output.to(dtype=torch.bfloat16)
-    return output
 
 def torch_fp16_vector_scaled_mm(x, weight, x_scale, weight_scale):
     output = torch._scaled_mm(x,

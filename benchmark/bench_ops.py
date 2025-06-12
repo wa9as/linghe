@@ -13,15 +13,15 @@ from flops.quant.block.block import *
 from flops.quant.block.group import *
 from flops.quant.smooth.seperate_smooth import *
 
-from torch.profiler import profile, record_function, ProfilerActivity
 
 
 
 
 # M, N, K = 8192, 10240, 8192  # max qkv
 # M, N, K = 8192, 8192, 8192  # max out
-M, N, K = 1024, 4096, 8192  # max gate_up
-# M, N, K = 8192, 2048, 8192  # max down
+# M, N, K = 2048, 4096, 8192  # max gate_up
+# M, N, K = 2048, 8192, 2048  # max down
+M, N, K = 8192, 8192, 8192
 
 # M, N, K = M-1, N-1, K-1
 
@@ -37,7 +37,7 @@ x_q = x.to(torch.float8_e4m3fn)
 w_q = w.to(torch.float8_e4m3fn)
 y_q = y.to(torch.float8_e4m3fn)
 
-mode = 'megatron'
+mode = 'transpose'
 if mode == 'gemm':
 
     benchmark_func(trival_fp8_gemm, x_q, w_q, torch.bfloat16, n_repeat=n_repeat)
@@ -68,32 +68,17 @@ elif mode == 'quant':
     benchmark_func(persist_group_quant, x, n_repeat=n_repeat)
 
 elif mode == 'transpose':
-    benchmark_func(fp16_transpose, x, n_repeat=n_repeat)
-    benchmark_func(triton_transpose,x, n_repeat=n_repeat)
-    benchmark_func(triton_block_transpose,x, n_repeat=n_repeat)
-
+    # benchmark_func(fp16_transpose, x, n_repeat=n_repeat)
+    # benchmark_func(triton_transpose,x, n_repeat=n_repeat)
+    # benchmark_func(triton_block_transpose,x, n_repeat=n_repeat)
     # benchmark_func(triton_opt_transpose,x, n_repeat=n_repeat)
 
-    benchmark_func(fp8_transpose, x_q, n_repeat=n_repeat)
+    # benchmark_func(fp8_transpose, x_q, n_repeat=n_repeat)
     benchmark_func(triton_transpose,x_q, n_repeat=n_repeat)
     benchmark_func(triton_block_transpose,x_q, n_repeat=n_repeat)
+    benchmark_func(triton_block_pad_transpose,x_q,pad=True, n_repeat=n_repeat)
     # benchmark_func(triton_opt_transpose,x_q, n_repeat=n_repeat)
 
-elif mode == 'megatron':
-    benchmark_func(triton_calc_smooth_scale, x, n_repeat=n_repeat)
-    smooth_scale = torch.ones((K,),device=device,dtype=torch.float32)
-    benchmark_func(triton_smooth_quant_x, x, smooth_scale, transpose=True, pad=True, n_repeat=n_repeat)
-
-    smooth_scale = torch.ones((N,),device=device,dtype=torch.float32)
-    transpose_smooth_scale = torch.ones((M,),device=device,dtype=torch.float32)
-    benchmark_func(triton_smooth_quant_y, y, smooth_scale, transpose_smooth_scale, reverse=True, pad=True, n_repeat=n_repeat)
-
-elif mode == 'profile':
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]) as prof:
-        benchmark_func(group_quant, x, n_repeat=n_repeat)
-    print(prof.key_averages().table(sort_by=None, top_level_events_only=True, row_limit=2000))
-    print(prof.key_averages(group_by_stack_n=5).table(sort_by=None, row_limit=100))
-    prof.export_chrome_trace("trace.json")
 
 
 
