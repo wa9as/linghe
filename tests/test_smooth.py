@@ -6,16 +6,20 @@ from flops.utils.benchmark import *
 device = 'cuda:0'
 dtype = torch.bfloat16
 
-# x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
-x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/tmp_flops/forward_1.pkl', tile=False)
-
-
-M, K = x.shape 
-N, K = w.shape
+if False:
+    # x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+    x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/tmp_flops/forward_1.pkl', tile=False)
+    M, K = x.shape 
+    N, K = w.shape
+else:
+    M,N,K=2047,4096,8192
+    x = torch.randn((M,K),dtype=dtype,device=device)
+    w = torch.randn((N,K),dtype=dtype,device=device)
+    y = torch.randn((M,N),dtype=dtype,device=device)
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['rescale']
+modes = ['triton_reuse']
 
 
 if 'torch_tensor' in modes:
@@ -65,6 +69,22 @@ if 'torch_reuse' in modes:
     quant_check(ref_dx, yq, wq, dx,mode)
     quant_check(ref_dw, ytq, xq, dw,mode)
 
+if 'triton_reuse':
+    from flops.quant.smooth.reused_smooth import *
+    from flops.quant.smooth.seperate_smooth import *
+    smooth_scale = torch.randn((K,),device=device,dtype=torch.float32).abs()
+    x_q, x_scale = triton_opt_reused_smooth_quant(x, smooth_scale, reverse=False, pad_scale=True, round_scale=False)
+    tmp = x.float()/smooth_scale
+    maxs = tmp.abs().amax(1)/448
+    x_q_ref = tmp/maxs[:,None]
+    output_check(x_q_ref, x_q.float(), 'data')
+    output_check(x_q_ref[-1], x_q.float()[-1], 'data[-1]')
+    output_check(x_scale[:M], maxs, 'scale')
+    print(x_scale[-1])
+
+    x_q_, x_scale_ = triton_reused_smooth_quant(x, smooth_scale, reverse=False, pad_scale=True, round_scale=False)
+    output_check(x_q_.float(), x_q.float(), 'data')
+    output_check(x_scale_, x_scale, 'scale')
 
 
 if 'rescale' in modes:
