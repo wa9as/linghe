@@ -327,7 +327,7 @@ def fp16_f_and_b(x,w,y):
 
 
 
-def output_check(org_out, opt_out, mode):
+def output_check(org_out, opt_out, mode=''):
     abs_error = (opt_out.float() - org_out.float()).abs().mean().item()
     rel_error = abs_error/org_out.float().abs().mean().item()
     print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \
@@ -401,14 +401,15 @@ def torch_fp16_vector_scaled_mm(x, weight, x_scale, weight_scale):
                                     use_fast_accum=True)
     return output
 
-def torch_fp32_vector_scaled_mm(x, weight, x_scale, weight_scale):
+def torch_fp32_vector_scaled_mm(x, weight, x_scale, weight_scale, ones, out=None):
     output = torch._scaled_mm(x,
                                     weight,
-                                    scale_a=x_scale,
-                                    scale_b=weight_scale,
+                                    scale_a=ones,
+                                    scale_b=ones,
                                     out_dtype=torch.float32,
-                                    use_fast_accum=True)
-    return output
+                                    use_fast_accum=True,
+                                    out=out)
+    return output*x_scale*weight_scale
 
 def torch_fp16_scaler_scaled_mm(x, weight, x_scale, weight_scale):
     output = torch._scaled_mm(x,
@@ -416,5 +417,15 @@ def torch_fp16_scaler_scaled_mm(x, weight, x_scale, weight_scale):
                                 scale_a=x_scale,
                                 scale_b=weight_scale,
                                 out_dtype=torch.bfloat16,
+                                use_fast_accum=True)
+    return output
+
+
+def torch_fp32_scaler_scaled_mm(x, weight, x_scale, weight_scale):
+    output = torch._scaled_mm(x,
+                                weight,
+                                scale_a=x_scale,
+                                scale_b=weight_scale,
+                                out_dtype=torch.float32,
                                 use_fast_accum=True)
     return output

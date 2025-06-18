@@ -9,7 +9,46 @@ from triton import Config
 
 
 @triton.jit
-def dot_kernel(x_ptr, q_ptr, sum_ptr, smooth_scale_ptr, quant_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
+def dot_kernel(x_ptr, y_ptr, sum_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
+    # rowwise read, rowwise write
+    pid = tl.program_id(axis=0)
+    offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
+
+    n = tl.cdiv(N, H)
+    sums = tl.zeros((W,),dtype=tl.float32)
+    for i in range(n):
+        x = tl.load(x_ptr+offs)
+        q = tl.load(y_ptr+offs)
+        sums += tl.sum(x*q, axis=1)
+        offs += H
+
+    tl.store(sum_ptr+pid*W+tl.arange(0, W),sums)
+
+
+def triton_dot(x, y):
+    M, N = x.shape
+    device = x.device
+    s = torch.empty((M, ),device=device, dtype=x.dtype) 
+
+    H = 128
+    W = 16
+    num_stages = 5
+    num_warps = 8
+
+    grid = lambda META: (triton.cdiv(M,W), )
+    dot_kernel[grid](
+        x, y,
+        M, N,
+        H, W,
+        num_stages=num_stages,
+        num_warps=num_warps
+    )
+    return s
+
+
+
+@triton.jit
+def mix_precise_dot_kernel(x_ptr, q_ptr, sum_ptr, smooth_scale_ptr, quant_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
     # rowwise read, rowwise write
     pid = tl.program_id(axis=0)
     offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
@@ -32,7 +71,7 @@ def dot_kernel(x_ptr, q_ptr, sum_ptr, smooth_scale_ptr, quant_scale_ptr, M, N, H
 
 
 # q should be dequant
-def triton_dot(x, q, smooth_scale, quant_scale, reverse=False):
+def triton_mix_precise_dot(x, q, smooth_scale, quant_scale, reverse=False):
     assert reverse
     M, N = x.shape
     device = x.device
@@ -44,7 +83,7 @@ def triton_dot(x, q, smooth_scale, quant_scale, reverse=False):
     num_warps = 8
 
     grid = lambda META: (triton.cdiv(M,W), )
-    dot_kernel[grid](
+    mix_precise_dot_kernel[grid](
         x, q, s,
         smooth_scale,
         quant_scale,

@@ -1,8 +1,8 @@
 
 
 import torch 
-from flops.core.hadamard_quant_linear import QuantLinear as HadamardQuantLinear
-from flops.core.smooth_quant_linear import QuantLinear as SmoothQuantLinear
+from flops.facade.hadamard_quant_linear import QuantLinear as HadamardQuantLinear
+from flops.facade.smooth_quant_linear import QuantLinear as SmoothQuantLinear
 
 
 device = 'cuda:0'

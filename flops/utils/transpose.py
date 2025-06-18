@@ -34,32 +34,13 @@ def triton_transpose(x):
     device = x.device
     t = torch.empty((N, M),device=device,dtype=x.dtype) 
 
-    H = max([x for x in [1,64,128,256,512] if M%x == 0])
-    if H > 1:
-        EVEN = True 
-        if x.dtype.itemsize == 1:
-            W = 32
-            num_stages = 5
-            num_warps = 8
-        else:
-            W = 16
-            num_stages = 5
-            num_warps = 8 
-    else:
-        EVEN = False 
-        if x.dtype.itemsize == 1:
-            H = 64
-            W = 32
-            num_stages = 5
-            num_warps = 4
-        else:
-            H = 128
-            W = 16
-            num_stages = 5
-            num_warps = 8 
+    H = 512
+    W = 32 if x.dtype.itemsize == 1 else 16
+    EVEN = M%H == 0 and N%W == 0
+    num_stages = 3
+    num_warps = 8
 
-
-    grid = lambda META: ((N-1)//W+1, )
+    grid = lambda META: (triton.cdiv(N,W), )
     transpose_kernel[grid](
         x, t,
         M, N,
@@ -94,32 +75,13 @@ def triton_block_transpose(x):
     M, N = x.shape
     device = x.device
     t = torch.empty((N, M),device=device,dtype=x.dtype) 
-    H = max([x for x in [1,64,128,256,512] if M%x == 0])
-    if H > 1:
-        EVEN = True 
-        if x.dtype.itemsize == 1:
-            W = 32
-            num_stages = 5
-            num_warps = 8
-        else:
-            W = 16
-            num_stages = 5
-            num_warps = 8 
-    else:
-        EVEN = False 
-        if x.dtype.itemsize == 1:
-            H = 64
-            W = 32
-            num_stages = 5
-            num_warps = 4
-        else:
-            H = 128
-            W = 16
-            num_stages = 5
-            num_warps = 8 
+    H = 64
+    W = 32 if x.dtype.itemsize == 1 else 16
+    EVEN = M%H == 0 and N%W == 0
+    num_stages = 5
+    num_warps = 2
 
-
-    grid = lambda META: ((M-1)//H+1, (N-1)//W+1)
+    grid = lambda META: (triton.cdiv(M,H), triton.cdiv(N,W))
     block_transpose_kernel[grid](
         x, t,
         M, N,
@@ -129,6 +91,7 @@ def triton_block_transpose(x):
         num_warps=num_warps
     )
     return t
+
 
 
 
@@ -151,12 +114,13 @@ def block_pad_transpose_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr, W: tl.con
 pad: M will be padded to mutiplier of 32
 M is usually less than N without deepep
 """
-def triton_block_pad_transpose(x, pad=True):
+def triton_block_pad_transpose(x, x_t=None, pad=True):
     # fat block, shape:[H,W]
     M, N = x.shape
     P = round_up(M, b=32) if pad else M 
     device = x.device
-    t = torch.empty((N, P),device=device,dtype=x.dtype) 
+    if x_t is None:
+        x_t = torch.empty((N, P),device=device,dtype=x.dtype) 
 
     H = 32
     W = 64
@@ -165,14 +129,14 @@ def triton_block_pad_transpose(x, pad=True):
     EVEN = M%H == 0
     grid = lambda META: (triton.cdiv(M,H), triton.cdiv(N,W))
     block_pad_transpose_kernel[grid](
-        x, t,
+        x, x_t,
         M, N, P,
         H, W,
         EVEN,
         num_stages=num_stages,
         num_warps=num_warps
     )
-    return t
+    return x_t
 
 
 

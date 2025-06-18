@@ -9,7 +9,7 @@ from triton import Config
 
 
 @triton.jit
-def scatter_kernel(x_ptr, o_ptr, indices_ptr, weights_ptr, M, N: tl.constexpr, K: tl.constexpr, SCALE: tl.constexpr):
+def scatter_add_kernel(x_ptr, o_ptr, indices_ptr, weights_ptr, M, N: tl.constexpr, K: tl.constexpr, SCALE: tl.constexpr):
     pid = tl.program_id(axis=0)
     offs = tl.arange(0, N)
 
@@ -17,7 +17,7 @@ def scatter_kernel(x_ptr, o_ptr, indices_ptr, weights_ptr, M, N: tl.constexpr, K
     for i in range(K):
         idx = tl.load(indices_ptr+pid*K+i)
         x = tl.load(x_ptr+idx*N+offs)
-        if SCALE:
+        if SCALE == 1:
             weight = tl.load(weights_ptr+idx)
             sums += x*weight
         else:
@@ -26,7 +26,7 @@ def scatter_kernel(x_ptr, o_ptr, indices_ptr, weights_ptr, M, N: tl.constexpr, K
     tl.store(o_ptr+pid*N+offs,sums)
 
 
-def triton_scatter(x, outputs, indices, weights=None):
+def triton_scatter_add(x, outputs, indices, weights=None):
     M, N = x.shape
     m = outputs.size(0)
 
@@ -39,7 +39,7 @@ def triton_scatter(x, outputs, indices, weights=None):
     num_warps = 8
 
     grid = lambda META: (m, )
-    scatter_kernel[grid](
+    scatter_add_kernel[grid](
         x, outputs,
         indices,
         weights,
