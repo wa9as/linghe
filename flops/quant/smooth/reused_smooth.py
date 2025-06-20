@@ -214,8 +214,9 @@ def triton_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None
 
 
 
+
 @triton.jit
-def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, xm_ptr, count_ptr, accum_ptr, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr, CALIBRATE: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     i_expert = pid//T 
@@ -226,17 +227,18 @@ def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr
     if not REVERSE:
         smooth_scale = 1.0/smooth_scale
 
+    if CALIBRATE:
+        x_maxs = tl.zeros((N,),dtype=tl.float32) + 5.27e-36
+
     count = tl.load(count_ptr+i_expert)
     ei = tl.load(accum_ptr+i_expert)
     si = ei - count
 
-    # if pid == 4:
-    #     tl.device_print('count',count)
-    #     tl.device_print('si',si)
-
     n = (count-1)//T+1  # samples for each task
     for i in range(i_batch*n, min((i_batch+1)*n, count)):
         x = tl.load(x_ptr + si*N + i*N + tl.arange(0, N)).to(tl.float32)
+        if CALIBRATE:
+            x_maxs = tl.maximum(x_maxs, x)
         x *= smooth_scale
         x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
 
@@ -252,6 +254,12 @@ def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr
         xq = x.to(q_ptr.dtype.element_ty)
         tl.store(q_ptr+si*N+i*N+tl.arange(0, N), xq)
 
+    if CALIBRATE:
+        x_maxs = tl.sqrt(x_maxs)
+        x_maxs = tl.where(x_maxs<4, 1.0, x_maxs)
+        tl.store(xm_ptr+pid*N+tl.arange(0, N), x_maxs)
+
+
 """
 select and smooth and quant
 x: [bs, dim]
@@ -260,7 +268,7 @@ token_count_per_expert: [n_experts]
 x_q: [bs, dim]
 x_scale: [bs]
 """
-def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None, x_scale=None, reverse=False, round_scale=False):
+def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None, x_scale=None, x_maxs=None, reverse=False, round_scale=False, calibrate=False):
     # row-wise read, row-wise write
     M, N = x.shape
     device = x.device 
@@ -272,22 +280,98 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
         x_scale = torch.empty((M,), device=device, dtype=torch.float32)
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     T = 128//n_expert
+    if calibrate and x_maxs is None:
+        x_maxs = torch.empty((128,N), device=device, dtype=torch.float32)
+
     grid = lambda META: (128, )
     batch_smooth_quant_kernel[grid](
         x,
         x_q,
         smooth_scales,
         x_scale,
+        x_maxs,
         token_count_per_expert,
         accum_token_count,
         T, N,
         reverse,
         round_scale,
+        calibrate,
         num_stages=3,
         num_warps=8
     )
-    return x_q,x_scale
+    if calibrate:
+        x_maxs = x_maxs.view(n_expert, T, N).amax(1)
+    return x_q,x_scale,x_maxs
 
+
+
+
+# @triton.jit
+# def batch_calibrate_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+#     pid = tl.program_id(axis=0)
+
+#     i_expert = pid//T 
+#     i_batch = pid%T
+
+#     # row-wise read, row-wise write
+#     smooth_scale = tl.load(ss_ptr+i_expert*N+tl.arange(0, N))
+#     if not REVERSE:
+#         smooth_scale = 1.0/smooth_scale
+
+#     count = tl.load(count_ptr+i_expert)
+#     ei = tl.load(accum_ptr+i_expert)
+#     si = ei - count
+
+#     n = (count-1)//T+1  # samples for each task
+#     for i in range(i_batch*n, min((i_batch+1)*n, count)):
+#         x = tl.load(x_ptr + si*N + i*N + tl.arange(0, N)).to(tl.float32)
+#         x *= smooth_scale
+#         x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+
+#         if ROUND:
+#             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+#         else:
+#             scale = x_max/448.0
+
+#         tl.store(qs_ptr+si+i, scale)
+
+#         s = 1.0/scale
+#         x *= s
+#         xq = x.to(q_ptr.dtype.element_ty)
+#         tl.store(q_ptr+si*N+i*N+tl.arange(0, N), xq)
+
+# """
+# select and smooth and quant
+# x: [bs, dim]
+# smooth_scales: [n_experts, dim]
+# token_count_per_expert: [n_experts]
+# x_q: [bs, dim]
+# x_scale: [bs]
+# """
+# def triton_batch_calibrate(x, token_count_per_expert, x_m=None):
+#     # row-wise read, row-wise write
+#     M, N = x.shape
+#     device = x.device 
+#     n_expert = token_count_per_expert.shape[0]
+#     assert 128 % n_expert == 0
+#     if x_m is None:
+#         x_m = torch.empty((n_expert, N), device=device, dtype=torch.float32)
+#     accum_token_count = torch.cumsum(token_count_per_expert, 0)
+#     T = 128//n_expert
+#     assert N % T == 0
+#     W = N//T
+
+#     grid = lambda META: (128, )
+#     batch_calibrate_kernel[grid](
+#         x,
+#         x_m,
+#         token_count_per_expert,
+#         accum_token_count,
+#         T, W,
+#         num_stages=3,
+#         num_warps=8
+#     )
+#     return x_m
 
 
 @triton.jit

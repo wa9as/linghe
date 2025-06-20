@@ -41,7 +41,7 @@ def benchmark_func(fn, *args, n_warmup=100, n_repeat=1000, ref_flops=None, ref_b
         fs = f'FLOPS:{flops:.2f}T'
     bs = ''
     if ref_bytes is not None:
-        bs = f'bandwidth:{ref_bytes/average_event_time/1e3:.3f}G/S'
+        bs = f'bandwidth:{ref_bytes/average_event_time/1e3:.1f}G/S'
     ss = ''
     if ref_time is not None:
         ss = f'speedup:{ref_time/average_event_time:.3f}'

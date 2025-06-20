@@ -211,18 +211,21 @@ if 'batch_smooth' in modes:
     smooth_scales = 1+10*torch.rand((n_expert,K),device=device,dtype=torch.float32)
     token_count_per_expert_list = [M//n_expert]*n_expert
     token_count_per_expert = torch.tensor(token_count_per_expert_list, device=device)
-    x_q,x_scale = triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False)
+    x_q,x_scale,x_maxs = triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False, calibrate=True)
 
-    def torch_split_smooth_quant(x_split,smooth_scales):
+    def torch_split_smooth_quant(x_split,smooth_scales,calibrate=False):
         x_qs = []
         x_scales = []
+        x_maxs = []
         for i, x_ in enumerate(x_split):
+            x_maxs.append(x_.amax(0))
             x_smooth = x_/smooth_scales[i]
             x_scale_ = x_smooth.float().abs().amax(1)/448
             x_q_ = (x_smooth/x_scale_[:,None]).to(torch.float8_e4m3fn)
             x_qs.append(x_q_)
             x_scales.append(x_scale_)
-        return x_qs,x_scales
+        x_maxs = torch.stack(x_maxs, 0)
+        return x_qs,x_scales,x_maxs
 
     def triton_split_smooth_quant(x_split,smooth_scales):
         x_qs = []
@@ -234,12 +237,14 @@ if 'batch_smooth' in modes:
         return x_qs,x_scales
 
     x_split = torch.split(x, token_count_per_expert_list)
-    x_q_ref, x_scale_ref = torch_split_smooth_quant(x_split,smooth_scales)
+    x_q_ref, x_scale_ref, x_maxs_ref = torch_split_smooth_quant(x_split,smooth_scales)
     x_q_ref = torch.cat([x.view(torch.uint8) for x in x_q_ref], 0).view(torch.float8_e4m3fn)
     x_scale_ref = torch.cat(x_scale_ref, 0)
     output_check(x_q_ref.float(), x_q.float(), 'data')
     output_check(x_scale_ref.float(), x_scale.float(), 'scale')
+    output_check(x_maxs_ref.float(), x_maxs.float(), 'maxs')
 
     n_repeat = 100
     ref_time = benchmark_func(triton_split_smooth_quant, x_split, smooth_scales, n_repeat=n_repeat)
     benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False, n_repeat=n_repeat, ref_time=ref_time)
+    benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False, calibrate=True, n_repeat=n_repeat, ref_time=ref_time)

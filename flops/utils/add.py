@@ -33,11 +33,11 @@ def block_add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN:
 
 def triton_block_add(x, y, accum=True):
     M, N = x.shape
-    H = 64
-    W = 64
+    H = 128
+    W = 128
     EVEN = M%H == 0 and N%W == 0
-    num_stages = 3
-    num_warps = 4
+    num_stages = 2
+    num_warps = 8
 
     grid = lambda META: (triton.cdiv(M,H), triton.cdiv(N,W))
     block_add_kernel[grid](
