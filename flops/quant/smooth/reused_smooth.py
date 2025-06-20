@@ -212,6 +212,7 @@ def triton_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None
     return x_q,x_scale
 
 
+<<<<<<< HEAD
 
 
 
@@ -374,6 +375,8 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
 #     return x_m
 
 
+=======
+>>>>>>> 42d49da5cbfcca042b82558ae078e9601107a618
 @triton.jit
 def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr):
     pid = tl.program_id(axis=0)
@@ -443,7 +446,14 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
     x_scale = torch.empty((N,), device=device, dtype=torch.float32)
     H = 256
     W = 32
+<<<<<<< HEAD
     EVEN = M%H == 0 and N%W == 0 
+=======
+    if M%H == 0 and N%W == 0: 
+        EVEN = True 
+    else:
+        EVEN = False 
+>>>>>>> 42d49da5cbfcca042b82558ae078e9601107a618
 
     grid = lambda META: (triton.cdiv(N, W), )
     reused_transpose_pad_smooth_quant_kernel[grid](
@@ -632,6 +642,7 @@ def triton_index_select_smooth_quant(x, smooth_scales, token_count_per_expert, i
 
 
 
+<<<<<<< HEAD
 @triton.jit
 def index_select_smooth_quant_and_sum_kernel(grads_ptr, tokens_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, sum_ptr, M, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
@@ -709,6 +720,8 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
 
 
 
+=======
+>>>>>>> 42d49da5cbfcca042b82558ae078e9601107a618
 def triton_reused_smooth_quant_nt(x, w, smooth_scale):
     x_q,x_scale = triton_reused_smooth_quant(x, 1/smooth_scale)
     w_q,w_scale = triton_reused_smooth_quant(w, smooth_scale)
