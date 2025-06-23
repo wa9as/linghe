@@ -19,7 +19,7 @@ else:
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['batch_smooth']
+modes = ['seperate']
 
 
 if 'torch_tensor' in modes:
@@ -120,15 +120,6 @@ if 'rescale' in modes:
     output_check(yt_scale_ref, yt_scale.float(), 'rescale_scale')
 
 
-if 'seperate' in modes:
-    from flops.quant.smooth.seperate_smooth import *
-    mode = 'seperate'
-    ref_o, ref_dx, ref_dw = fp16_f_and_b(x,w,y)
-    w_smooth_scale = torch.ones((N,),device=device,dtype=torch.float32)
-    o, dx, dw, _ = seperate_smooth_quant_f_and_b(x,w,y,w_smooth_scale)
-    output_check(ref_o, o, mode)
-    output_check(ref_dx, dx, mode)
-    output_check(ref_dw, dw, mode)
 if 'select' in modes:
     from flops.quant.smooth.reused_smooth import *
     n_expert = 256

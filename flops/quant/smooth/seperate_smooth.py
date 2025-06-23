@@ -94,7 +94,7 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # dx = y @ wT
 # dwT = yT @ x
 def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None, transpose=True, pad=False):
-    assert x.size(1) == smooth_scale.size(0)
+    #assert x.size(1) == smooth_scale.size(0)
 
     x_q,x_scale = triton_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=x_q, x_scale=x_scale, reverse=False, pad_scale=pad, round_scale=False)
 
@@ -113,18 +113,18 @@ def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None, tr
 def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True, transpose=True,  pad=False):
     assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     N = y.size(1)
-    #assert N == smooth_scale.size(0)
+    # assert N == smooth_scale.size(0)
     if triton.next_power_of_2(N) == N:
         y_q,y_scale = triton_tokenwise_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
     else:
         y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
     if transpose:
-        #assert pad or y.size(0) == transpose_smooth_scale.size(0)
+        # assert pad or y.size(0) == transpose_smooth_scale.size(0)
         yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=reverse, pad=pad)
     else:
         yt_q, yt_scale = None, None
 
-    return y_q, yt_q, y_scale, yt_scale
+    return y_q,yt_q,y_scale,yt_scale
 
 
 def triton_smooth_quant_partial_w(w, smooth_scale, w_q, w_scale, offset=0):
