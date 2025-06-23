@@ -68,8 +68,8 @@ def benchmark_with_shape(shape):
     # ref_time = benchmark_func(fp16_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2)
     # benchmark_func(seperate_smooth_quant_update, y, x, n_repeat=n_repeat, ref_flops=batch_size*in_dim*out_dim*2, ref_time=ref_time)
 
-    ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6)
-    benchmark_func(seperate_smooth_quant_f_and_b, x, w, y, xw_smooth_scale, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
+    # ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6)
+    # benchmark_func(seperate_smooth_quant_f_and_b, x, w, y, xw_smooth_scale, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
 
     # benchmark_func(triton_slide_smooth_quant,x,xw_smooth_scale)
     # benchmark_func(triton_slide_smooth_quant,w,1/xw_smooth_scale)
@@ -94,15 +94,14 @@ def benchmark_with_shape(shape):
     # benchmark_func(reused_smooth_quant_update, y, x_f8, xw_smooth_scale, x_s, n_repeat=n_repeat, ref_flops=M*K*N*2, ref_time=ref_time)
 
     # ref_time = benchmark_func(fp16_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6)
-    # benchmark_func(reused_smooth_quant_f_and_b, x, w, y, xw_smooth_scale, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
+    # benchmark_func(reused_smooth_quant_f_and_b, x, w, y, n_repeat=n_repeat, ref_flops=M*K*N*6, ref_time=ref_time)
 
 
 
 
 # benchmark_with_shape([2048-1, 8192, 2048])
-benchmark_with_shape([8192, 8192, 2048])
-'''
+# benchmark_with_shape([8192, 8192, 2048])
+
 for shape in [[8192, 10240, 8192],[8192, 8192, 8192],[8192, 4096, 8192],[8192, 8192, 2048],[2048, 4096, 8192],[2048, 8192, 2048]]:
     shape[0] -= 1
     benchmark_with_shape(shape)
-'''

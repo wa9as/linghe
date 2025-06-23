@@ -19,7 +19,7 @@ else:
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['seperate']
+modes = ['batch_smooth']
 
 
 if 'torch_tensor' in modes:
