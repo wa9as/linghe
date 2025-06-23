@@ -12,30 +12,42 @@ from flops.utils.benchmark import benchmark_func
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 
-def torch_fp16_scatter(x, outputs, indices, weights):
+def torch_fp16_scatter_add(x, outputs, indices, weights):
     x = x*weights[:,None]
     dim = x.size(1)
     outputs.scatter_add_(0, indices.unsqueeze(1).expand(-1, dim), x)
     return outputs
 
 M, N = 8192, 8192
-K = 8
+topk = 8
 
 dtype = torch.bfloat16
 device = 'cuda:0'
 
-n_repeat = 100
+n_expert = 256
 
-x = torch.randn(M*K, N, dtype=dtype, device=device)
+x = torch.randn(M*topk, N, dtype=dtype, device=device)
 outputs = torch.zeros(M, N, dtype=dtype, device=device)
-tmp = torch.argsort(torch.randn(M*K,dtype=torch.float64,device=device))
-indices = (torch.arange(M*K, dtype=torch.int64, device=device)//K)[tmp]
-weights = torch.randn(M*K, dtype=dtype,device=device)
+logits = torch.randn((M,n_expert),dtype=torch.float32,device=device)
+double_logits = logits.to(torch.float64)*(1+torch.arange(n_expert, device=device, dtype=torch.float64)*1e-12)
+double_top_values, top_indices = torch.topk(double_logits, topk, dim=-1, largest=True, sorted=True)
+routing_map = double_logits>=double_top_values[:,-1:]
 
-sums = triton_scatter(x, outputs.clone(), indices, weights=weights)
+routing_map = routing_map.bool().T.contiguous()
+dummy_indices = torch.arange(M, device=routing_map.device).unsqueeze(0).expand(n_expert, -1)
+indices = dummy_indices.masked_select(routing_map)
+weights = torch.randn(M*topk, dtype=dtype,device=device)
 
-sums_ref = torch_fp16_scatter(x, outputs.clone(), indices, weights)
+sums = triton_scatter_add(x, outputs.clone(), indices, weights=weights)
+sums_ref = torch_fp16_scatter_add(x, outputs.clone(), indices, weights)
 output_check(sums_ref,sums,'sum')
 
-ref_time = benchmark_func(torch_fp16_scatter,x, outputs, indices, weights,n_repeat=n_repeat)
-benchmark_func(triton_scatter,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
+
+n_repeat = 100
+ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
+benchmark_func(triton_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
+
+def torch_scatter(logits,routing_map,weights):
+    logits[routing_map] = weights
+
+benchmark_func(torch_scatter,logits.to(dtype), routing_map.T.contiguous(), weights, n_repeat=n_repeat)

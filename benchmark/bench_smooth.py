@@ -32,12 +32,21 @@ def benchmark_with_shape(shape):
     w_q = w.to(qtype)
     y_q = y.to(qtype)
 
+
+
     print(f'\ndevice:{gpu}  M:{M}  N:{N}  K:{K}')
 
     # benchmark_func(triton_calc_smooth_scale, x, n_repeat=n_repeat)
+    # benchmark_func(triton_reused_smooth_quant, x, xw_smooth_scale, reverse=False, pad_scale=True, round_scale=True, n_repeat=n_repeat)
+    # benchmark_func(triton_depracated_tokenwise_reused_smooth_quant, x, xw_smooth_scale, reverse=False, pad_scale=True, round_scale=True, n_repeat=n_repeat)
+    # benchmark_func(triton_tokenwise_reused_smooth_quant, x, xw_smooth_scale, reverse=False, pad_scale=True, round_scale=True, n_repeat=n_repeat)
+
     # benchmark_func(triton_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=True, round_scale=True, n_repeat=n_repeat)
-    # benchmark_func(triton_opt_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=True, round_scale=True, n_repeat=n_repeat)
-    # benchmark_func(triton_reused_transpose_pad_rescale_smooth_quant, y_q, yw_smooth_scale, yx_smooth_scale, yx_smooth_scale, reverse=True, pad=False, n_repeat=n_repeat)
+    # benchmark_func(triton_tokenwise_reused_smooth_quant, y, yw_smooth_scale, reverse=True, pad_scale=True, round_scale=True, n_repeat=n_repeat)
+    # benchmark_func(triton_deprecated_reused_transpose_pad_smooth_quant, y, yx_smooth_scale, reverse=True, pad=True, n_repeat=n_repeat)
+    # benchmark_func(triton_reused_transpose_pad_smooth_quant, y, yx_smooth_scale, reverse=True, pad=True, n_repeat=n_repeat)
+    # benchmark_func(triton_reused_transpose_pad_rescale_smooth_quant, y_q, yw_smooth_scale, yx_smooth_scale, yx_smooth_scale, reverse=True, pad=True, n_repeat=n_repeat)
+
     # benchmark_func(triton_smooth_quant_x, x, xw_smooth_scale, transpose=True, pad=True, n_repeat=n_repeat)
     # benchmark_func(triton_smooth_quant_y, y, yw_smooth_scale, yx_smooth_scale, reverse=True, transpose=True, pad=False, n_repeat=n_repeat)
 
@@ -90,8 +99,9 @@ def benchmark_with_shape(shape):
 
 
 
-benchmark_with_shape([8192, 6144, 4096])
+# benchmark_with_shape([2048-1, 8192, 2048])
+# benchmark_with_shape([8192-1, 8192, 2048])
 
-# for shape in [[8192, 6144, 4096], [8192, 4096, 4096], [8192, 13312, 4096], [8192, 4096, 13312],
-#             [8192, 10240, 8192],[8192, 8192, 8192],[8192, 34048, 8192],[8192, 4096, 34048]]:
-#     benchmark_with_shape(shape)
+for shape in [[8192, 10240, 8192],[8192, 8192, 8192],[8192, 4096, 8192],[8192, 8192, 2048],[2048, 4096, 8192],[2048, 8192, 2048]]:
+    shape[0] -= 1
+    benchmark_with_shape(shape)

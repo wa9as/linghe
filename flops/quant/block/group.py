@@ -36,9 +36,8 @@ def stupid_group_quant(
     y = torch.empty_like(x, dtype=dtype)
     s = x.new_empty(*x.size()[:-1], x.size(-1) // block_size, dtype=torch.float32)
     grid = lambda meta: (triton.cdiv(x.numel(), meta["BLOCK_SIZE"]),)  # noqa: E731
-    stupid_tile_quant_kernel[grid](x, y, s, BLOCK_SIZE=block_size)
+    stupid_group_quant_kernel[grid](x, y, s, BLOCK_SIZE=block_size)
     return y, s
-
 
 
 

@@ -4,7 +4,7 @@ import triton
 import triton.language as tl
 from triton import Config
 from flops.quant.channel.channel import row_quant_kernel
-from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_opt_reused_smooth_quant, triton_reused_transpose_smooth_quant, triton_reused_transpose_pad_smooth_quant
+from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_tokenwise_reused_smooth_quant, triton_reused_transpose_pad_smooth_quant
 from flops.utils.transpose import triton_transpose,triton_block_transpose,triton_block_pad_transpose
 from flops.utils.util import round_up
 
@@ -61,16 +61,14 @@ def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N
 
 # adapt for megatron fp8 training
 def triton_calc_smooth_scale(x):
-    M, N = x.shape
+    N = x.size(-1)
+    M = x.nelement()//N
     device = x.device 
     x_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
     x_inv_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
-    H = 512 if M >= 512 else 256
-    W = 32 if N >= 2048 else 16
-    if M%H == 0 and N%W == 0:
-        EVEN = True 
-    else:
-        EVEN = False
+    H = 512
+    W = 16
+    EVEN = M%H == 0 and N%W == 0
     grid = lambda META: (triton.cdiv(N, W), )
     calc_smooth_scale_kernel[grid](
         x,
@@ -95,13 +93,13 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # y = x @ w
 # dx = y @ wT
 # dwT = yT @ x
-def triton_smooth_quant_x(x, smooth_scale, transpose=True, pad=False):
-    #assert x.size(1) == smooth_scale.size(0)
+def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None, transpose=True, pad=False):
+    assert x.size(1) == smooth_scale.size(0)
 
-    x_q,x_scale = triton_reused_smooth_quant(x, smooth_scale, reverse=False, pad_scale=pad, round_scale=False)
+    x_q,x_scale = triton_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=x_q, x_scale=x_scale, reverse=False, pad_scale=pad, round_scale=False)
 
     if transpose:
-        xt_q = triton_block_pad_transpose(x_q, pad=pad)  
+        xt_q = triton_block_pad_transpose(x_q, x_t=xt_q, pad=pad)  
     else:
         xt_q = None 
     xt_scale = smooth_scale
@@ -117,7 +115,7 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
     N = y.size(1)
     #assert N == smooth_scale.size(0)
     if triton.next_power_of_2(N) == N:
-        y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
+        y_q,y_scale = triton_tokenwise_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
     else:
         y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, pad_scale=pad)
     if transpose:
@@ -137,7 +135,7 @@ def triton_smooth_quant_partial_w(w, smooth_scale, w_q, w_scale, offset=0):
     ms = offset//N
     w_q_slice = w_q[ms:ms+m].view(torch.float8_e4m3fn)
     w_scale_slice = w_scale[offset//N:(offset+size)//N]
-    w_q,w_scale = triton_reused_smooth_quant(w, smooth_scale, x_q=w_q_slice, x_scale=w_scale_slice, pad_scale=False)
+    w_q,w_scale = triton_tokenwise_reused_smooth_quant(w, smooth_scale, x_q=w_q_slice, x_scale=w_scale_slice, pad_scale=False)
 
     return w_q,w_scale
 

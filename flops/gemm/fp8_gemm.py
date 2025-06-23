@@ -15,12 +15,12 @@ from triton import Config
 #     for num_stages in [3, 4, 5, 6]
 # ]
 
-fp8_gemm_configs = [
-    Config({"BLOCK_SIZE_M": block_m, "BLOCK_SIZE_N": block_n}, num_stages=num_stages, num_warps=8)
-    for block_m in [128]
-    for block_n in [128]
-    for num_stages in [3, 4, 5, 6]
-]
+# fp8_gemm_configs = [
+#     Config({"BLOCK_SIZE_M": block_m, "BLOCK_SIZE_N": block_n}, num_stages=num_stages, num_warps=8)
+#     for block_m in [128]
+#     for block_n in [128]
+#     for num_stages in [3, 4, 5, 6]
+# ]
 
 # @triton.autotune(configs=fp8_gemm_configs, key=["N", "K"])
 @triton.jit
@@ -68,14 +68,19 @@ def trival_fp8_gemm(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
     N, K = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
     grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
-    trival_fp8_gemm_kernel[grid](a, b, c, M, N, K, 128,128,128,
+    BLOCK_SIZE_K = 128
+    trival_fp8_gemm_kernel[grid](a, b, c, M, N, K, 
+                                BLOCK_SIZE_K,
+                                128,
+                                128,
                                  num_stages=3,
-                                 num_warps=8)
+                                 num_warps=8
+                                 )
     return c
 
 
 
-@triton.autotune(configs=fp8_gemm_configs, key=["N", "K"])
+# @triton.autotune(configs=fp8_gemm_configs, key=["N", "K"])
 @triton.jit
 def fp8_gemm_nn_kernel(
     a_ptr,
@@ -119,7 +124,14 @@ def fp8_gemm_nn(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
     K, N = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
     grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
-    fp8_gemm_nn_kernel[grid](a, b, c, M, N, K, 128)
+    BLOCK_SIZE_K = 128
+    fp8_gemm_nn_kernel[grid](a, b, c, M, N, K, 
+                                BLOCK_SIZE_K,
+                                128,
+                                128,
+                                 num_stages=3,
+                                 num_warps=8
+                            )
     return c
 
 
@@ -262,3 +274,4 @@ def persistent_fp8_gemm(a, b, dtype):
         c.stride(0), c.stride(1)
     )
     return c
+
