@@ -71,7 +71,7 @@ def triton_smooth_quant_nt(x, w, smooth_scale=None):
     if smooth_scale is None:
         smooth_scale = torch.empty((K,), device=device, dtype=torch.float32)
 
-    H = max([x for x in [128,256,512,1024] if M%x == 0 and N%x == 0])
+    H = 512
     W = 32
     grid = lambda META: (K//W, )
     smooth_nt_kernel[grid](

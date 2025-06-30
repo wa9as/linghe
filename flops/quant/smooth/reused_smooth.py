@@ -804,7 +804,7 @@ def reused_smooth_quant_forward(x,w, smooth_scale):
     x_q,x_s,w_q,w_s = triton_reused_smooth_quant_nt(x, w, smooth_scale)
     output = torch._scaled_mm(x_q,
                                     w_q.t(),
-                                    scale_a=x_s,
+                                    scale_a=x_s.view(-1,1),
                                     scale_b=w_s.view(1,-1),
                                     out_dtype=x.dtype,
                                     use_fast_accum=True)
@@ -815,8 +815,8 @@ def reused_smooth_quant_backward(y,w, smooth_scale):
     y_q,y_s,w_q,w_s = triton_reused_smooth_quant_nn(y, w, smooth_scale)
     output = torch._scaled_mm(y_q,
                                     w_q.t(),
-                                    scale_a=y_s,
-                                    scale_b=w_s,
+                                    scale_a=y_s.view(-1,1),
+                                    scale_b=w_s.view(1,-1),
                                     out_dtype=y.dtype,
                                     use_fast_accum=True)
     return output
@@ -827,10 +827,12 @@ def reused_smooth_quant_update(y,x, smooth_scale):
     output = torch._scaled_mm(y_q,
                                     x_q.t(),
                                     scale_a=y_s.view(-1,1),
-                                    scale_b=x_s,
+                                    scale_b=x_s.view(1,-1),
                                     out_dtype=y.dtype,
                                     use_fast_accum=True)
     return output
 
-
-
+def reused_smooth_quant_f_and_b(x, w, y, smooth_scale):
+    reused_smooth_quant_forward(x,w, smooth_scale)
+    reused_smooth_quant_backward(y,w, smooth_scale)
+    reused_smooth_quant_update(y,x, smooth_scale)
