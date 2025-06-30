@@ -55,57 +55,49 @@ def triton_rms_norm_forward(x, weight, eps=1e-6, out=None, norm=None):
 
 @triton.jit
 def rms_norm_backward_kernel(
-    dx_ptr, dy_ptr, x_ptr, weight_ptr, norm_ptr, M, T, N: tl.constexpr, W: tl.constexpr
+    dx_ptr, dy_ptr, x_ptr, weight_ptr, norm_ptr, M, N: tl.constexpr, BLOCK_N: tl.constexpr
 ):
-    pid = tl.program_id(axis=0)
-    weight = tl.load(weight_ptr + tl.arange(0, N))
-    offs = pid * W * T * N + tl.arange(0, W)[:, None] * N + tl.arange(0, N)[None, :]
+    row_idx = tl.program_id(0)
+    if row_idx >= M:
+        return
+        
+    row_start = row_idx * N
+    col_offsets = tl.arange(0, BLOCK_N)
+    mask = col_offsets < N
     
-    for i in range(T):
-        row_mask = pid * W * T + i * W + tl.arange(0, W) < M
-        col_mask = row_mask[:, None] & (tl.arange(0, N)[None, :] < N)
-        
-        x = tl.load(x_ptr + offs, mask=col_mask, other=0.0).to(tl.float32)
-        dy = tl.load(dy_ptr + offs, mask=col_mask, other=0.0).to(tl.float32)
-        norm = tl.load(norm_ptr + pid * W * T + i * W + tl.arange(0, W), 
-                      mask=row_mask, other=0.0).to(tl.float32)
-        
-        inv_norm = 1.0 / norm
-        weighted_dy = dy * weight
-        mean_dy_x = tl.sum(weighted_dy * x, axis=1) / (N * norm * norm * norm)
-        
-        dx = (weighted_dy - x * mean_dy_x[:, None]) * inv_norm[:, None]
-        tl.store(dx_ptr + offs, dx, mask=col_mask)
-        
-        offs += N * W
+    x = tl.load(x_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
+    dy = tl.load(dy_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
+    norm = tl.load(norm_ptr + row_idx).to(tl.float32)
+    
+    inv_norm = 1.0 / norm
+    weight = tl.load(weight_ptr + col_offsets, mask=mask, other=0.0).to(tl.float32)
+    weighted_dy = dy * weight
+    
+    norm_cubed = norm * norm * norm
+    dot = tl.sum(weighted_dy * x)
+    mean_dy_x = dot / (N * norm_cubed)
+    
+    dx = (weighted_dy - x * mean_dy_x) * inv_norm
+    tl.store(dx_ptr + row_start + col_offsets, dx, mask=mask)
 
 
-def triton_rms_norm_backward(
-    dy: torch.Tensor, 
-    x: torch.Tensor, 
-    norm: torch.Tensor, 
-    weight: torch.Tensor, 
-):
+def triton_rms_norm_backward(dy, x, norm=None, weight=None):
     M, N = x.shape
-    assert dy.shape == x.shape
     assert N <= 8192
-    
     dx = torch.empty_like(x)
-    W = min(8192 // N, 512)
-    T = triton.cdiv(M, W * 132)
-    grid = lambda META: (132, )
+    BLOCK_N = min(triton.next_power_of_2(N), 1024)
     
+    grid = lambda META: (M,)
     rms_norm_backward_kernel[grid](
         dx,
         dy,
         x,
         weight,
         norm,
-        M, T,
-        N,
-        W,
+        M, N,
+        BLOCK_N,
         num_stages=3,
         num_warps=8
     )
-
-    return dx, torch.sum(dy * (x / norm.unsqueeze(1)), axis=0)
+    
+    return dx, torch.sum(dy * (x / norm.unsqueeze(1)), dim=0)
