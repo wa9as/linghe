@@ -62,29 +62,27 @@ def rms_norm_backward_kernel(
         return
         
     row_start = row_idx * N
-    col_offsets = tl.arange(0, BLOCK_N)
-    mask = col_offsets < N
-    
-    x = tl.load(x_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
-    dy = tl.load(dy_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
     norm = tl.load(norm_ptr + row_idx).to(tl.float32)
     
-    inv_norm = 1.0 / norm
-    weight = tl.load(weight_ptr + col_offsets, mask=mask, other=0.0).to(tl.float32)
-    weighted_dy = dy * weight
-    
-    norm_cubed = norm * norm * norm
-    dot = tl.sum(weighted_dy * x)
-    mean_dy_x = dot / (N * norm_cubed)
-    
-    dx = (weighted_dy - x * mean_dy_x) * inv_norm
-    tl.store(dx_ptr + row_start + col_offsets, dx, mask=mask)
+    dot = 0.0
+    for offset in range(0, N, BLOCK_N):
+        col_offsets = offset + tl.arange(0, BLOCK_N)
+        mask = col_offsets < N
+        
+        x = tl.load(x_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        dy = tl.load(dy_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        weight = tl.load(weight_ptr + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        
+        weighted_dy = dy * weight
+        dot += tl.sum(weighted_dy * x)
+        factor = norm * norm * (dot / N)
+        dx = norm * (weighted_dy - x * factor)
+        tl.store(dx_ptr + row_start + col_offsets, dx, mask=mask)
 
 
 def triton_rms_norm_backward(dy, x, norm=None, weight=None):
     M, N = x.shape
-    assert N <= 8192
-    dx = torch.empty_like(x)
+    dx = torch.empty(M, N, dtype=torch.float32, device=x.device)
     BLOCK_N = min(triton.next_power_of_2(N), 1024)
     
     grid = lambda META: (M,)
@@ -100,4 +98,4 @@ def triton_rms_norm_backward(dy, x, norm=None, weight=None):
         num_warps=8
     )
     
-    return dx, torch.sum(dy * (x / norm.unsqueeze(1)), dim=0)
+    return dx, torch.sum(dy * x * norm.unsqueeze(-1), dim=0)

@@ -48,34 +48,38 @@ if mode == 'rms_backward':
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         rstd = torch.rsqrt(variance + eps)
         hidden_states = hidden_states * rstd
+        
         return weight * hidden_states.to(input_dtype), rstd.squeeze(-1)
 
-    def torch_rms_norm_backward(dy, x, norm, weight):
-        N = x.shape[-1]
-        rstd = norm.unsqueeze(-1)
-        x_hat = x * rstd
-        dl_dx_hat = dy * weight
-        
-        mean = torch.sum(dl_dx_hat * x_hat, dim=-1, keepdim=True) / N
-        dx = rstd * (dl_dx_hat - x_hat * mean)
-        dweight = torch.sum(dy * x_hat, dim=0)
-        return dx, dweight
+    def torch_rms_norm_backward(dy, x, weight, rstd=None, eps=1e-6):
+        if rstd is None:
+            _, rstd = torch_rms_norm_forward(x, weight, eps)
 
-    ref_out, ref_norm = torch_rms_norm_forward(x, weight)
-    triton_out, triton_norm = triton_rms_norm_forward(x, weight)
+        rstd = rstd.unsqueeze(-1) if rstd.dim() == x.dim() - 1 else rstd
+
+        x_torch = x.detach().clone().requires_grad_(True)
+        weight_torch = weight.detach().clone().requires_grad_(True)
+
+        hidden_states = x_torch.to(torch.float32) * rstd.detach()
+        out = weight_torch * hidden_states.to(x.dtype)
+        loss = (out * dy).sum()
+        loss.backward()
+        
+        return x_torch.grad, weight_torch.grad
     
-    ref_dx, ref_dweight = torch_rms_norm_backward(dy, x, ref_norm, weight)
+    ref_output, ref_norm = torch_rms_norm_forward(x, weight)
+    triton_out, triton_norm = triton_rms_norm_forward(x, weight)
+
+    ref_dx, ref_dweight = torch_rms_norm_backward(dy, x, weight, triton_norm)
     triton_dx, triton_dweight = triton_rms_norm_backward(dy, x, triton_norm, weight)
 
     output_check(ref_dx, triton_dx, 'triton_dx')
     output_check(ref_dweight, triton_dweight, 'triton_dweight')
 
-
     ref_time = benchmark_func(
         torch_rms_norm_backward,
         dy,
         x,
-        ref_norm,
         weight, 
         n_repeat=n_repeat
     )
