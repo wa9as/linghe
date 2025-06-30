@@ -75,7 +75,18 @@ def rms_norm_backward_kernel(
         
         weighted_dy = dy * weight
         dot += tl.sum(weighted_dy * x)
-        factor = norm * norm * (dot / N)
+    
+    factor = norm * norm * (dot / N)
+    
+    for offset in range(0, N, BLOCK_N):
+        col_offsets = offset + tl.arange(0, BLOCK_N)
+        mask = col_offsets < N
+        
+        x = tl.load(x_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        dy = tl.load(dy_ptr + row_start + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        weight = tl.load(weight_ptr + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        
+        weighted_dy = dy * weight
         dx = norm * (weighted_dy - x * factor)
         tl.store(dx_ptr + row_start + col_offsets, dx, mask=mask)
 
