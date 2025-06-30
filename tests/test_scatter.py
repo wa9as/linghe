@@ -13,7 +13,8 @@ from flops.utils.benchmark import benchmark_func
 
 
 def torch_fp16_scatter_add(x, outputs, indices, weights):
-    x = x*weights[:,None]
+    if weights is not None:
+        x = x*weights[:,None]
     dim = x.size(1)
     outputs.scatter_add_(0, indices.unsqueeze(1).expand(-1, dim), x)
     return outputs
@@ -38,16 +39,22 @@ dummy_indices = torch.arange(M, device=routing_map.device).unsqueeze(0).expand(n
 indices = dummy_indices.masked_select(routing_map)
 weights = torch.randn(M*topk, dtype=dtype,device=device)
 
-sums = triton_scatter_add(x, outputs.clone(), indices, weights=weights)
+sums = triton_aligned_scatter_add(x, outputs.clone(), indices, weights=weights)
 sums_ref = torch_fp16_scatter_add(x, outputs.clone(), indices, weights)
-output_check(sums_ref,sums,'sum')
+output_check(sums_ref,sums,'aligned_scatter_add')
+
+
+sums = triton_scatter_add(x, outputs.clone(), indices)
+sums_ref = torch_fp16_scatter_add(x, outputs.clone(), indices, None)
+output_check(sums_ref,sums,'scatter_add')
 
 
 n_repeat = 100
 ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
-benchmark_func(triton_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
+benchmark_func(triton_aligned_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
+benchmark_func(triton_scatter_add,x, outputs, indices, n_repeat=n_repeat,ref_time=ref_time)
 
-def torch_scatter(logits,routing_map,weights):
-    logits[routing_map] = weights
+# def torch_scatter(logits,routing_map,weights):
+#     logits[routing_map] = weights
 
-benchmark_func(torch_scatter,logits.to(dtype), routing_map.T.contiguous(), weights, n_repeat=n_repeat)
+# benchmark_func(torch_scatter,logits.to(dtype), routing_map.T.contiguous(), weights, n_repeat=n_repeat)

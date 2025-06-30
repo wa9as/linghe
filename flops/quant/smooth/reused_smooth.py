@@ -709,6 +709,79 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
 
 
 
+@triton.jit
+def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, M, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # row-wise read, row-wise write
+    smooth_scale = tl.load(ss_ptr+pid*N+tl.arange(0, N))
+    if not REVERSE:
+        smooth_scale = 1.0/smooth_scale
+    count = tl.load(count_ptr+pid)
+    ei = tl.load(accum_ptr+pid)
+    si = ei - count
+    for i in range(count):
+        index = tl.load(index_ptr+si+i)
+        x = tl.load(grads_data_ptr + index*N+tl.arange(0, N)).to(tl.float32)
+        gs = tl.load(grads_scale_ptr + index)
+        x *= gs
+
+        x *= smooth_scale
+        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+        else:
+            scale = x_max/448.0
+
+        tl.store(qs_ptr+si+i, scale)
+
+        s = 1.0/scale
+        x *= s
+        xq = x.to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr+si*N+i*N+tl.arange(0, N), xq)
+
+"""
+select and smooth and quant
+x: [bs, dim]
+smooth_scales: [n_experts, dim]
+indices: [n_experts*topk]
+x_q: [bs*topk, dim]
+x_scale: [bs*topk]
+"""
+def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, x_sum=None, reverse=False, round_scale=False):
+    # row-wise read, row-wise write
+    M, N = grad_data.shape
+    n_expert, n = smooth_scales.shape
+    assert N == n, f'{N=} {n=}'
+    E = indices.shape[0]
+    device = grad_data.device 
+    if x_q is None:
+        x_q = torch.empty((E, N), device=device, dtype=torch.float8_e4m3fn)
+    if x_scale is None:
+        x_scale = torch.empty((E,), device=device, dtype=torch.float32)
+    accum_token_count = torch.cumsum(token_count_per_expert, 0)
+    # TODO: adapt for n_expert <= 64
+    grid = lambda META: (n_expert, )
+    smooth_unpermute_backward_kernel[grid](
+        grad_data,
+        grad_scale,
+        x_q,
+        smooth_scales,
+        x_scale,
+        token_count_per_expert,
+        accum_token_count,
+        indices,
+        M, N, 
+        reverse,
+        round_scale,
+        num_stages=3,
+        num_warps=8
+    )
+    return x_q,x_scale
+
+
+
+
 def triton_reused_smooth_quant_nt(x, w, smooth_scale):
     x_q,x_scale = triton_reused_smooth_quant(x, 1/smooth_scale)
     w_q,w_scale = triton_reused_smooth_quant(w, smooth_scale)
