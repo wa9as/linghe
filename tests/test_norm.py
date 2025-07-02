@@ -5,9 +5,20 @@ import torch
 import time
 import os
 import random
+import numpy as np
 from flops.utils.util import *
 from flops.utils.norm import *
+from flops.facade.rmsnorm import RMSNormtriton
 from flops.utils.benchmark import benchmark_func
+
+def setup_seed(seed):
+     torch.manual_seed(seed)
+     torch.cuda.manual_seed_all(seed)
+     np.random.seed(seed)
+     random.seed(seed)
+     torch.backends.cudnn.deterministic = True
+
+setup_seed(20)
 
 
 # M, N, K = 8192, 4096, 13312
@@ -19,77 +30,70 @@ dtype = torch.bfloat16
 device = 'cuda:0'
 n_repeat = 100
 
-x = torch.randn(M, K, dtype=dtype, device=device)
-weight = torch.randn(K, dtype=dtype, device=device)
+x = torch.randn(M, K, dtype=dtype, requires_grad=True, device=device)
+weight = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
 dy = torch.randn(M, K, dtype=dtype, device=device)
 
 mode = 'rms_backward'
+# mode = 'rms_forward'
 
-if mode == 'rms_forward':
-    def torch_rms_norm(x, weight, eps=1e-6):
-        input_dtype = x.dtype
-        hidden_states = x.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + eps)
-        return weight * hidden_states.to(input_dtype)
+rmsnorm_torch = torch.nn.RMSNorm(
+    normalized_shape=K,
+    eps=1e-5,
+    dtype=torch.bfloat16,
+    device='cuda'
+)
 
+with torch.no_grad():
+    rmsnorm_torch.weight.copy_(weight)
 
-    ref_output = torch_rms_norm(x, weight)
-    output, norm = triton_rms_norm_forward(x, weight, 1e-6)
-    output_check(ref_output.float(), output.float(),'rms')
     
-    ref_time = benchmark_func(torch_rms_norm, x, weight, n_repeat=n_repeat, ref_bytes=M*K*4)
-    benchmark_func(triton_rms_norm_forward, x, weight, n_repeat=n_repeat, ref_bytes=M*K*4, ref_time=ref_time)
+if mode == 'rms_forward':
+
+    out_torch = rmsnorm_torch(x)
+    output_triton = RMSNormtriton.apply(x, weight, 1e-6)
+    output_check(out_torch.float(), output_triton.float(),'rms')
+    
+    ref_time = benchmark_func(rmsnorm_torch, x, n_repeat=n_repeat, name="rms_torch", ref_bytes=M*K*4)
+    benchmark_func(RMSNormtriton.apply, x, weight, n_repeat=n_repeat, ref_bytes=M*K*4, name="rms_triton", ref_time=ref_time)
 
 if mode == 'rms_backward':
-    def torch_rms_norm_forward(x, weight, eps=1e-6):
-        input_dtype = x.dtype
-        hidden_states = x.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        rstd = torch.rsqrt(variance + eps)
-        hidden_states = hidden_states * rstd
-        
-        return weight * hidden_states.to(input_dtype), rstd.squeeze(-1)
 
-    def torch_rms_norm_backward(dy, x, weight, rstd=None, eps=1e-6):
-        if rstd is None:
-            _, rstd = torch_rms_norm_forward(x, weight, eps)
+    def troch_forward_backward(x_torch_back, dy):
+        y_torch_back = rmsnorm_torch(x_torch_back)
+        y_torch_back.backward(gradient=dy)
+        return  x_torch_back.grad, rmsnorm_torch.weight.grad
 
-        rstd = rstd.unsqueeze(-1) if rstd.dim() == x.dim() - 1 else rstd
-
-        x_torch = x.detach().clone().requires_grad_(True)
-        weight_torch = weight.detach().clone().requires_grad_(True)
-
-        hidden_states = x_torch.to(torch.float32) * rstd.detach()
-        out = weight_torch * hidden_states.to(x.dtype)
-        loss = (out * dy).sum()
-        loss.backward()
-        
-        return x_torch.grad, weight_torch.grad
+    def triton_forward_backward(x_triton_back, g_triton_back, dy):
+        y_triton_back = RMSNormtriton.apply(x_triton_back, g_triton_back)
+        y_triton_back.backward(gradient=dy)
+        return x_triton_back.grad, g_triton_back.grad
     
-    ref_output, ref_norm = torch_rms_norm_forward(x, weight)
-    triton_out, triton_norm = triton_rms_norm_forward(x, weight)
+    x_torch_back = x.detach().clone().to(torch.float32).requires_grad_()
 
-    ref_dx, ref_dweight = torch_rms_norm_backward(dy, x, weight, triton_norm)
-    triton_dx, triton_dweight = triton_rms_norm_backward(dy, x, triton_norm, weight)
-
-    output_check(ref_dx, triton_dx, 'triton_dx')
-    output_check(ref_dweight, triton_dweight, 'triton_dweight')
-
+    x_triton_back = x.detach().clone().to(torch.float32).requires_grad_()
+    g_triton_back = weight.detach().clone().requires_grad_()
+    
+    rmsnorm_torch.zero_grad()
+    
+    dx_torch, dg_torch = troch_forward_backward(x_torch_back, dy)
+    dx_triton, dg_triton = triton_forward_backward(x_triton_back, g_triton_back, dy)
+    
+    output_check(dx_torch, dx_triton)
+    output_check(dg_torch, dg_triton)
+    
     ref_time = benchmark_func(
-        torch_rms_norm_backward,
+        troch_forward_backward,
+        x_torch_back,
         dy,
-        x,
-        weight, 
         n_repeat=n_repeat
     )
     
     benchmark_func(
-        triton_rms_norm_backward,
+        triton_forward_backward,
+        x_triton_back,
+        g_triton_back,
         dy,
-        x,
-        triton_norm,
-        weight, 
         n_repeat=n_repeat,
         ref_time=ref_time
     )

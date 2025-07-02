@@ -9,7 +9,9 @@ import random
 
 
 def benchmark_func(fn, *args, n_warmup=100, n_repeat=1000, ref_flops=None, ref_bytes=None, ref_time=None, name='', **kwargs):
-    func_name = fn.__name__
+        
+    func_name = getattr(fn, '__name__', None)
+    func_name = name if func_name == 'apply' or func_name == None else func_name
 
     for i in range(n_warmup):
         fn(*args,**kwargs)
