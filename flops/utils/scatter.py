@@ -135,7 +135,7 @@ def triton_scatter_add_with_count(x, outputs, indices, counts):
     M, N = x.shape
     m = outputs.size(0)
 
-    num_stages = 5
+    num_stages = 3
     num_warps = 8
 
     indices = torch.argsort(indices)

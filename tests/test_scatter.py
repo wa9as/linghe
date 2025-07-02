@@ -46,7 +46,7 @@ weights = torch.randn(M*topk, dtype=dtype,device=device)
 
 sums_ref = torch_fp16_scatter_add(x, outputs.clone(), indices, None)
 # sums = triton_scatter_add(x, outputs.clone(), indices)
-sums_split = triton_split_scatter_add(x, outputs.clone(), indices, counts)
+sums_split = triton_scatter_add_with_count(x, outputs.clone(), indices, counts)
 
 # output_check(sums_ref,sums,'scatter_add')
 output_check(sums_ref, sums_split,'split_scatter_add')
@@ -56,4 +56,4 @@ n_repeat = 100
 ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
 benchmark_func(triton_aligned_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
 benchmark_func(triton_scatter_add,x, outputs, indices, n_repeat=n_repeat,ref_time=ref_time)
-benchmark_func(triton_split_scatter_add,x, outputs, indices, counts, n_repeat=n_repeat,ref_time=ref_time)
+benchmark_func(triton_scatter_add_with_count,x, outputs, indices, counts, n_repeat=n_repeat,ref_time=ref_time)

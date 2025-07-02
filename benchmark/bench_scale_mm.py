@@ -31,7 +31,7 @@ def torch_accum_weight(x,w,out,x_scale,w_scale):
     
 
 for i in range(0, 1):
-    M, N, K = 8192, 8192, 8192
+    M, N, K = 8192, 8192, 8192-1
     dtype = torch.bfloat16
     device = 'cuda:0'
     n_repeat = 100
@@ -48,12 +48,12 @@ for i in range(0, 1):
 
     out = torch.empty((M,N), dtype=torch.float32,device=device)
     o = torch.empty((M,N), dtype=dtype,device=device)
-    benchmark_func(triton_block_add, out, o, n_repeat=n_repeat, name=f'M:{M}')
+    # benchmark_func(triton_block_add, out, o, n_repeat=n_repeat, name=f'M:{M}')
 
     ref_time=benchmark_func(fp16_forward, x, w.t(), n_repeat=n_repeat, ref_flops=ref_flops, name=f'M:{M}')
     benchmark_func(torch_fp16_vector_scaled_mm, x_q, w_q.t(), xrs, wcs.view(1,-1), n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
     # benchmark_func(torch_fp32_vector_scaled_mm, x_q, w_q.t(), xrs, wcs.view(1,-1), ones, out=out, n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
     # benchmark_func(torch_fp16_scaler_scaled_mm, x_q, w_q.t(), xrs[0,0], wcs[0,0], n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
     # benchmark_func(torch_fp32_scaler_scaled_mm, x_q, w_q.t(), xrs[0,0], wcs[0,0], n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
-    benchmark_func(triton_accum_weight, x_q, w_q.t(), out, xrs, wcs.view(1,-1), n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
-    benchmark_func(torch_accum_weight, x_q, w_q.t(), out, xrs, wcs.view(1,-1), n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
+    # benchmark_func(triton_accum_weight, x_q, w_q.t(), out, xrs, wcs.view(1,-1), n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
+    # benchmark_func(torch_accum_weight, x_q, w_q.t(), out, xrs, wcs.view(1,-1), n_repeat=n_repeat,  ref_flops=ref_flops, ref_time=ref_time, name=f'M:{M}')
