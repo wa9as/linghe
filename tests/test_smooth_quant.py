@@ -12,14 +12,14 @@ if False:
     M, K = x.shape 
     N, K = w.shape
 else:
-    M,N,K=8192*8,8192,2048
+    M,N,K=4096,8192,8192
     x = torch.randn((M,K),dtype=dtype,device=device)
     w = torch.randn((N,K),dtype=dtype,device=device)
     y = torch.randn((M,N),dtype=dtype,device=device)
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['batch_smooth']
+modes = ['unpermute_backward']
 
 
 if 'torch_tensor' in modes:
@@ -248,3 +248,37 @@ if 'batch_smooth' in modes:
     ref_time = benchmark_func(triton_split_smooth_quant, x_split, smooth_scales, n_repeat=n_repeat)
     benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False, n_repeat=n_repeat, ref_time=ref_time)
     benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False, calibrate=True, n_repeat=n_repeat, ref_time=ref_time)
+
+
+if 'unpermute_backward' in modes:
+    
+    from flops.quant.smooth.reused_smooth import *
+    k = 2
+    smooth_scales = 1+10*torch.rand((k,K),device=device,dtype=torch.float32)
+    token_count_per_expert_list = [M]*k
+
+    token_count_per_expert = torch.tensor(token_count_per_expert_list, dtype=torch.int32, device=device)
+    indices = (torch.arange(M*k, device=device,dtype=torch.int32)//k)[torch.argsort(torch.randn(M*k,dtype=torch.float32,device=device))]
+    grad_data = torch.randn((M,K), dtype=torch.bfloat16,device=device).to(torch.float8_e4m3fn)
+    grad_scale = torch.randn((M,), dtype=torch.float32,device=device)
+    y_q, y_scale = triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, x_sum=None, reverse=False, round_scale=False)
+
+    q_refs = [] 
+    scale_refs = []
+    s = 0
+    for i in range(k):
+        c = token_count_per_expert_list[i]
+        data_slice = grad_data.view(torch.uint8)[indices[s:s+c]].view(torch.float8_e4m3fn)
+        scale_slice = grad_scale[indices[s:s+c]]
+        s += c
+        y_smooth = data_slice.float()*scale_slice[:,None]/smooth_scales[i]
+        scale = y_smooth.abs().amax(1)/448
+        scale_refs.append(scale)
+        q = (y_smooth/scale[:,None]).to(torch.float8_e4m3fn) 
+        q_refs.append(q.view(torch.uint8))
+    q_ref = torch.cat(q_refs, 0).view(torch.float8_e4m3fn)
+    scale_ref = torch.cat(scale_refs,0)
+    output_check(q_ref.float(), y_q.float(), 'data')
+    output_check(scale_ref.float(), y_scale.float(), 'scale')
+
+    benchmark_func(triton_smooth_unpermute_backward, grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, n_repeat=100, ref_bytes=M*N*k*2)

@@ -117,7 +117,6 @@ def triton_scatter_add(x, outputs, indices):
 def scatter_add_with_count_kernel(x_ptr, o_ptr, indices_ptr, counts_ptr, accum_ptr, M, m, T, N: tl.constexpr):
     pid = tl.program_id(axis=0)
     offs = tl.arange(0, N)
-
     for i in range(T):
         count = tl.load(counts_ptr + pid*T+i, mask=pid*T+i<m)
         ei = tl.load(accum_ptr + pid*T+i, mask=pid*T+i<m)
@@ -135,8 +134,8 @@ def triton_scatter_add_with_count(x, outputs, indices, counts):
     M, N = x.shape
     m = outputs.size(0)
 
-    num_stages = 5
-    num_warps = 8
+    num_stages = 3
+    num_warps = 16
 
     indices = torch.argsort(indices)
     accum = torch.cumsum(counts, 0)

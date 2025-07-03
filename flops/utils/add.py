@@ -32,7 +32,10 @@ def block_add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN:
 
 
 def triton_block_add(x, y, accum=True):
-    M, N = x.shape
+    shape = x.shape[-1]
+    N = shape 
+    M = x.numel()//N
+    # M, N = x.shape
     H = 128
     W = 128
     EVEN = M%H == 0 and N%W == 0
