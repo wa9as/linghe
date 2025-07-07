@@ -1,4 +1,3 @@
-from enum import IntEnum
 from typing import Tuple
 import math
 import torch
