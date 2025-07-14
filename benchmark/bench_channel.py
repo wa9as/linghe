@@ -1,7 +1,7 @@
 import torch 
 from flops.utils.util import *
 from flops.utils.benchmark import benchmark_func
-from flops.quant.channel import *
+from flops.quant.channel.channel import *
 
 
 # 5b: hidden_size:4k  seq_length:8K shape:(M,N,K)

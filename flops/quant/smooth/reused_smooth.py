@@ -757,7 +757,7 @@ def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token
     n_expert, n = smooth_scales.shape
     assert 128%n_expert == 0
     assert N == n, f'{N=} {n=}'
-    E = indices.shape[0]
+    E = indices.size(0)
     device = grad_data.device 
     if x_q is None:
         x_q = torch.empty((E, N), device=device, dtype=torch.float8_e4m3fn)
@@ -784,6 +784,82 @@ def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token
     return x_q,x_scale
 
 
+
+
+
+@triton.jit
+def smooth_permute_with_mask_map_kernel(grads_data_ptr, quant_data_ptr, mask_map_ptr, grads_scale_ptr, smooth_scale_ptrs, quant_scale_ptr, M, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+    eid = tl.program_id(axis=0)
+    bid = tl.program_id(axis=1)
+
+    smooth_scale_ptr = tl.load(smooth_scale_ptrs + eid).to(tl.pointer_type(tl.float32))
+    smooth_scale = tl.load(smooth_scale_ptr+tl.arange(0, N))
+    if not REVERSE:
+        smooth_scale = 1.0/smooth_scale
+    for i in range(bid*T, tl.minimum(bid*T+T,M)):
+        index = tl.load(mask_map_ptr+eid*M+i)
+        mask = index >= 0
+        x = tl.load(grads_data_ptr + i*N+tl.arange(0, N), mask=mask).to(tl.float32)
+        gs = tl.load(grads_scale_ptr + i, mask=mask)
+        x *= gs
+
+        x *= smooth_scale
+        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-35)
+
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+        else:
+            scale = x_max/448.0
+
+        tl.store(quant_scale_ptr+index, scale, mask=mask)
+
+        s = 1.0/scale
+        x *= s
+        xq = x.to(quant_data_ptr.dtype.element_ty)
+        tl.store(quant_data_ptr+index*N+tl.arange(0, N), xq, mask=mask)
+
+# """
+# gather and smooth quant
+# inp: [num_tokens, hidden_size], rowwise_data
+# row_id_map: [n_experts, num_tokens], indices
+# scale: [num_tokens], rowwise_scale_inv
+# smooth_scale_ptrs: [n_experts], data_ptr
+# """
+
+def triton_smooth_permute_with_mask_map(
+    inp: torch.Tensor,
+    row_id_map: torch.Tensor,
+    scale: torch.Tensor,
+    num_experts: int,
+    num_tokens: int,
+    num_out_tokens: int,
+    hidden_size: int,
+    smooth_scale_ptrs: torch.Tensor,
+    reverse=True,
+    round_scale=True
+    ):
+    output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype, device="cuda")
+
+    permuted_scale = torch.empty(
+        (num_out_tokens, ), dtype=scale.dtype, device="cuda"
+    )
+    sm = 132
+    T = triton.cdiv(num_tokens, sm)
+    grid = (num_experts, sm)
+    smooth_permute_with_mask_map_kernel[grid](
+        inp,
+        output,
+        row_id_map,
+        scale,
+        smooth_scale_ptrs,
+        permuted_scale,
+        num_tokens,
+        T,
+        hidden_size,
+        reverse,
+        round_scale
+    )
+    return output, permuted_scale
 
 
 def triton_reused_smooth_quant_nt(x, w, smooth_scale):

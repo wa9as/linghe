@@ -12,8 +12,8 @@ from flops.gemm.fp32_gemm import *
 
 
 
-if False:
-    M, N, K = 2048, 8192, 8192-32
+if True:
+    M, N, K = 2048, 8192, 8192-16
     dtype = torch.bfloat16
     device = 'cuda:0'
     n_repeat = 100
@@ -26,15 +26,16 @@ if False:
     x_q = (x/x_scale[:,None]).to(torch.float8_e4m3fn)
     w_q = (w/w_scale[:,None]).to(torch.float8_e4m3fn)
     ref_flops = M*N*K*2
-    ref_out = (x_q.float()*x_scale[:,None])@(w_q.float()*w_scale[:,None]).t()
 
-    o = torch.zeros((M,N), dtype=dtype,device=device)
+    o = 10*torch.ones((M,N), dtype=torch.float32, device=device)
+    ref_out = (x_q.float()*x_scale[:,None])@(w_q.float()*w_scale[:,None]).t() + o
+
     out = triton_scaled_mm(x_q,w_q,x_scale,w_scale, c=o, accum=True)
     output_check(ref_out, out.float(), mode='gemm')
 
 
 
-if True:
+if False:
     M, N, K = 4096, 256, 8192
     dtype = torch.bfloat16
     device = 'cuda:0'

@@ -52,7 +52,7 @@ def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N
         x_max = tl.maximum(x_max, col_max)
     
     maxs = tl.sqrt(tl.maximum(x_max, 5.27e-36))
-    scale = tl.where(maxs < 4.0, 1.0, maxs)
+    scale = tl.where(maxs < 0.1, 0.1, maxs)
     inv_scale = 1.0 / tl.maximum(scale, 5.27e-36)
     
     tl.store(smooth_scale_ptr + pid * W + col_offs, scale)

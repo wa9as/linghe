@@ -1,30 +1,34 @@
 import math
 import torch 
 from flops.utils.util import *
+from flops.quant.channel.channel import *
+from flops.utils.benchmark import benchmark_func
 
 
 device = 'cuda:0'
 dtype = torch.bfloat16
+M, N, K = 8192, 8192, 8192
 
-x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+if False:
+    x,w,y= read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl', tile=True)
+    M, K = x.shape 
+    N, K = w.shape
+else:
+    x = torch.randn((M,K), dtype=dtype, device=device)
+    w = torch.randn((N,K), dtype=dtype, device=device)
+    y = torch.randn((M,N), dtype=dtype, device=device)
 
-batch_size, in_dim = x.shape 
-out_dim, in_dim = w.shape
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['tensor','channel']
-if 'tensor' in modes:
-    xq, wq, x_scale, w_scale = torch_tensor_quant(x,w,torch.float8_e4m3fn)
-    opt_out =  (xq.to(dtype)@wq.to(dtype).t())*(x_scale*w_scale).to(dtype)
-    quant_check(org_out, xq, wq, opt_out,'tensor')
 
-if 'channel' in modes:
-    xq, wq, x_scale, w_scale = torch_channel_quant(x,w,torch.float8_e4m3fn)
+if False:
+    xq, x_scale = torch_row_quant(x, dtype=torch.float8_e4m3fn)
+    wq, w_scale = torch_row_quant(w, dtype=torch.float8_e4m3fn)
     opt_out =  (xq.to(dtype)@wq.to(dtype).t())*x_scale.to(dtype)*w_scale.to(dtype)[:,0]
     quant_check(org_out, xq, wq, opt_out,'channel')
 
-if 'channels' in modes:
+if False:
     xq,wq,yq,ytq,o, dx, dw = torch_channel_quant_f_and_b(x,w,y)
     ref_o, ref_dx, ref_dw = fp16_f_and_b(x,w,y)
     mode = 'channels'
@@ -34,3 +38,19 @@ if 'channels' in modes:
     quant_check(ref_o, xq, wq, o,mode)
     quant_check(ref_dx, yq, wq, dx,mode)
     quant_check(ref_dw, ytq, xq, dw,mode)
+
+if True:
+    x_q_ref, x_scale_ref = torch_row_quant(x, dtype=torch.float8_e4m3fn)
+
+    x_q, x_scale = triton_row_quant(x)
+    output_check(x_q_ref.float(), x_q.float(), mode='data')
+    output_check(x_scale_ref, x_scale, mode='scale')
+
+    x_q, x_scale = triton_tokenwise_row_quant(x)
+    output_check(x_q_ref.float(), x_q.float(), mode='data')
+    output_check(x_scale_ref, x_scale, mode='scale')
+
+    ref_time = benchmark_func(torch_row_quant, x, n_repeat=100, ref_bytes=M*K*3)
+    benchmark_func(triton_row_quant, x, n_repeat=100, ref_bytes=M*K*3, ref_time=ref_time)
+    benchmark_func(triton_deprecated_tokenwise_row_quant, x, n_repeat=100, ref_bytes=M*K*3, ref_time=ref_time)
+    benchmark_func(triton_tokenwise_row_quant, x, n_repeat=100, ref_bytes=M*K*3, ref_time=ref_time)

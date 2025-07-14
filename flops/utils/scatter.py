@@ -84,12 +84,13 @@ def triton_scatter_add(x, outputs, indices):
 
     float_outputs = torch.zeros(outputs.shape, dtype=torch.float32, device=outputs.device)
 
-    T = triton.cdiv(M, 132)
+    sm = 132
+    T = triton.cdiv(M, sm)
 
     num_stages = 5
     num_warps = 8
 
-    grid = lambda META: (132, )
+    grid = lambda META: (sm, )
     scatter_add_kernel[grid](
         x, float_outputs,
         indices,
@@ -99,8 +100,8 @@ def triton_scatter_add(x, outputs, indices):
     )
 
     m = outputs.shape[0]    
-    T = triton.cdiv(m, 132)
-    grid = lambda META: (132, )
+    T = triton.cdiv(m, sm)
+    grid = lambda META: (sm, )
     fp32_to_bf16_kernel[grid](
         float_outputs, outputs,
         m, T, N, 
@@ -139,9 +140,9 @@ def triton_scatter_add_with_count(x, outputs, indices, counts):
 
     indices = torch.argsort(indices)
     accum = torch.cumsum(counts, 0)
-
-    T = triton.cdiv(m, 132)
-    grid = lambda META: (132, )
+    sm = 132  # 20 for deepep
+    T = triton.cdiv(m, sm)
+    grid = lambda META: (sm, )
     scatter_add_with_count_kernel[grid](
         x, outputs,
         indices,
@@ -152,3 +153,247 @@ def triton_scatter_add_with_count(x, outputs, indices, counts):
         num_warps=num_warps
     )
     return outputs
+
+
+
+
+# @triton.jit
+# def unpermute_with_mask_map_kernel(grads_ptr, probs_ptr, mask_map_ptr, output_ptr, output_probs_ptr, num_experts: tl.constexpr, N: tl.constexpr, PROB: tl.constexpr):
+#     pid = tl.program_id(axis=0)
+#     M = tl.num_programs(axis=0)
+
+#     sums = tl.zeros((N,), dtype=tl.float32)
+
+#     for i in range(num_experts):
+
+#         index = tl.load(mask_map_ptr+i*M+pid)
+#         mask = index >= 0
+#         sums  += tl.load(grads_ptr + index*N+tl.arange(0, N), mask=mask).to(tl.float32)
+
+#         if PROB:
+#             prob = tl.load(probs_ptr+index, mask=mask)
+#             tl.store(output_probs_ptr+pid*num_experts+i, prob, mask=mask)
+
+#     tl.store(output_ptr+pid*N+tl.arange(0, N), sums)
+
+
+
+# # """
+# # gather and smooth quant
+# # inp: [num_tokens, hidden_size], rowwise_data
+# # row_id_map: [n_experts, num_tokens], indices
+# # scale: [num_tokens], rowwise_scale_inv
+# # smooth_scale_ptrs: [n_experts], data_ptr
+# # """
+
+# def triton_unpermute_with_mask_map(
+#     grad: torch.Tensor,
+#     row_id_map: torch.Tensor,
+#     probs: torch.Tensor,
+#     ):
+#     hidden_size = grad.shape[1]
+#     num_experts, num_tokens = row_id_map.shape
+
+#     output = torch.empty((num_tokens, hidden_size), dtype=grad.dtype, device="cuda")
+
+#     PROB = probs is not None
+#     if PROB:
+#         restore_probs = torch.zeros((num_tokens, num_experts), dtype=probs.dtype, device="cuda")
+#     else:
+#         restore_probs = None
+
+#     grid = (num_tokens, )
+#     unpermute_with_mask_map_kernel[grid](
+#         grad,
+#         probs,
+#         row_id_map,
+#         output,
+#         restore_probs,
+#         num_experts,
+#         hidden_size,
+#         PROB,
+#         num_stages=4,
+#         num_warps=8
+#     )
+#     return output, restore_probs
+
+
+
+
+
+
+@triton.jit
+def unpermute_with_mask_map_kernel(grads_ptr, probs_ptr, mask_map_ptr, output_ptr, output_probs_ptr, num_experts: tl.constexpr, N: tl.constexpr, PROB: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    sums = tl.zeros((N,), dtype=tl.float32)
+
+    indices = tl.load(mask_map_ptr+pid*num_experts+tl.arange(0,num_experts))
+    count = tl.sum(tl.where(indices>=0,1,0))
+    mask_indices = tl.where(indices<0,2**20,indices)
+    idx = tl.argmin(mask_indices, 0)
+    index = tl.min(mask_indices)
+
+    for i in range(count):
+
+        mask = index >= 0
+        sums += tl.load(grads_ptr + index*N+tl.arange(0, N), mask=mask).to(tl.float32)
+
+        if PROB:
+            prob = tl.load(probs_ptr+index, mask=mask)
+            tl.store(output_probs_ptr+pid*num_experts+idx, prob, mask=mask)
+
+        mask_indices = tl.where(indices<=index,2**20,indices)
+        idx = tl.argmin(mask_indices, 0)
+        index = tl.min(mask_indices)
+
+    tl.store(output_ptr+pid*N+tl.arange(0, N), sums)
+
+
+
+# """
+# gather and smooth quant
+# inp: [num_tokens, hidden_size], rowwise_data
+# row_id_map: [n_experts, num_tokens], indices
+# scale: [num_tokens], rowwise_scale_inv
+# smooth_scale_ptrs: [n_experts], data_ptr
+# """
+
+def triton_unpermute_with_mask_map(
+    grad: torch.Tensor,
+    row_id_map: torch.Tensor,
+    probs: torch.Tensor,
+    ):
+    hidden_size = grad.shape[1]
+    num_tokens, num_experts = row_id_map.shape  # not transposed
+
+    output = torch.empty((num_tokens, hidden_size), dtype=grad.dtype, device="cuda")
+
+    PROB = probs is not None
+    if PROB:
+        restore_probs = torch.zeros((num_tokens, num_experts), dtype=probs.dtype, device="cuda")
+    else:
+        restore_probs = None
+
+    grid = (num_tokens, )
+    unpermute_with_mask_map_kernel[grid](
+        grad,
+        probs,
+        row_id_map,
+        output,
+        restore_probs,
+        num_experts,
+        hidden_size,
+        PROB,
+        num_stages=4,
+        num_warps=4
+    )
+    return output, restore_probs
+
+
+
+
+
+
+@triton.jit
+def make_row_id_map_kernel(map_ptrs, count_ptr, output_ptr, M, E: tl.constexpr, B: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    n_experts = tl.num_programs(axis=0)
+
+    counts = tl.load(count_ptr+tl.arange(0,E))
+    counts = tl.cumsum(counts)
+
+    mask_counts = tl.where(tl.arange(0,E) < pid, counts, 0)
+    count = tl.max(mask_counts) - 1
+
+    n = tl.cdiv(M, B)
+    for i in range(n):
+        mask = i*B+tl.arange(0,B)<M
+        values = tl.load(map_ptrs+i*B*n_experts+tl.arange(0,B)*n_experts+pid, mask=mask).to(tl.int32)
+        acc = count + tl.cumsum(values)
+
+        count = tl.max(acc)
+        acc = tl.where(values==0,-1,acc)
+
+        tl.store(output_ptr+i*B*n_experts+tl.arange(0,B)*n_experts+pid, acc, mask=mask)
+
+
+
+
+
+# """
+# make row id map, not transposed
+# """
+
+def triton_make_row_id_map(
+    routing_map: torch.Tensor
+    ):
+    n_tokens, n_experts = routing_map.shape
+    counts = routing_map.sum(0)
+
+    output = torch.empty((n_tokens, n_experts), dtype=torch.int32, device=routing_map.device)
+    B = 128
+    grid = (n_experts, )
+    make_row_id_map_kernel[grid](
+        routing_map,
+        counts,
+        output,
+        n_tokens,
+        n_experts,
+        B,
+        num_stages=3,
+        num_warps=16
+    )
+    return output
+
+
+
+
+
+# @triton.jit
+# def make_row_id_map_kernel(map_ptrs, count_ptr, output_ptr, M, E: tl.constexpr, B: tl.constexpr):
+#     pid = tl.program_id(axis=0)
+#     counts = tl.load(count_ptr+tl.arange(0,E))
+#     count = tl.cumsum(counts) - 1
+
+#     n = tl.cdiv(M, B)
+#     offs = tl.arange(0,B)[:,None]*E + tl.arange(0,E)[None, :]
+#     for i in range(n):
+#         mask = i*B+tl.arange(0,B)[:,None]<M
+#         values = tl.load(map_ptrs+offs, mask=mask).to(tl.int32)
+#         acc = count + tl.cumsum(values, axis=0)
+
+#         count = tl.max(acc, 0)
+#         acc = tl.where(values==0,-1,acc)
+
+#         tl.store(output_ptr+offs, acc, mask=mask)
+#         offs += E*B
+
+
+
+
+
+# # """
+# # make row id map, not transposed
+# # """
+
+# def triton_make_row_id_map(
+#     routing_map: torch.Tensor
+#     ):
+#     n_tokens, n_experts = routing_map.shape
+#     counts = routing_map.sum(0)
+
+#     output = torch.empty((n_tokens, n_experts), dtype=torch.int32, device=routing_map.device)
+#     B = 128
+#     grid = (1, )
+#     make_row_id_map_kernel[grid](
+#         routing_map,
+#         counts,
+#         output,
+#         n_tokens,
+#         n_experts,
+#         B,
+#         num_stages=3,
+#         num_warps=8
+#     )
+#     return output

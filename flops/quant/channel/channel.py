@@ -11,7 +11,7 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0)
     n_block = tl.cdiv(N, BLOCK_SIZE)
     indices = tl.arange(0, BLOCK_SIZE)
-    max_val = 1e-9
+    max_val = 1e-30
     N = N.to(tl.int64)
 
     for j in range(n_block):
@@ -31,19 +31,89 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr):
 
 def triton_row_quant(x):
     M, N = x.shape 
-    BLOCK_SIZE = 4096
+    BLOCK_SIZE = 8192
     x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=x.device)
-    x_scale = torch.empty((M,1),dtype=torch.float32,device=x.device)
+    x_scale = torch.empty((M,),dtype=torch.float32,device=x.device)
     grid = lambda META: (M, )
     row_quant_kernel[grid](
         x, x_q, x_scale,
-        M,N,
+        M, N,
         BLOCK_SIZE,
         num_stages=5,
         num_warps=4
     )
     return x_q, x_scale
 
+
+
+@triton.jit
+def deprecated_tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, M, T: tl.constexpr, N: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    offs = pid*T*N+tl.arange(0, N)
+    for i in range(T):
+        mask = pid*T+i<M
+        x = tl.load(x_ptr+offs, mask=mask).to(tl.float32)
+
+        scale = tl.maximum(tl.max(tl.abs(x)), 1e-30)/448.0
+
+        x = (x/scale).to(out_ptr.dtype.element_ty)
+        tl.store(scale_ptr+i,scale, mask=mask)
+        tl.store(out_ptr+offs, x, mask=mask)
+
+        offs += N
+
+
+
+def triton_deprecated_tokenwise_row_quant(x, out=None, scale=None):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    device = x.device 
+    if out is None:
+        out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    if scale is None:
+        scale = torch.empty((M,), dtype=torch.float32, device=device)
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm)
+    grid = lambda META: (sm, )
+    deprecated_tokenwise_row_quant_kernel[grid](
+        x,
+        out,
+        scale,
+        M, T, N, 
+        num_stages=3,
+        num_warps=16
+    )
+    return out, scale
+
+
+
+@triton.jit
+def tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, N: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    x = tl.load(x_ptr+pid*N+tl.arange(0, N)).to(tl.float32)
+    scale = tl.maximum(tl.max(tl.abs(x)), 1e-30)/448.0
+    tl.store(scale_ptr+pid, scale)
+    x = (x/scale).to(out_ptr.dtype.element_ty)
+    tl.store(out_ptr+pid*N+tl.arange(0, N), x)
+
+def triton_tokenwise_row_quant(x, out=None, scale=None):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    device = x.device 
+    if out is None:
+        out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+    if scale is None:
+        scale = torch.empty((M,), dtype=torch.float32, device=device)
+    grid = lambda META: (M, )
+    tokenwise_row_quant_kernel[grid](
+        x,
+        out,
+        scale,
+        N, 
+        num_stages=3,
+        num_warps=16
+    )
+    return out, scale
 
 
 # y = x @ w
@@ -58,7 +128,7 @@ def transpose_row_quant_kernel(x_ptr, q_ptr, s_ptr, M, N, H: tl.constexpr, W: tl
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     indices = tl.arange(0, H)
     m = tl.cdiv(M, H)
-    x_max = tl.zeros((W,),dtype=tl.float32)+1e-9
+    x_max = tl.zeros((W,),dtype=tl.float32)+1e-30
     for i in range(m):
         x = tl.load(x_ptr+offs,mask=i*H+indices[:,None]<M)
         x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)

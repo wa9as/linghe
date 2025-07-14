@@ -7,33 +7,45 @@ def round_up(x, b=16):
     return ((x-1)//b+1)*b
 
 
-def torch_tensor_quant(x,w, dtype):
+def torch_tensor_quant(x, dtype=torch.float8_e4m3fn):
     fmax = torch.finfo(dtype).max
-    x_scale = torch.max(torch.abs(x))/fmax
-    w_scale = torch.max(torch.abs(w))/fmax
+    x_scale = torch.max(torch.abs(x))/fmax + 1e-30
     x_q = (x/x_scale).to(dtype)
-    w_q = (w/w_scale).to(dtype)
-    return x_q,w_q,x_scale,w_scale
+    return x_q,x_scale
 
-def torch_channel_quant(x,w, dtype):
+
+def torch_row_quant(x,dtype=torch.float8_e4m3fn):
     fmax = torch.finfo(dtype).max
-    x_scale = (torch.max(torch.abs(x),dim=1, keepdims=True)[0]+1e-6)/fmax
-    w_scale = (torch.max(torch.abs(w),dim=1, keepdims=True)[0]+1e-6)/fmax
-    x_q = (x/x_scale).to(dtype)
-    w_q = (w/w_scale).to(dtype)
-    return x_q,w_q,x_scale,w_scale
+    x_scale = (torch.max(torch.abs(x),dim=1)[0]+1e-30)/fmax
+    x_q = (x/x_scale[:,None]).to(dtype)
+    return x_q,x_scale
 
-def torch_tile_block_quant(x,w,B,dtype):
+
+def torch_column_quant(x, dtype=torch.float8_e4m3fn):
+    fmax = torch.finfo(dtype).max
+    x_scale = (torch.max(torch.abs(x),dim=0)[0]+1e-30)/fmax
+    x_q = (x/x_scale).to(dtype)
+    return x_q,x_scale
+
+
+
+def torch_tile_quant(x,B,dtype=torch.float8_e4m3fn):
     fmax = torch.finfo(dtype).max
     x = x.clone()
-    w = w.clone()
     M, K = x.shape 
-    N, K = w.shape
 
     xp = torch.reshape(x.contiguous(),(M,K//B,B))
     x_scale = torch.amax(torch.abs(xp).float(),dim=2)/fmax
     xq = (xp/x_scale[:,:,None]).to(dtype)
     xq = torch.reshape(xq,(M,K)).contiguous()
+
+    return xq,x_scale
+
+
+def torch_block_quant(w,B,dtype=torch.float8_e4m3fn):
+    fmax = torch.finfo(dtype).max
+    w = w.clone()
+    N, K = w.shape
 
     wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
     w_scale = torch.amax(torch.amax(torch.abs(wp).float(),dim=2),dim=2)/fmax
@@ -41,7 +53,7 @@ def torch_tile_block_quant(x,w,B,dtype):
     wq = wq.permute(0,2,1,3)
     wq = torch.reshape(wq,(K,N)).t().contiguous()
 
-    return xq,wq,x_scale,w_scale
+    return wq,w_scale
 
 # quant with scaling to 448
 def torch_smooth_tensor_quant(x, w, dtype):
