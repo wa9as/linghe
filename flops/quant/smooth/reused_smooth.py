@@ -785,15 +785,13 @@ def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token
 
 
 
-
-
 @triton.jit
-def smooth_permute_with_mask_map_kernel(grads_data_ptr, quant_data_ptr, mask_map_ptr, grads_scale_ptr, smooth_scale_ptrs, quant_scale_ptr, M, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def smooth_permute_with_mask_map_kernel(grads_data_ptr, quant_data_ptr, mask_map_ptr, grads_scale_ptr, smooth_scale_ptr, quant_scale_ptr, M, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     eid = tl.program_id(axis=0)
     bid = tl.program_id(axis=1)
 
-    smooth_scale_ptr = tl.load(smooth_scale_ptrs + eid).to(tl.pointer_type(tl.float32))
-    smooth_scale = tl.load(smooth_scale_ptr+tl.arange(0, N))
+    # smooth_scale_ptr = tl.load(smooth_scale_ptrs + eid).to(tl.pointer_type(tl.float32))
+    smooth_scale = tl.load(smooth_scale_ptr+eid*N+tl.arange(0, N))
     if not REVERSE:
         smooth_scale = 1.0/smooth_scale
     for i in range(bid*T, tl.minimum(bid*T+T,M)):
@@ -834,7 +832,7 @@ def triton_smooth_permute_with_mask_map(
     num_tokens: int,
     num_out_tokens: int,
     hidden_size: int,
-    smooth_scale_ptrs: torch.Tensor,
+    smooth_scales: torch.Tensor,
     reverse=True,
     round_scale=True
     ):
@@ -851,7 +849,7 @@ def triton_smooth_permute_with_mask_map(
         output,
         row_id_map,
         scale,
-        smooth_scale_ptrs,
+        smooth_scales,
         permuted_scale,
         num_tokens,
         T,
