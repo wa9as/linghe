@@ -139,7 +139,7 @@ def rms_norm_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_p
             tl.store(rms_ptr+indices, rms, mask=indices<M)
         x = (x*rms[:,None])*(weight*smooth_scale)
         scale = tl.maximum(tl.max(tl.abs(x),1)/448.0, 1e-37)
-        x = (x/scale).to(out_ptr.dtype.element_ty)
+        x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         tl.store(out_ptr+offs, x, mask=indices[:,None]<M)
         offs += N*W
@@ -169,9 +169,12 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
         rms = torch.empty((M,), dtype=torch.float32, device=device)
     else:
         rms = None
+    
+    sm = torch.cuda.get_device_properties(x.device).multi_processor_count #TODO:liangchen figure out effect with deepep
+    
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    T = triton.cdiv(M, sm*W) 
+    grid = lambda META: (sm, )
     rms_norm_and_quant_forward_kernel[grid](
         x,
         weight,
@@ -192,3 +195,13 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
     )
     return out,scale,maxs,rms
 
+# M, N, K = 8192, 8192, 2048
+# dtype = torch.bfloat16
+# device = 'cuda:0'
+
+# x = torch.randn(M, K, dtype=dtype, requires_grad=True, device=device)
+# weight = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
+# scale = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
+# dy = torch.randn(M, K, dtype=dtype, device=device)
+
+# triton_rms_norm_and_quant_forward(x, weight, scale)
