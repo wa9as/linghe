@@ -710,85 +710,6 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
 
 
 
-
-# @triton.jit
-# def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
-#     eid = tl.program_id(axis=0)
-#     wid = tl.program_id(axis=1)
-#     T = tl.num_programs(axis=1)
-
-#     # row-wise read, row-wise write
-#     smooth_scale = tl.load(ss_ptr+eid*N+tl.arange(0, N))
-#     if not REVERSE:
-#         smooth_scale = 1.0/smooth_scale
-#     count = tl.load(count_ptr+eid)
-#     ei = tl.load(accum_ptr+eid)
-#     si = ei - count
-#     c = tl.cdiv(count, T)
-#     for i in range(si+wid*c, tl.minimum(si+wid*c+c,ei)):
-#         index = tl.load(index_ptr+i)
-#         x = tl.load(grads_data_ptr + index*N+tl.arange(0, N)).to(tl.float32)
-#         gs = tl.load(grads_scale_ptr + index)
-#         x *= gs
-
-#         x *= smooth_scale
-#         x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
-
-#         if ROUND:
-#             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-#         else:
-#             scale = x_max/448.0
-
-#         tl.store(qs_ptr+i, scale)
-
-#         s = 1.0/scale
-#         x *= s
-#         xq = x.to(q_ptr.dtype.element_ty)
-#         tl.store(q_ptr+i*N+tl.arange(0, N), xq)
-
-# """
-# select and smooth and quant
-# x: [bs, dim]
-# smooth_scales: [n_experts, dim]
-# indices: [n_experts*topk]
-# x_q: [bs*topk, dim]
-# x_scale: [bs*topk]
-# """
-# def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
-#     # row-wise read, row-wise write
-#     M, N = grad_data.shape
-#     n_expert, n = smooth_scales.shape
-#     assert 128%n_expert == 0
-#     assert N == n, f'{N=} {n=}'
-#     E = indices.size(0)
-#     device = grad_data.device 
-#     if x_q is None:
-#         x_q = torch.empty((E, N), device=device, dtype=torch.float8_e4m3fn)
-#     if x_scale is None:
-#         x_scale = torch.empty((E,), device=device, dtype=torch.float32)
-#     accum_token_count = torch.cumsum(token_count_per_expert, 0)
-#     W = 128//n_expert
-#     grid = (n_expert, W)
-#     smooth_unpermute_backward_kernel[grid](
-#         grad_data,
-#         grad_scale,
-#         x_q,
-#         smooth_scales,
-#         x_scale,
-#         token_count_per_expert,
-#         accum_token_count,
-#         indices,
-#         N, 
-#         reverse,
-#         round_scale,
-#         num_stages=3,
-#         num_warps=16
-#     )
-#     return x_q,x_scale
-
-
-
-
 @triton.jit
 def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, n: tl.constexpr, hs: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr, GROUP: tl.constexpr):
     eid = tl.program_id(axis=0)
@@ -807,8 +728,8 @@ def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_
         index = tl.load(index_ptr+i)
         x = tl.load(grads_data_ptr + index*N+tl.arange(0, N)).to(tl.float32)
         if GROUP:
-            gs = tl.load(grads_scale_ptr + index*n + tl.arange(0,n))
-            x = tl.reshape(tl.reshape(x, (n,N//n))*gs[:,None], (N,))
+            gs = tl.load(grads_scale_ptr + index*n + tl.arange(0,hs))
+            x = tl.reshape(tl.reshape(x, (hs, N//hs))*gs[:,None], (N,))
         else:
             gs = tl.load(grads_scale_ptr + index)
             x *= gs

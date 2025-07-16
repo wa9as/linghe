@@ -242,9 +242,9 @@ def permute_with_mask_map_kernel(grads_data_ptr, grads_scale_ptr, probs_ptr, mas
     pid = tl.program_id(axis=0)
     x = tl.load(grads_data_ptr + pid*N+tl.arange(0, N))
     if GROUP:
-        gs = tl.load(grads_scale_ptr + pid)
-    else:
         gs = tl.load(grads_scale_ptr + pid*n + tl.arange(0, n))
+    else:
+        gs = tl.load(grads_scale_ptr + pid)
     indices = tl.load(mask_map_ptr+pid*num_experts+tl.arange(0,num_experts))
     count = tl.sum(tl.where(indices>=0,1,0))
     mask_indices = tl.where(indices<0,2**20,indices)
