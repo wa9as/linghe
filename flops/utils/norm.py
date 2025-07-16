@@ -169,6 +169,9 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
         rms = torch.empty((M,), dtype=torch.float32, device=device)
     else:
         rms = None
+    
+    sm = torch.cuda.get_device_properties(x.device).multi_processor_count #TODO:liangchen figure out effect with deepep
+    
     W = 8192//N 
     sm = torch.cuda.get_device_properties(device).multi_processor_count
     T = triton.cdiv(M, sm*W)
@@ -193,3 +196,13 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
     )
     return out,scale,maxs,rms
 
+# M, N, K = 8192, 8192, 2048
+# dtype = torch.bfloat16
+# device = 'cuda:0'
+
+# x = torch.randn(M, K, dtype=dtype, requires_grad=True, device=device)
+# weight = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
+# scale = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
+# dy = torch.randn(M, K, dtype=dtype, device=device)
+
+# triton_rms_norm_and_quant_forward(x, weight, scale)
