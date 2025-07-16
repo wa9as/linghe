@@ -73,7 +73,7 @@ def triton_smooth_quant_nt(x, w, smooth_scale=None):
 
     H = 512
     W = 32
-    grid = lambda META: (K//W, )
+    grid = (K//W, )
     smooth_nt_kernel[grid](
         x, x_b,
         w, w_b,
@@ -85,7 +85,7 @@ def triton_smooth_quant_nt(x, w, smooth_scale=None):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         x_b, x_q, x_scale,
         M,K,
@@ -95,7 +95,7 @@ def triton_smooth_quant_nt(x, w, smooth_scale=None):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (N, )
+    grid = (N, )
     row_quant_kernel[grid](
         w_b, w_q, w_scale,
         N,K,
@@ -166,7 +166,7 @@ def triton_smooth_quant_nn(y, w):
 
     H = 1024
     W = 32
-    grid = lambda META: (N//W, )
+    grid = (N//W, )
     smooth_nn_kernel[grid](
         y, y_b,
         w, w_b,
@@ -178,7 +178,7 @@ def triton_smooth_quant_nn(y, w):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         y_b, y_q, y_scale,
         M,N,
@@ -188,7 +188,7 @@ def triton_smooth_quant_nn(y, w):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (K, )
+    grid = (K, )
     row_quant_kernel[grid](
         w_b, w_q, w_scale,
         K,N,
@@ -264,7 +264,7 @@ def triton_smooth_quant_tn(y, x):
 
     H = 1024
     W = 16
-    grid = lambda META: (M//W, )
+    grid = (M//W, )
     smooth_tn_kernel[grid](
         y, y_b,
         x, x_b,
@@ -276,7 +276,7 @@ def triton_smooth_quant_tn(y, x):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (N, )
+    grid = (N, )
     row_quant_kernel[grid](
         y_b, y_q, y_scale,
         N,M,
@@ -286,7 +286,7 @@ def triton_smooth_quant_tn(y, x):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (K, )
+    grid = (K, )
     row_quant_kernel[grid](
         x_b, x_q, x_scale,
         K,M,

@@ -84,45 +84,6 @@ elif mode == 'channelwise':
     benchmark_func(separate_gemm, x_q, w_q, x_scales, w_scales, c=y_fp32, accum=True, n_repeat=n_repeat, ref_flops=ref_flops)
 
 
-elif mode == 'quant':
-    benchmark_func(block_quant, x,n_repeat=n_repeat)
-    benchmark_func(stupid_group_quant, x, n_repeat=n_repeat)
-
-    y_ref, s_ref = stupid_group_quant(x)
-    y_opt, s_opt = group_quant(x)
-
-    torch.testing.assert_close(y_opt.float(), y_ref.float(),
-                                    rtol=0.02, atol=0.02)
-    torch.testing.assert_close(s_ref.float(), s_opt.float(),
-                                    rtol=0.02, atol=0.02)
-    benchmark_func(stupid_group_quant, x, n_repeat=n_repeat)
-    benchmark_func(group_quant, x, n_repeat=n_repeat)
-    benchmark_func(persist_group_quant, x, n_repeat=n_repeat)
-
-elif mode == 'transpose':
-    # benchmark_func(fp16_transpose, x, n_repeat=n_repeat)
-    # benchmark_func(triton_transpose,x, n_repeat=n_repeat)
-    # benchmark_func(triton_block_transpose,x, n_repeat=n_repeat)
-    # benchmark_func(triton_opt_transpose,x, n_repeat=n_repeat)
-
-    benchmark_func(fp8_transpose, x_q, n_repeat=n_repeat)
-    # benchmark_func(triton_transpose,x_q, n_repeat=n_repeat)
-    benchmark_func(triton_block_transpose,x_q, n_repeat=n_repeat)
-    # benchmark_func(triton_block_pad_transpose,x_q,pad=True, n_repeat=n_repeat)
-    # benchmark_func(triton_opt_transpose,x_q, n_repeat=n_repeat)
-
-elif mode == 'zero':
-    benchmark_func(torch.zeros,(M,K),dtype=dtype,device=device, n_repeat=n_repeat, ref_bytes=M*K*2)
-
-elif mode == 'd2h':
-
-    def d2h(x,device):
-        return x.to(device)
-    counts = torch.tensor([0]*32,dtype=torch.int64)
-    benchmark_func(d2h,counts,device=device, n_repeat=n_repeat, ref_bytes=M*K*2)
-
-
-
 
 
 

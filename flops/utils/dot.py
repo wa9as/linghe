@@ -35,7 +35,7 @@ def triton_dot(x, y):
     num_stages = 5
     num_warps = 8
 
-    grid = lambda META: (triton.cdiv(M,W), )
+    grid = (triton.cdiv(M,W), )
     dot_kernel[grid](
         x, y,
         M, N,
@@ -82,7 +82,7 @@ def triton_mix_precise_dot(x, q, smooth_scale, quant_scale, reverse=False):
     num_stages = 5
     num_warps = 8
 
-    grid = lambda META: (triton.cdiv(M,W), )
+    grid = (triton.cdiv(M,W), )
     mix_precise_dot_kernel[grid](
         x, q, s,
         smooth_scale,

@@ -69,7 +69,7 @@ def triton_fused_hadamard(x, hm, out=None, op_side=0, hm_side=1, R=2):
             hm = hm.to(x.device)
     BLOCK_SIZE = hm.size(0)
     SIDE = hm_side
-    grid = lambda META: (M//BLOCK_SIZE, )
+    grid = (M//BLOCK_SIZE, )
     fused_hadamard_kernel[grid](
         x, 
         x_b,
@@ -142,7 +142,7 @@ def triton_fused_transpose_hadamard(x, hm, op_side=0, hm_side=1, R=2):
     x_q = torch.empty((N,M),dtype=torch.float8_e4m3fn,device=x.device)
     BLOCK_SIZE = hm.size(0)
     SIDE = hm_side
-    grid = lambda META: (N//BLOCK_SIZE, )
+    grid = (N//BLOCK_SIZE, )
     fused_transpose_hadamard_kernel[grid](
         x, 
         x_b,

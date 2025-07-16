@@ -29,7 +29,7 @@ def triton_slice_and_pad(x, indices, block=32):
     output = torch.empty((((size-1)//block+1)*block, dim), device=device, dtype=x.dtype)
     num_stages = 5
     num_warps = 8
-    grid = lambda META: (size, )
+    grid = (size, )
     slice_and_pad_kernel[grid](
         x, 
         indices,
@@ -72,7 +72,7 @@ def triton_batch_slice_and_pad(x, indices, expert=64, block=32):
     sizes = torch.tensor(sizes, device=x.device, dtype=torch.int32)
     num_stages = 5
     num_warps = 8
-    grid = lambda META: (max_size, )
+    grid = (max_size, )
     batch_slice_and_pad_kernel[grid](
         x, 
         indices_ptrs,

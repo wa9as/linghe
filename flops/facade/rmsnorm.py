@@ -12,7 +12,7 @@ class RMSNormtriton(torch.autograd.Function):
         
         W = 8192//N 
         T = triton.cdiv(M, sm*W)
-        grid = lambda META: (sm, )
+        grid = (sm, )
 
         rms_norm_forward_kernel[grid](
             x,
@@ -46,7 +46,7 @@ class RMSNormtriton(torch.autograd.Function):
         tmp_dw = torch.empty(sm, N, dtype=torch.float32, device=x.device)
         
         eps = ctx.eps
-        grid = lambda META: (sm, )
+        grid = (sm, )
 
         rms_norm_backward_kernel[grid](
             dy,

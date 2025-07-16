@@ -39,7 +39,7 @@ def triton_aligned_scatter_add(x, outputs, indices, weights=None):
     num_stages = 5
     num_warps = 8
 
-    grid = lambda META: (m, )
+    grid = (m, )
     aligned_scatter_add_kernel[grid](
         x, outputs,
         indices,
@@ -84,13 +84,13 @@ def triton_scatter_add(x, outputs, indices):
 
     float_outputs = torch.zeros(outputs.shape, dtype=torch.float32, device=outputs.device)
 
-    sm = 132
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
     T = triton.cdiv(M, sm)
 
     num_stages = 5
     num_warps = 8
 
-    grid = lambda META: (sm, )
+    grid = (sm, )
     scatter_add_kernel[grid](
         x, float_outputs,
         indices,
@@ -101,7 +101,7 @@ def triton_scatter_add(x, outputs, indices):
 
     m = outputs.shape[0]    
     T = triton.cdiv(m, sm)
-    grid = lambda META: (sm, )
+    grid = (sm, )
     fp32_to_bf16_kernel[grid](
         float_outputs, outputs,
         m, T, N, 
@@ -140,9 +140,9 @@ def triton_scatter_add_with_count(x, outputs, indices, counts):
 
     indices = torch.argsort(indices)
     accum = torch.cumsum(counts, 0)
-    sm = 132  # 20 for deepep
+    sm = torch.cuda.get_device_properties(x.device).multi_processor_count
     T = triton.cdiv(m, sm)
-    grid = lambda META: (sm, )
+    grid = (sm, )
     scatter_add_with_count_kernel[grid](
         x, outputs,
         indices,
@@ -255,8 +255,7 @@ def unpermute_with_mask_map_kernel(grads_ptr, probs_ptr, mask_map_ptr, output_pt
 # gather and smooth quant
 # inp: [num_tokens, hidden_size], rowwise_data
 # row_id_map: [n_experts, num_tokens], indices
-# scale: [num_tokens], rowwise_scale_inv
-# smooth_scale_ptrs: [n_experts], data_ptr
+# prob: [num_out_tokens], rowwise_scale_inv
 # """
 
 def triton_unpermute_with_mask_map(

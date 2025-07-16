@@ -41,7 +41,7 @@ def triton_transpose(x):
     num_stages = 3
     num_warps = 8
 
-    grid = lambda META: (triton.cdiv(N,W), )
+    grid = (triton.cdiv(N,W), )
     transpose_kernel[grid](
         x, t,
         M, N,
@@ -82,7 +82,7 @@ def triton_block_transpose(x):
     num_stages = 5
     num_warps = 2
 
-    grid = lambda META: (triton.cdiv(M,H), triton.cdiv(N,W))
+    grid = (triton.cdiv(M,H), triton.cdiv(N,W))
     block_transpose_kernel[grid](
         x, t,
         M, N,
@@ -128,7 +128,7 @@ def triton_block_pad_transpose(x, x_t=None, pad=True):
     num_stages = 5
     num_warps = 2
     EVEN = M%H == 0
-    grid = lambda META: (triton.cdiv(M,H), triton.cdiv(N,W))
+    grid = (triton.cdiv(M,H), triton.cdiv(N,W))
     block_pad_transpose_kernel[grid](
         x, x_t,
         M, N, P,
@@ -171,7 +171,7 @@ def triton_batch_transpose(xs, xts=None):
     W = 64
     num_stages = 3
     num_warps = 8
-    grid = lambda META: (n_experts, N//W)
+    grid = (n_experts, N//W)
     batch_transpose_kernel[grid](
         pointers, xts, 
         M, N,
@@ -232,7 +232,7 @@ def triton_batch_pad_transpose(x, count_list, x_t=None, pad=True):
     W = 64
     num_stages = 2
     num_warps = 8
-    grid = lambda META: (n_experts, N//W)
+    grid = (n_experts, N//W)
     batch_pad_transpose_kernel[grid](
         x, x_t, 
         counts, accums,
@@ -281,7 +281,7 @@ def triton_opt_transpose(x):
     device = x.device
     D = 0 if x.dtype.itemsize == 1 else 1
     t = torch.empty((N, M),device=device,dtype=x.dtype)
-    grid = lambda META: (N//META["W"], )
+    grid = (N//META["W"], )
     opt_transpose_kernel[grid](
         x, t,
         M, N, D

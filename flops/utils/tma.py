@@ -67,7 +67,7 @@ def triton_reused_smooth_quant_tma(x, smooth_scale):
     desc_x = torch.tensor(desc_x, device=device)
     desc_xq = torch.tensor(desc_xq, device=device)
     
-    grid = lambda META: (M//W, )
+    grid = (M//W, )
     reused_smooth_quant_tma_kernel[grid](
         desc_x,
         desc_xq,

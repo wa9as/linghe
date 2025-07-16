@@ -32,3 +32,15 @@ if False:
 if True:
     x = torch.randn(M, K, dtype=dtype, device=device)
     benchmark_func(lambda x:x.zero_(), x, n_repeat=n_repeat, ref_bytes=M*K*2)
+
+
+if True':
+    benchmark_func(torch.zeros,(M,K),dtype=dtype,device=device, n_repeat=n_repeat, ref_bytes=M*K*2)
+
+if True:
+
+    def d2h(x,device):
+        return x.to(device)
+    counts = torch.tensor([0]*32,dtype=torch.int64)
+    benchmark_func(d2h,counts,device=device, n_repeat=n_repeat, ref_bytes=M*K*2)
+

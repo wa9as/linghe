@@ -17,7 +17,7 @@ def reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: tl.constex
     # row-wise read, row-wise write
     offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-30
     n = tl.cdiv(N, H)
     for i in range(n):
         if EVEN:
@@ -83,10 +83,11 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None, reverse=
     P = round_up(M, b=32) if pad_scale else M
     if x_scale is None:
         x_scale = torch.empty((P,), device=device, dtype=torch.float32)
-    W = 8 if M <= 132*8 else 16
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    W = 8 if M <= sm*8 else 16
     H = 1024 if W == 8 else 512
     EVEN = M%W == 0 and P==M
-    grid = lambda META: (triton.cdiv(P, W), )
+    grid = (triton.cdiv(P, W), )
     reused_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -116,7 +117,7 @@ def depracated_tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr
     for i in range(W):
         x = tl.load(x_ptr+pid*W*N+i*N+tl.arange(0, N), mask=pid*W+i<M).to(tl.float32)
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -140,8 +141,9 @@ def triton_depracated_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=None, x
     assert P%32==0, "scale should be multiple of 32"
     if x_scale is None:
         x_scale = torch.empty((P,), device=device, dtype=torch.float32)
-    W = triton.cdiv(P, 132)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    W = triton.cdiv(P, sm)
+    grid = (sm, )
     depracated_tokenwise_reused_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -168,7 +170,7 @@ def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, P, T, 
     for i in range(T):
         x = tl.load(x_ptr+pid*W*T*N+i*N*W+tl.arange(0, W)[:,None]*N+tl.arange(0, N)[None,:], mask=pid*W*T+i*W+tl.arange(0, W)[:,None]<M).to(tl.float32)
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=1), 5.27e-36)
+        x_max = tl.maximum(tl.max(tl.abs(x), axis=1), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -194,8 +196,9 @@ def triton_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None
     if x_scale is None:
         x_scale = torch.empty((P,), device=device, dtype=torch.float32)
     W = 8192//N 
-    T = triton.cdiv(P, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(P, sm*W)
+    grid = (sm, )
     tokenwise_reused_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -228,7 +231,7 @@ def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, xm_ptr, count_ptr, a
         smooth_scale = 1.0/smooth_scale
 
     if CALIBRATE:
-        x_maxs = tl.zeros((N,),dtype=tl.float32) + 5.27e-36
+        x_maxs = tl.zeros((N,),dtype=tl.float32) + 1e-30
 
     count = tl.load(count_ptr+i_expert)
     ei = tl.load(accum_ptr+i_expert)
@@ -240,7 +243,7 @@ def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, xm_ptr, count_ptr, a
         if CALIBRATE:
             x_maxs = tl.maximum(x_maxs, x)
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -283,7 +286,7 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
     if calibrate and x_maxs is None:
         x_maxs = torch.empty((128,N), device=device, dtype=torch.float32)
 
-    grid = lambda META: (128, )
+    grid = (128, )
     batch_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -326,7 +329,7 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
 #     for i in range(i_batch*n, min((i_batch+1)*n, count)):
 #         x = tl.load(x_ptr + si*N + i*N + tl.arange(0, N)).to(tl.float32)
 #         x *= smooth_scale
-#         x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+#         x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
 #         if ROUND:
 #             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -361,7 +364,7 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
 #     assert N % T == 0
 #     W = N//T
 
-#     grid = lambda META: (128, )
+#     grid = (128, )
 #     batch_calibrate_kernel[grid](
 #         x,
 #         x_m,
@@ -380,7 +383,7 @@ def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N,
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-30
     m = tl.cdiv(M, H)
     for i in range(m):
         if EVEN:
@@ -445,7 +448,7 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
     W = 32
     EVEN = M%H == 0 and N%W == 0 
 
-    grid = lambda META: (triton.cdiv(N, W), )
+    grid = (triton.cdiv(N, W), )
     reused_transpose_pad_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -468,7 +471,7 @@ def reused_transpose_pad_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_sc
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-30
     if EVEN:
         org_smooth_scale = tl.load(org_smooth_scale_ptr + pid*W + tl.arange(0, W))[None,:]
     else:
@@ -478,12 +481,12 @@ def reused_transpose_pad_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_sc
     for i in range(m):
         if EVEN:
             x = tl.load(x_ptr+offs)
-            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs)[:,None]
             org_quant_scale = tl.load(org_quant_scale_ptr+soffs)[:,None]
+            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs)[:,None]
         else:
             x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0,H)[:,None]<M) & (pid*W+tl.arange(0,W)[None,:]<N))
-            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs, mask=soffs<M, other=0.0)[:,None]
             org_quant_scale = tl.load(org_quant_scale_ptr+soffs, mask=soffs<M, other=0.0)[:,None]
+            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs, mask=soffs<M, other=0.0)[:,None]
 
         x = x.to(tl.float32) / org_smooth_scale * (org_quant_scale*transpose_smooth_scale)
         x_max = tl.maximum(tl.max(tl.abs(x), axis=0),x_max)
@@ -505,15 +508,15 @@ def reused_transpose_pad_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_sc
 
         if EVEN:
             x = tl.load(x_ptr+offs)
-            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs)[:,None]
             org_quant_scale = tl.load(org_quant_scale_ptr+soffs)[:,None]
+            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs)[:,None]
         else:
             x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0,H)[:,None]<M) & (pid*W+tl.arange(0,W)[None,:]<N))
-            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs, mask=soffs<M, other=0.0)[:,None]
             org_quant_scale = tl.load(org_quant_scale_ptr+soffs, mask=soffs<M, other=0.0)[:,None]
+            transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr+soffs, mask=soffs<M, other=0.0)[:,None]
 
         x = x.to(tl.float32) * (s / org_smooth_scale) * (org_quant_scale*transpose_smooth_scale)
-
+        x = tl.maximum(tl.minimum(x, 448.0), -448.0)
         x = tl.trans(x.to(q_ptr.dtype.element_ty))
         if EVEN:
             tl.store(q_ptr+toffs, x)
@@ -543,7 +546,7 @@ def triton_reused_transpose_pad_rescale_smooth_quant(x_q, org_smooth_scale, org_
     W = 16
     EVEN = P == M and M%H == 0 and N%W == 0 
 
-    grid = lambda META: (triton.cdiv(N, W), )
+    grid = (triton.cdiv(N, W), )
     reused_transpose_pad_rescale_smooth_quant_kernel[grid](
         x_q,
         xt_q,
@@ -578,7 +581,7 @@ def index_select_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, ac
         index = tl.load(index_ptr+si+i)
         x = tl.load(x_ptr+ index*N+tl.arange(0, N)).to(tl.float32)
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -612,7 +615,7 @@ def triton_index_select_smooth_quant(x, smooth_scales, token_count_per_expert, i
         x_scale = torch.empty((E,), device=device, dtype=torch.float32)
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     # TODO: adapt for n_expert <= 64
-    grid = lambda META: (n_expert, )
+    grid = (n_expert, )
     index_select_smooth_quant_kernel[grid](
         x,
         x_q,
@@ -650,7 +653,7 @@ def index_select_smooth_quant_and_sum_kernel(grads_ptr, tokens_ptr, q_ptr, ss_pt
         tl.store(sum_ptr+si+i, sums)
 
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -686,7 +689,7 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
     if x_sum is None:
         x_sum = torch.empty((E,), device=device, dtype=grads.dtype)
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
-    grid = lambda META: (n_expert, )
+    grid = (n_expert, )
     index_select_smooth_quant_and_sum_kernel[grid](
         grads,
         tokens,
@@ -708,8 +711,86 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
 
 
 
+# @triton.jit
+# def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+#     eid = tl.program_id(axis=0)
+#     wid = tl.program_id(axis=1)
+#     T = tl.num_programs(axis=1)
+
+#     # row-wise read, row-wise write
+#     smooth_scale = tl.load(ss_ptr+eid*N+tl.arange(0, N))
+#     if not REVERSE:
+#         smooth_scale = 1.0/smooth_scale
+#     count = tl.load(count_ptr+eid)
+#     ei = tl.load(accum_ptr+eid)
+#     si = ei - count
+#     c = tl.cdiv(count, T)
+#     for i in range(si+wid*c, tl.minimum(si+wid*c+c,ei)):
+#         index = tl.load(index_ptr+i)
+#         x = tl.load(grads_data_ptr + index*N+tl.arange(0, N)).to(tl.float32)
+#         gs = tl.load(grads_scale_ptr + index)
+#         x *= gs
+
+#         x *= smooth_scale
+#         x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
+
+#         if ROUND:
+#             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+#         else:
+#             scale = x_max/448.0
+
+#         tl.store(qs_ptr+i, scale)
+
+#         s = 1.0/scale
+#         x *= s
+#         xq = x.to(q_ptr.dtype.element_ty)
+#         tl.store(q_ptr+i*N+tl.arange(0, N), xq)
+
+# """
+# select and smooth and quant
+# x: [bs, dim]
+# smooth_scales: [n_experts, dim]
+# indices: [n_experts*topk]
+# x_q: [bs*topk, dim]
+# x_scale: [bs*topk]
+# """
+# def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
+#     # row-wise read, row-wise write
+#     M, N = grad_data.shape
+#     n_expert, n = smooth_scales.shape
+#     assert 128%n_expert == 0
+#     assert N == n, f'{N=} {n=}'
+#     E = indices.size(0)
+#     device = grad_data.device 
+#     if x_q is None:
+#         x_q = torch.empty((E, N), device=device, dtype=torch.float8_e4m3fn)
+#     if x_scale is None:
+#         x_scale = torch.empty((E,), device=device, dtype=torch.float32)
+#     accum_token_count = torch.cumsum(token_count_per_expert, 0)
+#     W = 128//n_expert
+#     grid = (n_expert, W)
+#     smooth_unpermute_backward_kernel[grid](
+#         grad_data,
+#         grad_scale,
+#         x_q,
+#         smooth_scales,
+#         x_scale,
+#         token_count_per_expert,
+#         accum_token_count,
+#         indices,
+#         N, 
+#         reverse,
+#         round_scale,
+#         num_stages=3,
+#         num_warps=16
+#     )
+#     return x_q,x_scale
+
+
+
+
 @triton.jit
-def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, n: tl.constexpr, hs: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr, GROUP: tl.constexpr):
     eid = tl.program_id(axis=0)
     wid = tl.program_id(axis=1)
     T = tl.num_programs(axis=1)
@@ -725,11 +806,15 @@ def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_
     for i in range(si+wid*c, tl.minimum(si+wid*c+c,ei)):
         index = tl.load(index_ptr+i)
         x = tl.load(grads_data_ptr + index*N+tl.arange(0, N)).to(tl.float32)
-        gs = tl.load(grads_scale_ptr + index)
-        x *= gs
+        if GROUP:
+            gs = tl.load(grads_scale_ptr + index*n + tl.arange(0,n))
+            x = tl.reshape(tl.reshape(x, (n,N//n))*gs[:,None], (N,))
+        else:
+            gs = tl.load(grads_scale_ptr + index)
+            x *= gs
 
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-36)
+        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -745,18 +830,23 @@ def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_
 
 """
 select and smooth and quant
-x: [bs, dim]
+grad_data: [bs, dim]
+grad_scale: [bs, dim/128]
 smooth_scales: [n_experts, dim]
 indices: [n_experts*topk]
 x_q: [bs*topk, dim]
 x_scale: [bs*topk]
 """
-def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, x_sum=None, reverse=False, round_scale=False):
+def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
     # row-wise read, row-wise write
     M, N = grad_data.shape
     n_expert, n = smooth_scales.shape
     assert 128%n_expert == 0
     assert N == n, f'{N=} {n=}'
+    
+    group = grad_scale.ndim > 1
+    hs = grad_scale.shape[1] if group else 1
+
     E = indices.size(0)
     device = grad_data.device 
     if x_q is None:
@@ -765,7 +855,8 @@ def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token
         x_scale = torch.empty((E,), device=device, dtype=torch.float32)
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     W = 128//n_expert
-    grid = lambda META: (n_expert, W)
+    n = N//128
+    grid = (n_expert, W)
     smooth_unpermute_backward_kernel[grid](
         grad_data,
         grad_scale,
@@ -776,8 +867,11 @@ def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token
         accum_token_count,
         indices,
         N, 
+        n,
+        hs,
         reverse,
         round_scale,
+        group,
         num_stages=3,
         num_warps=16
     )
@@ -802,7 +896,7 @@ def smooth_permute_with_mask_map_kernel(grads_data_ptr, quant_data_ptr, mask_map
         x *= gs
 
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 5.27e-35)
+        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
 
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
@@ -841,7 +935,7 @@ def triton_smooth_permute_with_mask_map(
     permuted_scale = torch.empty(
         (num_out_tokens, ), dtype=scale.dtype, device="cuda"
     )
-    sm = 132
+    sm = torch.cuda.get_device_properties(inp.device).multi_processor_count
     T = triton.cdiv(num_tokens, sm)
     grid = (num_experts, sm)
     smooth_permute_with_mask_map_kernel[grid](

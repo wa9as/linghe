@@ -34,7 +34,7 @@ def block_quant(x: torch.Tensor, dtype=torch.float8_e4m3fn, block_size: int = 12
     M, N = x.size()
     y = torch.empty_like(x, dtype=dtype)
     s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size, dtype=torch.float32)
-    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE"]), triton.cdiv(N, meta["BLOCK_SIZE"]))  # noqa: E731
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE"]), triton.cdiv(N, META["BLOCK_SIZE"]))  # noqa: E731
     block_quant_kernel[grid](x, y, s, M, N, BLOCK_SIZE=block_size, num_stages=6, num_warps=8)
     return y, s
 

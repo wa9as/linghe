@@ -29,7 +29,7 @@ def torch_column_quant(x, dtype=torch.float8_e4m3fn):
 
 
 
-def torch_tile_quant(x,B,dtype=torch.float8_e4m3fn):
+def torch_group_quant(x,B,dtype=torch.float8_e4m3fn):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     M, K = x.shape 

@@ -37,10 +37,10 @@ def triton_index_select(x, indices, scale=None, out=None, scale_out=None):
         out = torch.empty((E, N), device=device, dtype=x.dtype)
     if scale is not None and scale_out is None:
         scale_out = torch.empty((E,), device=device, dtype=scale.dtype)
-    sm = 132  # 20 for deepep
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
     T = triton.cdiv(E, sm)
     SCALE = scale is not None
-    grid = lambda META: (sm, )
+    grid = (sm, )
     index_select_kernel[grid](
         x,
         out,
@@ -238,11 +238,13 @@ def triton_index_select(x, indices, scale=None, out=None, scale_out=None):
 
 
 @triton.jit
-def permute_with_mask_map_kernel(grads_data_ptr, grads_scale_ptr, probs_ptr, mask_map_ptr, quant_data_ptr, quant_scale_ptr, output_probs_ptr, num_experts: tl.constexpr, N: tl.constexpr):
+def permute_with_mask_map_kernel(grads_data_ptr, grads_scale_ptr, probs_ptr, mask_map_ptr, quant_data_ptr, quant_scale_ptr, output_probs_ptr, num_experts: tl.constexpr, N: tl.constexpr, n: tl.constexpr, GROUP: tl.constexpr):
     pid = tl.program_id(axis=0)
-
     x = tl.load(grads_data_ptr + pid*N+tl.arange(0, N))
-    gs = tl.load(grads_scale_ptr + pid)
+    if GROUP:
+        gs = tl.load(grads_scale_ptr + pid)
+    else:
+        gs = tl.load(grads_scale_ptr + pid*n + tl.arange(0, n))
     indices = tl.load(mask_map_ptr+pid*num_experts+tl.arange(0,num_experts))
     count = tl.sum(tl.where(indices>=0,1,0))
     mask_indices = tl.where(indices<0,2**20,indices)
@@ -250,8 +252,10 @@ def permute_with_mask_map_kernel(grads_data_ptr, grads_scale_ptr, probs_ptr, mas
     index = tl.min(mask_indices)
     for i in range(count):
         prob = tl.load(probs_ptr+pid*num_experts+idx)
-
-        tl.store(quant_scale_ptr+index, gs)
+        if GROUP:
+            tl.store(quant_scale_ptr+index*n+tl.arange(0,n), gs)
+        else:
+            tl.store(quant_scale_ptr+index, gs)
         tl.store(output_probs_ptr+index, prob)
         tl.store(quant_data_ptr+index*N+tl.arange(0, N), x)
 
@@ -277,6 +281,8 @@ def triton_permute_with_mask_map(
     ):
     num_tokens, hidden_size = inp.shape 
     num_experts = row_id_map.size(1)  # not transposed
+    group = scale.ndim > 1
+    hs = scale.shape[1] if group else 1
 
     output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype, device="cuda")
 
@@ -298,6 +304,8 @@ def triton_permute_with_mask_map(
         permuted_probs,
         num_experts,
         hidden_size,
+        hs,
+        group,
         num_stages=3,
         num_warps=8
     )

@@ -19,15 +19,14 @@ else:
 
 org_out = fp16_forward(x, w.t())
 
-modes = ['unpermute_backward']
 
 
-if 'torch_tensor' in modes:
+if False:
     xq, wq, scale, rescale = torch_smooth_tensor_quant(x,w,torch.float8_e4m3fn)
     opt_out =  (xq.to(dtype)@wq.to(dtype).t())/(rescale**2).to(dtype)
     quant_check(org_out, xq, wq, opt_out,'tensor')
 
-if 'torch_channel' in modes:
+if False:
     xq, wq, x_scale, w_scale = torch_smooth_quant(x,w,torch.float8_e4m3fn)
     # print(f"x.size() {x.size()}")
     # print(f"w.size() {w.size()}")
@@ -39,7 +38,7 @@ if 'torch_channel' in modes:
     opt_out = xdq@wdq.t()
     quant_check(org_out, xq, wq, opt_out,'torch_channel')
 
-if 'torch_channel_backward'  in modes:
+if False:
     # print(f"y.size() {y.size()}")
     # print(f"w.size() {w.size()}")
     yq, wq, y_scale, w_scale = torch_smooth_quant(y,w.t(),torch.float8_e4m3fn)
@@ -50,7 +49,7 @@ if 'torch_channel_backward'  in modes:
     opt_out = ydq@wdq.t()
     quant_check(y@w, yq, wq, opt_out, 'torch_channel_backward')
 
-if 'torch_channel_update' in modes:
+if False:
     # print(f"y.size() {y.size()}")
     # print(f"x.size() {x.size()}")
     yq, xq, y_scale, x_scale = torch_smooth_quant(y.t(),x.t(),torch.float8_e4m3fn)
@@ -58,7 +57,7 @@ if 'torch_channel_update' in modes:
     quant_check(org_out, yq, xq, org_out,'torch_channel_update')
 
 
-if 'torch_reuse' in modes:
+if False:
     xq,wq,yq,ytq,o, dx, dw = torch_reuse_smooth_quant_f_and_b(x,w,y)
     ref_o, ref_dx, ref_dw = fp16_f_and_b(x,w,y)
     mode = 'torch_reuse'
@@ -69,7 +68,7 @@ if 'torch_reuse' in modes:
     quant_check(ref_dx, yq, wq, dx,mode)
     quant_check(ref_dw, ytq, xq, dw,mode)
 
-if 'triton_reuse' in modes:
+if False:
     from flops.quant.smooth.reused_smooth import *
     from flops.quant.smooth.seperate_smooth import *
     smooth_scale = torch.randn((K,),device=device,dtype=torch.float32).abs()
@@ -86,7 +85,7 @@ if 'triton_reuse' in modes:
     output_check(x_q_.float(), x_q.float(), 'data')
     output_check(x_scale_, x_scale, 'scale')
 
-if 'triton_tranpose_smooth' in modes:
+if False:
 
     from flops.quant.smooth.reused_smooth import *
     from flops.quant.smooth.seperate_smooth import *
@@ -104,7 +103,7 @@ if 'triton_tranpose_smooth' in modes:
 
 
 
-if 'rescale' in modes:
+if False:
     from flops.quant.smooth.reused_smooth import *
     from flops.quant.smooth.seperate_smooth import *
     org_smooth_scale = torch.ones((N,),device=device,dtype=torch.float32)
@@ -120,7 +119,7 @@ if 'rescale' in modes:
     output_check(yt_scale_ref, yt_scale.float(), 'rescale_scale')
 
 
-if 'select' in modes:
+if False:
     from flops.quant.smooth.reused_smooth import *
     n_expert = 256
     topk = 8
@@ -159,7 +158,7 @@ if 'select' in modes:
 
 
 
-if 'select_and_sum' in modes:
+if False:
     from flops.quant.smooth.reused_smooth import *
     n_expert = 256
     topk = 8
@@ -204,7 +203,7 @@ if 'select_and_sum' in modes:
     benchmark_func(triton_index_select_smooth_quant_and_sum, y, tokens, smooth_scales, token_count_per_expert, indices, reverse=False, round_scale=False, n_repeat=n_repeat)
 
 
-if 'batch_smooth' in modes:
+if False:
     from flops.quant.smooth.reused_smooth import *
 
     n_expert = 32
@@ -250,11 +249,12 @@ if 'batch_smooth' in modes:
     benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=False, calibrate=True, n_repeat=n_repeat, ref_time=ref_time)
 
 
-if 'unpermute_backward' in modes:
+if True:
     
     from flops.quant.smooth.reused_smooth import *
     n_experts = 4
     topk = 2
+    B = 128
     smooth_scales = 1+10*torch.rand((n_experts, K),device=device,dtype=torch.float32)
     logits = torch.randn((M,n_experts), dtype=torch.float32, device=device)
     logits = torch.nn.Softmax(dim=1)(logits)
@@ -270,8 +270,8 @@ if 'unpermute_backward' in modes:
     row_id_map = torch.reshape(torch.cumsum(route_map.T.contiguous().view(-1), 0),(n_experts, M)) - 1
     row_id_map[torch.logical_not(route_map.T)] = -1
     grad_data = torch.randn((M,K), dtype=torch.bfloat16,device=device).to(torch.float8_e4m3fn)
-    grad_scale = torch.randn((M,), dtype=torch.float32,device=device)
-    y_q, y_scale = triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, x_sum=None, reverse=False, round_scale=False)
+    grad_scale = torch.randn((M,K//B), dtype=torch.float32,device=device)
+    y_q, y_scale = triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False)
 
     q_refs = [] 
     scale_refs = []
@@ -281,7 +281,7 @@ if 'unpermute_backward' in modes:
         data_slice = grad_data.view(torch.uint8)[indices[s:s+c]].view(torch.float8_e4m3fn)
         scale_slice = grad_scale[indices[s:s+c]]
         s += c
-        y_smooth = data_slice.float()*scale_slice[:,None]/smooth_scales[i]
+        y_smooth = (data_slice.float().view(c,K//B,B)*scale_slice[:,:,None]).view(c,K)/smooth_scales[i]
         scale = y_smooth.abs().amax(1)/448
         scale_refs.append(scale)
         q = (y_smooth/scale[:,None]).to(torch.float8_e4m3fn) 
@@ -292,11 +292,11 @@ if 'unpermute_backward' in modes:
     output_check(scale_ref.float(), y_scale.float(), 'scale')
 
 
-    smooth_scale_ptrs = torch.tensor([x.data_ptr() for x in torch.split(smooth_scales,1)], device=device)
-    permuted_data, permuted_scale = triton_smooth_permute_with_mask_map(grad_data,row_id_map,grad_scale,n_experts,M, out_tokens,K,smooth_scale_ptrs,reverse=False,round_scale=False)
-    output_check(q_ref.float(), permuted_data.float(), 'data')
-    output_check(scale_ref.float(), permuted_scale.float(), 'scale')
+    # smooth_scale_ptrs = torch.tensor([x.data_ptr() for x in torch.split(smooth_scales,1)], device=device)
+    # permuted_data, permuted_scale = triton_smooth_permute_with_mask_map(grad_data,row_id_map,grad_scale,n_experts,M, out_tokens,K,smooth_scale_ptrs,reverse=False,round_scale=False)
+    # output_check(q_ref.float(), permuted_data.float(), 'data')
+    # output_check(scale_ref.float(), permuted_scale.float(), 'scale')
 
-    benchmark_func(triton_smooth_unpermute_backward, grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, n_repeat=100, ref_bytes=out_tokens*K*2)
-    benchmark_func(triton_smooth_permute_with_mask_map, grad_data,row_id_map,grad_scale,n_experts,M,out_tokens,K,smooth_scale_ptrs,reverse=False,round_scale=False, n_repeat=100, ref_bytes=out_tokens*K*2)
+    # benchmark_func(triton_smooth_unpermute_backward, grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, n_repeat=100, ref_bytes=out_tokens*K*2)
+    # benchmark_func(triton_smooth_permute_with_mask_map, grad_data,row_id_map,grad_scale,n_experts,M,out_tokens,K,smooth_scale_ptrs,reverse=False,round_scale=False, n_repeat=100, ref_bytes=out_tokens*K*2)
 

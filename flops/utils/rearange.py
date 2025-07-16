@@ -47,7 +47,7 @@ def triton_split_and_cat(x, counts, indices, scales=None):
     reverse_accums = torch.cumsum(counts[indices], 0)
     # TODO: adapt for n_expert <= 64
     K = 256
-    grid = lambda META: (n_split, )
+    grid = (n_split, )
     split_and_cat_kernel[grid](
         x,
         y,

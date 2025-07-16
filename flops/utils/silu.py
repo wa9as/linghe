@@ -34,8 +34,9 @@ def triton_weighted_silu_forward(x, weight, out=None):
     if out is None:
         out = torch.empty((M, N//2), device=device, dtype=x.dtype)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     weighted_silu_forward_kernel[grid](
         x,
         weight,
@@ -85,8 +86,9 @@ def triton_weighted_silu_backward(g, x, weight):
     dw = torch.empty((M, 1), device=device, dtype=x.dtype)
     dx = torch.empty((M, N), device=device, dtype=x.dtype)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     weighted_silu_backward_kernel[grid](
         g,
         x,
@@ -137,8 +139,9 @@ def triton_weighted_silu_and_quant_forward(x, weight, smooth_scale, out=None, sc
     if scale is None:
         scale = torch.empty((M,), device=device, dtype=torch.float32)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     weighted_silu_and_quant_forward_kernel[grid](
         x,
         weight,
@@ -188,8 +191,9 @@ def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None):
     if scale is None:
         scale = torch.empty((M,), device=device, dtype=torch.float32)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     silu_and_quant_forward_kernel[grid](
         x,
         smooth_scale,
@@ -245,15 +249,16 @@ def triton_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale
     M, N = x.shape
     assert N <= 8192
     device = x.device 
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
     if out is None:
         out = torch.empty((M, N//2), device=device, dtype=torch.float8_e4m3fn)
     if scale is None:
         scale = torch.empty((M,), device=device, dtype=torch.float32)
     if maxs is None:
-        maxs = torch.empty((132,N//2), device=device, dtype=torch.float32)
+        maxs = torch.empty((sm,N//2), device=device, dtype=torch.float32)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     weighted_silu_and_quant_and_calibrate_forward_kernel[grid](
         x,
         weight,
@@ -312,15 +317,16 @@ def triton_silu_and_quant_and_calibrate_forward(x, smooth_scale, out=None, scale
     M, N = x.shape
     assert N <= 8192
     device = x.device 
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
     if out is None:
         out = torch.empty((M, N//2), device=device, dtype=torch.float8_e4m3fn)
     if scale is None:
         scale = torch.empty((M,), device=device, dtype=torch.float32)
     if maxs is None:
-        maxs = torch.empty((132,N//2), device=device, dtype=torch.float32)
+        maxs = torch.empty((sm,N//2), device=device, dtype=torch.float32)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     silu_and_quant_and_calibrate_forward_kernel[grid](
         x,
         smooth_scale,
@@ -385,8 +391,9 @@ def triton_weighted_silu_and_quant_backward(g, x, weight, smooth_scale, reverse=
     dx_scale = torch.empty((M, ), device=device, dtype=torch.float32)
     dw = torch.empty((M, 1), device=device, dtype=x.dtype)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     weighted_silu_and_quant_backward_kernel[grid](
         g,
         x,
@@ -450,8 +457,9 @@ def triton_silu_and_quant_backward(g, x, smooth_scale, reverse=True):
     dx = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     dx_scale = torch.empty((M, ), device=device, dtype=torch.float32)
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     silu_and_quant_backward_kernel[grid](
         g,
         x,
@@ -514,7 +522,8 @@ def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale, counts
         scale = torch.empty((M,), device=device, dtype=torch.float32)
     accums = torch.cumsum(counts,0)
     W = 8192//N 
-    grid = lambda META: (n_experts, 132)
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    grid = (n_experts, sm)
     batch_weighted_silu_and_quant_forward_kernel[grid](
         x,
         weight,
@@ -602,17 +611,18 @@ def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth
     n_experts = counts.shape[0]
     assert N <= 8192
     device = x.device 
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
     if out is None:
         out = torch.empty((M, N//2), device=device, dtype=torch.float8_e4m3fn)
     if scale is None:
         scale = torch.empty((M,), device=device, dtype=torch.float32)
     if maxs is None:
         maxs = torch.empty((n_experts, N//2), device=device, dtype=torch.float32)
-    tmp_maxs = torch.empty((n_experts, 132, N//2), device=device, dtype=torch.bfloat16)
+    tmp_maxs = torch.empty((n_experts, sm, N//2), device=device, dtype=torch.bfloat16)
     
     accums = torch.cumsum(counts, 0)
     W = 8192//N 
-    grid = lambda META: (n_experts, 132)
+    grid = (n_experts, sm)
     batch_weighted_silu_and_quant_and_calibrate_forward_kernel[grid](
         x,
         weight,
@@ -634,10 +644,10 @@ def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth
     T = 128//n_experts
     W = N//2//T
     H = 16
-    grid = lambda META: (n_experts, T)
+    grid = (n_experts, T)
     batch_sum_kernel[grid](tmp_maxs, 
                            maxs, 
-                           132, 
+                           sm, 
                            N//2, 
                            W, 
                            H)
@@ -702,7 +712,8 @@ def triton_batch_weighted_silu_and_quant_backward(g, x, weight, smooth_scales, c
     accums = torch.cumsum(counts,0)
     
     W = 8192//N 
-    grid = lambda META: (n_expert, 132)
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    grid = (n_expert, sm)
     batch_weighted_silu_and_quant_backward_kernel[grid](
         g,
         x,

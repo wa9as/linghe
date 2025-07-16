@@ -34,7 +34,7 @@ def triton_row_quant(x):
     BLOCK_SIZE = 8192
     x_q = torch.empty((M,N),dtype=torch.float8_e4m3fn,device=x.device)
     x_scale = torch.empty((M,),dtype=torch.float32,device=x.device)
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         x, x_q, x_scale,
         M, N,
@@ -74,7 +74,7 @@ def triton_deprecated_tokenwise_row_quant(x, out=None, scale=None):
         scale = torch.empty((M,), dtype=torch.float32, device=device)
     sm = torch.cuda.get_device_properties(device).multi_processor_count
     T = triton.cdiv(M, sm)
-    grid = lambda META: (sm, )
+    grid = (sm, )
     deprecated_tokenwise_row_quant_kernel[grid](
         x,
         out,
@@ -88,15 +88,20 @@ def triton_deprecated_tokenwise_row_quant(x, out=None, scale=None):
 
 
 @triton.jit
-def tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, N: tl.constexpr):
+def tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, N: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     x = tl.load(x_ptr+pid*N+tl.arange(0, N)).to(tl.float32)
-    scale = tl.maximum(tl.max(tl.abs(x)), 1e-30)/448.0
+    x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
+    if ROUND:
+        scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
+    else:
+        scale = x_max/448.0
     tl.store(scale_ptr+pid, scale)
     x = (x/scale).to(out_ptr.dtype.element_ty)
     tl.store(out_ptr+pid*N+tl.arange(0, N), x)
 
-def triton_tokenwise_row_quant(x, out=None, scale=None):
+
+def triton_tokenwise_row_quant(x, out=None, scale=None, round_scale=True):
     # row-wise read, row-wise write
     M, N = x.shape
     device = x.device 
@@ -104,12 +109,13 @@ def triton_tokenwise_row_quant(x, out=None, scale=None):
         out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     if scale is None:
         scale = torch.empty((M,), dtype=torch.float32, device=device)
-    grid = lambda META: (M, )
+    grid = (M, )
     tokenwise_row_quant_kernel[grid](
         x,
         out,
         scale,
         N, 
+        round_scale,
         num_stages=3,
         num_warps=16
     )
@@ -155,7 +161,7 @@ def triton_transpose_row_quant(x, side=0):
     W = 16
     x_q = torch.empty((N, M),dtype=torch.float8_e4m3fn,device=x.device)
     x_scale = torch.empty((N, 1),dtype=torch.float32,device=x.device)
-    grid = lambda META: (N//W, )
+    grid = (N//W, )
     transpose_row_quant_kernel[grid](
         x, x_q, x_scale,
         M, N,

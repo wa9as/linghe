@@ -57,7 +57,7 @@ def triton_duplex_hadamard_nt(x, w, hm, R=1):
     x_bt = torch.empty((K,N),dtype=x.dtype,device=x.device)
     w_bt = torch.empty((K,N),dtype=x.dtype,device=x.device)
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (K//BLOCK_SIZE, )
+    grid = (K//BLOCK_SIZE, )
     duplex_hadamard_nt_kernel[grid](
         x, x_b, x_bt,
         w, w_b, w_bt,
@@ -102,7 +102,7 @@ def triton_duplex_hadamard_dy(y, hm, R=1):
     y_b = torch.empty_like(y)
     y_bt = torch.empty((N,M),dtype=y.dtype,device=y.device)
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (N//BLOCK_SIZE, )
+    grid = (N//BLOCK_SIZE, )
     duplex_hadamard_nt_kernel[grid](
         y, y_b, y_bt,
         hm,
@@ -128,7 +128,7 @@ def triton_duplex_hadamard_quant_nt(x,w,hm, R=1):
     x_bt = torch.empty((K,M),dtype=x.dtype,device=device)
     w_bt = torch.empty((K,N),dtype=x.dtype,device=device)
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (K//BLOCK_SIZE, )
+    grid = (K//BLOCK_SIZE, )
     duplex_hadamard_nt_kernel[grid](
         x, x_b, x_bt,
         w, w_b, w_bt,
@@ -146,7 +146,7 @@ def triton_duplex_hadamard_quant_nt(x,w,hm, R=1):
     w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         x_b, x_q, x_scale,
         M,K,
@@ -156,7 +156,7 @@ def triton_duplex_hadamard_quant_nt(x,w,hm, R=1):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (N, )
+    grid = (N, )
     row_quant_kernel[grid](
         w_b, w_q, w_scale,
         N,K,
@@ -184,7 +184,7 @@ def triton_duplex_hadamard_quant_nn(y,w,hm,R=1):
     y_b = torch.empty_like(y)
     y_bt = torch.empty((N,M),dtype=y.dtype,device=device)
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (N//BLOCK_SIZE, )
+    grid = (N//BLOCK_SIZE, )
     duplex_hadamard_dy_kernel[grid](
         y, y_b, y_bt,
         hm,
@@ -201,7 +201,7 @@ def triton_duplex_hadamard_quant_nn(y,w,hm,R=1):
 
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         y_b, y_q, y_scale,
         M,N,
@@ -211,7 +211,7 @@ def triton_duplex_hadamard_quant_nn(y,w,hm,R=1):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (K, )
+    grid = (K, )
     row_quant_kernel[grid](
         w, w_q, w_scale,
         K,N,
@@ -242,7 +242,7 @@ def triton_duplex_hadamard_quant_tn(y,x,hm,R=1):
     x_scale = torch.empty((1,K), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (N, )
+    grid = (N, )
     row_quant_kernel[grid](
         y, y_q, y_scale,
         N,M,
@@ -252,7 +252,7 @@ def triton_duplex_hadamard_quant_tn(y,x,hm,R=1):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (K, )
+    grid = (K, )
     row_quant_kernel[grid](
         x, x_q, x_scale,
         K,M,

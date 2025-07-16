@@ -32,7 +32,7 @@ def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N
     col_offs = tl.arange(0, W)
     row_offs = tl.arange(0, H)
 
-    x_max = tl.zeros((W,),dtype=tl.float32) + 5.27e-36
+    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-30
     m = tl.cdiv(M, H)
     
     for i in range(m):
@@ -51,9 +51,8 @@ def calc_smooth_scale_kernel(x_ptr, smooth_scale_ptr, inv_smooth_scale_ptr, M, N
         col_max = tl.max(abs_x, axis=0)
         x_max = tl.maximum(x_max, col_max)
     
-    maxs = tl.sqrt(tl.maximum(x_max, 5.27e-36))
-    scale = tl.where(maxs < 0.1, 0.1, maxs)
-    inv_scale = 1.0 / tl.maximum(scale, 5.27e-36)
+    scale = tl.sqrt(tl.maximum(x_max, 1))
+    inv_scale = 1.0 / scale
     
     tl.store(smooth_scale_ptr + pid * W + col_offs, scale)
     tl.store(inv_smooth_scale_ptr + pid * W + col_offs, inv_scale)
@@ -69,7 +68,7 @@ def triton_calc_smooth_scale(x):
     H = 512
     W = 16
     EVEN = M%H == 0 and N%W == 0
-    grid = lambda META: (triton.cdiv(N, W), )
+    grid = (triton.cdiv(N, W), )
     calc_smooth_scale_kernel[grid](
         x,
         x_smooth_scale,
@@ -95,7 +94,8 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # dwT = yT @ x
 def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None, transpose=True, pad=False):
     #assert x.size(1) == smooth_scale.size(0)
-
+    N = x.size(1)
+    assert triton.next_power_of_2(N) == N
     x_q,x_scale = triton_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=x_q, x_scale=x_scale, reverse=False, pad_scale=pad, round_scale=False)
 
     if transpose:

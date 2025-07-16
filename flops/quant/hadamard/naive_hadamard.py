@@ -48,7 +48,7 @@ def triton_hadamard_nt(x, w, hm, R=2):
     x_b = torch.empty_like(x)
     w_b = torch.empty_like(w)
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (K//BLOCK_SIZE, )
+    grid = (K//BLOCK_SIZE, )
     hadamard_nt_kernel[grid](
         x, x_b,
         w, w_b, 
@@ -77,7 +77,7 @@ def triton_hadamard_quant_nt(x, w, hm, R=2):
     w_scale = torch.empty((1,N), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (K//BLOCK_SIZE, )
+    grid = (K//BLOCK_SIZE, )
     hadamard_nt_kernel[grid](
         x, x_b,
         w, w_b, 
@@ -91,7 +91,7 @@ def triton_hadamard_quant_nt(x, w, hm, R=2):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         x_b, x_q, x_scale,
         M,K,
@@ -101,7 +101,7 @@ def triton_hadamard_quant_nt(x, w, hm, R=2):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (N, )
+    grid = (N, )
     row_quant_kernel[grid](
         w_b, w_q, w_scale,
         N,K,
@@ -169,7 +169,7 @@ def triton_hadamard_quant_tn(y, x, hm, R=2):
     x_scale = torch.empty((1,K), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (M//BLOCK_SIZE, )
+    grid = (M//BLOCK_SIZE, )
     hadamard_tn_kernel[grid](
         y, y_b, 
         x, x_b,
@@ -182,7 +182,7 @@ def triton_hadamard_quant_tn(y, x, hm, R=2):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (K, )
+    grid = (K, )
     row_quant_kernel[grid](
         x_b, x_q, x_scale,
         K,M,
@@ -192,7 +192,7 @@ def triton_hadamard_quant_tn(y, x, hm, R=2):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (N, )
+    grid = (N, )
     row_quant_kernel[grid](
         y_b, y_q, y_scale,
         N,M,
@@ -253,7 +253,7 @@ def triton_hadamard_quant_nn(y, w, hm, R=2):
     w_scale = torch.empty((1,K), device=device, dtype=torch.float32)
 
     BLOCK_SIZE = hm.size(0)
-    grid = lambda META: (N//BLOCK_SIZE, )
+    grid = (N//BLOCK_SIZE, )
     hadamard_nn_kernel[grid](
         y, y_b,
         w, w_b, 
@@ -266,7 +266,7 @@ def triton_hadamard_quant_nn(y, w, hm, R=2):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (M, )
+    grid = (M, )
     row_quant_kernel[grid](
         y_b, y_q, y_scale,
         M,N,
@@ -276,7 +276,7 @@ def triton_hadamard_quant_nn(y, w, hm, R=2):
     )
 
     BLOCK_SIZE = 4096
-    grid = lambda META: (K, )
+    grid = (K, )
     row_quant_kernel[grid](
         w_b, w_q, w_scale,
         K,N,

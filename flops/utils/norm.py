@@ -37,13 +37,14 @@ def triton_rms_norm_forward(x, weight, eps=1e-6, out=None):
 
     W = 8192//N 
     T = triton.cdiv(M, sm*W)
-    grid = lambda META: (sm, )
+    grid = (sm, )
     rms_norm_forward_kernel[grid](
         x,
         weight,
         out,
         eps,
-        M, T,
+        M, 
+        T,
         N, 
         W,
         num_stages=3,
@@ -97,8 +98,7 @@ def triton_rms_norm_backward(grad_output, x, w, eps=1e-6):
 
     T = triton.cdiv(M, sm)
     tmp_dw = torch.empty(sm, N, dtype=torch.float32, device=x.device)
-
-    grid = lambda META: (sm, )
+    grid = (sm, )
     rms_norm_backward_kernel[grid](
         grad_output,
         x,
@@ -139,7 +139,7 @@ def rms_norm_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_p
             tl.store(rms_ptr+indices, rms, mask=indices<M)
         x = (x*rms[:,None])*(weight*smooth_scale)
         scale = tl.maximum(tl.max(tl.abs(x),1)/448.0, 1e-37)
-        x = (x/scale).to(out_ptr.dtype.element_ty)
+        x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         tl.store(out_ptr+offs, x, mask=indices[:,None]<M)
         offs += N*W
@@ -170,8 +170,9 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
     else:
         rms = None
     W = 8192//N 
-    T = triton.cdiv(M, 132*W)
-    grid = lambda META: (132, )
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    T = triton.cdiv(M, sm*W)
+    grid = (sm, )
     rms_norm_and_quant_forward_kernel[grid](
         x,
         weight,

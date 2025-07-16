@@ -32,7 +32,7 @@ weights = torch.randn(M*topk, dtype=dtype,device=device)
 logits = torch.randn((M,n_experts),dtype=torch.float32,device=device)
 double_logits = logits.to(torch.float64)*(1+torch.arange(n_experts, device=device, dtype=torch.float64)*1e-12)
 double_top_values, top_indices = torch.topk(double_logits, topk, dim=-1, largest=True, sorted=True)
-routing_map = double_logits>=double_top_values[:,-1:]
+routing_map = double_logits>=double_top_values[:,-1:]-0.1
 logits[torch.logical_not(routing_map)] = -1e6
 probs = torch.nn.Softmax(dim=1)(logits)
 counts = routing_map.sum(-1)
@@ -70,6 +70,9 @@ import transformer_engine.pytorch.triton.permutation as triton_permutation
 row_id_map_ref = triton_permutation.make_row_id_map(routing_map.T.contiguous(), M, n_experts)
 row_id_map_output = triton_make_row_id_map(routing_map.T.contiguous())
 output_check(row_id_map_ref.float(), row_id_map_output.T.float(),'row_id_map')
+assert (row_id_map_ref-row_id_map_output.T).abs().sum().item() == 0
+
+
 
 n_repeat = 100
 ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)

@@ -42,7 +42,7 @@ def triton_block_add(x, y, accum=True):
     num_stages = 2
     num_warps = 8
 
-    grid = lambda META: (triton.cdiv(M,H), triton.cdiv(N,W))
+    grid = (triton.cdiv(M,H), triton.cdiv(N,W))
     block_add_kernel[grid](
         x, y,
         M, N,
