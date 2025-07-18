@@ -84,7 +84,7 @@ def triton_scatter_add(x, outputs, indices):
 
     float_outputs = torch.zeros(outputs.shape, dtype=torch.float32, device=outputs.device)
 
-    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    sm = torch.cuda.get_device_properties(x.device).multi_processor_count
     T = triton.cdiv(M, sm)
 
     num_stages = 5
@@ -292,107 +292,86 @@ def triton_unpermute_with_mask_map(
 
 
 
+@triton.jit
+def block_count_kernel(map_ptr, count_ptr, M, B, T:tl.constexpr, b: tl.constexpr, E: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    counts = tl.zeros((E, ), dtype=tl.int32)
+    offs = pid * B * E + tl.arange(0, b)[:, None] * E + tl.arange(0, E)[None,:]
+    t = tl.cdiv(B, b)
+    for i in range(t):
+        mask = pid * B + i * b + tl.arange(0, b)[:,None] < tl.minimum(M, pid*B+B)
+        values = tl.load(map_ptr+offs, mask=mask).to(tl.int32)
+        counts += tl.sum(values, 0)
+        offs += b * E
+
+    tl.store(count_ptr+pid*E+tl.arange(0,E), counts)
+
+
 
 
 @triton.jit
-def make_row_id_map_kernel(map_ptrs, count_ptr, output_ptr, M, E: tl.constexpr, B: tl.constexpr):
+def accumulate_count_kernel(map_ptr, count_ptr, output_ptr, M, B, T:tl.constexpr, b: tl.constexpr, E: tl.constexpr):
     pid = tl.program_id(axis=0)
-    n_experts = tl.num_programs(axis=0)
+    
+    indices = tl.arange(0, T)[:, None] * E + tl.arange(0, E)[None,:]
+    counts = tl.load(count_ptr+indices)
+    sum_counts = tl.sum(counts, 0)
+    accum_sum_counts = tl.cumsum(sum_counts, 0)
 
-    counts = tl.load(count_ptr+tl.arange(0,E))
-    counts = tl.cumsum(counts)
+    partial_counts = tl.sum(tl.where(indices<pid*E,counts,0), 0)
 
-    mask_counts = tl.where(tl.arange(0,E) < pid, counts, 0)
-    count = tl.max(mask_counts) - 1
-
-    n = tl.cdiv(M, B)
-    for i in range(n):
-        mask = i*B+tl.arange(0,B)<M
-        values = tl.load(map_ptrs+i*B*n_experts+tl.arange(0,B)*n_experts+pid, mask=mask).to(tl.int32)
-        acc = count + tl.cumsum(values)
-
-        count = tl.max(acc)
-        acc = tl.where(values==0,-1,acc)
-
-        tl.store(output_ptr+i*B*n_experts+tl.arange(0,B)*n_experts+pid, acc, mask=mask)
-
-
-
+    count_offset = accum_sum_counts - sum_counts + partial_counts - 1
+    offs = pid * B * E + tl.arange(0, b)[:, None] * E + tl.arange(0, E)[None,:]
+    t = tl.cdiv(B, b)
+    for i in range(t):
+        mask = pid * B + i * b + tl.arange(0, b)[:,None] < tl.minimum(M, pid*B+B)
+        values = tl.load(map_ptr+offs, mask=mask).to(tl.int32)
+        acc = count_offset + tl.cumsum(values, 0)
+        count_offset = tl.max(acc, 0)
+        acc = tl.where(values==0, -1, acc)
+        tl.store(output_ptr+offs, acc, mask=mask)
+        offs += b * E
 
 
 # """
 # make row id map, not transposed
 # """
-
 def triton_make_row_id_map(
     routing_map: torch.Tensor
     ):
     n_tokens, n_experts = routing_map.shape
-    counts = routing_map.sum(0)
-
+    T = 128
+    block_counts = torch.empty((T, n_experts), dtype=torch.int32, device=routing_map.device)
     output = torch.empty((n_tokens, n_experts), dtype=torch.int32, device=routing_map.device)
-    B = 128
-    grid = (n_experts, )
-    make_row_id_map_kernel[grid](
+
+    B = triton.cdiv(n_tokens, T) 
+    b = 16
+    grid = (T, )
+    block_count_kernel[grid](
         routing_map,
-        counts,
+        block_counts,
+        n_tokens,
+        B,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+
+    accumulate_count_kernel[grid](
+        routing_map,
+        block_counts,
         output,
         n_tokens,
-        n_experts,
         B,
+        T,
+        b,
+        n_experts,
         num_stages=3,
-        num_warps=16
+        num_warps=8
     )
+
     return output
 
-
-
-
-
-# @triton.jit
-# def make_row_id_map_kernel(map_ptrs, count_ptr, output_ptr, M, E: tl.constexpr, B: tl.constexpr):
-#     pid = tl.program_id(axis=0)
-#     counts = tl.load(count_ptr+tl.arange(0,E))
-#     count = tl.cumsum(counts) - 1
-
-#     n = tl.cdiv(M, B)
-#     offs = tl.arange(0,B)[:,None]*E + tl.arange(0,E)[None, :]
-#     for i in range(n):
-#         mask = i*B+tl.arange(0,B)[:,None]<M
-#         values = tl.load(map_ptrs+offs, mask=mask).to(tl.int32)
-#         acc = count + tl.cumsum(values, axis=0)
-
-#         count = tl.max(acc, 0)
-#         acc = tl.where(values==0,-1,acc)
-
-#         tl.store(output_ptr+offs, acc, mask=mask)
-#         offs += E*B
-
-
-
-
-
-# # """
-# # make row id map, not transposed
-# # """
-
-# def triton_make_row_id_map(
-#     routing_map: torch.Tensor
-#     ):
-#     n_tokens, n_experts = routing_map.shape
-#     counts = routing_map.sum(0)
-
-#     output = torch.empty((n_tokens, n_experts), dtype=torch.int32, device=routing_map.device)
-#     B = 128
-#     grid = (1, )
-#     make_row_id_map_kernel[grid](
-#         routing_map,
-#         counts,
-#         output,
-#         n_tokens,
-#         n_experts,
-#         B,
-#         num_stages=3,
-#         num_warps=8
-#     )
-#     return output

@@ -67,18 +67,21 @@ output_check(sums_ref, sums_unpermute,'unpermute_data')
 output_check(probs, output_prob,'unpermute_prob')
 
 import transformer_engine.pytorch.triton.permutation as triton_permutation
-row_id_map_ref = triton_permutation.make_row_id_map(routing_map.T.contiguous(), M, n_experts)
+row_id_map_ref = triton_permutation.make_row_id_map(routing_map.T.contiguous(), M, n_experts).T
 row_id_map_output = triton_make_row_id_map(routing_map.T.contiguous())
-output_check(row_id_map_ref.float(), row_id_map_output.T.float(),'row_id_map')
-assert (row_id_map_ref-row_id_map_output.T).abs().sum().item() == 0
+output_check(row_id_map_ref.float(), row_id_map_output.float(),'row_id_map')
+assert (row_id_map_ref-row_id_map_output).abs().sum().item() == 0
 
 
 
 n_repeat = 100
-ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
+# ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
 # benchmark_func(triton_aligned_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
-benchmark_func(triton_scatter_add,x, outputs, indices, n_repeat=n_repeat,ref_time=ref_time)
+ref_time=benchmark_func(triton_scatter_add,x, outputs, indices, n_repeat=n_repeat)
 benchmark_func(triton_scatter_add_with_count,x, outputs, indices, counts, n_repeat=n_repeat,ref_time=ref_time)
 benchmark_func(triton_unpermute_with_mask_map,x, row_id_map.T.contiguous(), probs, n_repeat=n_repeat,ref_time=ref_time)
 benchmark_func(triton_permutation.make_row_id_map,routing_map.T.contiguous(), M, n_experts, n_repeat=n_repeat,ref_time=ref_time)
 benchmark_func(triton_make_row_id_map,routing_map.T.contiguous(),n_repeat=n_repeat,ref_time=ref_time)
+
+outputs = triton_permutation.unpermute_with_mask_map(x,row_id_map,probs,None,M,n_experts,N)
+benchmark_func(triton_permutation.unpermute_with_mask_map,x,row_id_map,probs,None,M,n_experts,N)

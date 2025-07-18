@@ -23,7 +23,7 @@ def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr):
     offs = offs_m[:, None] * N + offs_n[None, :]
     mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
-    s = tl.maximum(tl.max(tl.abs(x)), 1e-10) / 448.0
+    s = tl.maximum(tl.max(tl.abs(x)), 1e-30) / 448.0
     y = x / s
     y = y.to(y_ptr.dtype.element_ty)
     tl.store(y_ptr + offs, y, mask=mask)

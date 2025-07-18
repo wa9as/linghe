@@ -107,7 +107,7 @@ def triton_weighted_silu_backward(g, x, weight):
 
 
 @triton.jit
-def weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr):
+def weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     row_offs = pid*T*W*n+tl.arange(0, W)[:,None]*n
@@ -123,13 +123,16 @@ def weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, 
         w = tl.load(weight_ptr+indices, mask=indices<M).to(tl.float32)[:,None]
         x = x1/(1+tl.exp(-x1))*x2*w*smooth_scale
         scale = tl.maximum(tl.max(x.abs(), 1)/448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(out_ptr+row_offs+col_offs, x, mask=mask)
         row_offs += n*W
 
 # not used, shared expert used the triton_silu_and_quant_forward kernel
-def triton_weighted_silu_and_quant_forward(x, weight, smooth_scale, out=None, scale=None):
+def triton_weighted_silu_and_quant_forward(x, weight, smooth_scale, out=None, scale=None, round_scale=False):
+    assert round_scale 
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
@@ -148,10 +151,12 @@ def triton_weighted_silu_and_quant_forward(x, weight, smooth_scale, out=None, sc
         smooth_scale,
         out,
         scale,
-        M, T,
+        M, 
+        T,
         N, 
         N//2,
         W,
+        round_scale,
         num_stages=2,
         num_warps=16
     )
@@ -160,7 +165,7 @@ def triton_weighted_silu_and_quant_forward(x, weight, smooth_scale, out=None, sc
 
 
 @triton.jit
-def silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr):
+def silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     row_offs = pid*T*W*n+tl.arange(0, W)[:,None]*n
@@ -175,13 +180,16 @@ def silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, M
         x2 = tl.load(x_ptr+n+row_offs*2+col_offs, mask=mask).to(tl.float32)
         x = x1/(1+tl.exp(-x1))*x2*smooth_scale
         scale = tl.maximum(tl.max(x.abs(), 1)/448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(out_ptr+row_offs+col_offs, x, mask=mask)
         row_offs += n*W
 
 # used in shared expert
-def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None):
+def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None, round_scale=False):
+    assert round_scale 
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
@@ -203,6 +211,7 @@ def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None):
         N, 
         N//2,
         W,
+        round_scale,
         num_stages=2,
         num_warps=16
     )
@@ -212,7 +221,7 @@ def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None):
 
 
 @triton.jit
-def weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr):
+def weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     row_offs = pid*T*W*n+tl.arange(0, W)[:,None]*n
@@ -231,6 +240,8 @@ def weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr, smoo
         maxs = tl.maximum(x, maxs)
         x = x*w*smooth_scale
         scale = tl.maximum(tl.max(x.abs(), 1)/448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(out_ptr+row_offs+col_offs, x, mask=mask)
@@ -238,13 +249,13 @@ def weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr, smoo
 
     maxs = tl.sqrt(tl.max(maxs,0))
     maxs = tl.where(maxs<4, 1.0, maxs)
-    # tl.atomic_max(max_ptr+tl.arange(0, n), max_1)  # very slow
     tl.store(max_ptr+pid*n+tl.arange(0, n), maxs)
 
 
 
 # not used, shared expert uses the triton_silu_and_quant_and_calibrate_forward
-def triton_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale, out=None, scale=None, maxs=None):
+def triton_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale, out=None, scale=None, maxs=None, round_scale=False):
+    assert round_scale
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
@@ -270,6 +281,7 @@ def triton_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale
         N, 
         N//2,
         W,
+        round_scale,
         num_stages=2,
         num_warps=16
     )
@@ -281,7 +293,7 @@ def triton_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale
 
 
 @triton.jit
-def silu_and_quant_and_calibrate_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr):
+def silu_and_quant_and_calibrate_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     row_offs = pid*T*W*n+tl.arange(0, W)[:,None]*n
@@ -299,6 +311,8 @@ def silu_and_quant_and_calibrate_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr
         maxs = tl.maximum(x, maxs)
         x = x*smooth_scale
         scale = tl.maximum(tl.max(x.abs(), 1)/448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(out_ptr+row_offs+col_offs, x, mask=mask)
@@ -306,13 +320,15 @@ def silu_and_quant_and_calibrate_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr
 
     maxs = tl.sqrt(tl.max(maxs,0))
     maxs = tl.where(maxs<4, 1.0, maxs)
+    maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
     # tl.atomic_max(max_ptr+tl.arange(0, n), max_1)  # very slow
     tl.store(max_ptr+pid*n+tl.arange(0, n), maxs)
 
 
 
 # used in shared expert
-def triton_silu_and_quant_and_calibrate_forward(x, smooth_scale, out=None, scale=None, maxs=None):
+def triton_silu_and_quant_and_calibrate_forward(x, smooth_scale, out=None, scale=None, maxs=None, round_scale=False):
+    assert round_scale
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
@@ -337,6 +353,7 @@ def triton_silu_and_quant_and_calibrate_forward(x, smooth_scale, out=None, scale
         N, 
         N//2,
         W,
+        round_scale,
         num_stages=2,
         num_warps=16
     )
@@ -346,7 +363,7 @@ def triton_silu_and_quant_and_calibrate_forward(x, smooth_scale, out=None, scale
 
 
 @triton.jit
-def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_scale_ptr, dx_ptr, dx_scale_ptr, dw_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, REVERSE: tl.constexpr):
+def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_scale_ptr, dx_ptr, dx_scale_ptr, dw_ptr, M, T, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
     smooth_scale_1 = tl.load(smooth_scale_ptr+tl.arange(0, n))
@@ -371,6 +388,8 @@ def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_sca
         dx2 = g*x1*sigmoid*w*smooth_scale_2
 
         scale = tl.maximum(tl.maximum(tl.max(dx1, 1), tl.max(dx2, 1)), 1e-30)/448
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         dx1 = (dx1/scale[:,None]).to(dx_ptr.dtype.element_ty)
         dx2 = (dx2/scale[:,None]).to(dx_ptr.dtype.element_ty)
 
@@ -382,7 +401,8 @@ def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_sca
         hoffs += n*W
 
 # not used, shared expert use the triton_silu_and_quant_backward kernel
-def triton_weighted_silu_and_quant_backward(g, x, weight, smooth_scale, reverse=True):
+def triton_weighted_silu_and_quant_backward(g, x, weight, smooth_scale, reverse=True, round_scale=False):
+    assert round_scale 
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
@@ -407,6 +427,7 @@ def triton_weighted_silu_and_quant_backward(g, x, weight, smooth_scale, reverse=
         N//2,
         W,
         reverse,
+        round_scale,
         num_stages=3,
         num_warps=16
     )
@@ -479,7 +500,7 @@ def triton_silu_and_quant_backward(g, x, smooth_scale, reverse=True):
 
 
 @triton.jit
-def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, count_ptr, accum_ptr, M, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr):
+def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, count_ptr, accum_ptr, M, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, ROUND: tl.constexpr):
     eid = tl.program_id(axis=0)
     tid = tl.program_id(axis=1)
     sm = tl.num_programs(axis=1)
@@ -503,6 +524,8 @@ def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale
         w = tl.load(weight_ptr+indices, mask=indices<M).to(tl.float32)[:,None]
         x = x1/(1+tl.exp(-x1))*x2*w*smooth_scale
         scale = tl.maximum(tl.max(x, 1)/448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(out_ptr+row_offs+col_offs, x, mask=mask)
@@ -510,7 +533,8 @@ def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale
 
 
 # used in shared expert
-def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale, counts, out=None, scale=None):
+def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale, counts, out=None, scale=None, round_scale=False):
+    assert round_scale
     # row-wise read, row-wise write
     M, N = x.shape
     n_experts = counts.shape[0]
@@ -536,6 +560,7 @@ def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale, counts
         N, 
         N//2,
         W,
+        round_scale,
         num_stages=3,
         num_warps=16
     )
@@ -545,7 +570,7 @@ def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale, counts
 
 
 @triton.jit
-def batch_weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, count_ptr, accum_ptr, M, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr):
+def batch_weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, count_ptr, accum_ptr, M, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, ROUND: tl.constexpr):
     eid = tl.program_id(axis=0)
     tid = tl.program_id(axis=1)
     sm = tl.num_programs(axis=1)
@@ -574,21 +599,24 @@ def batch_weighted_silu_and_quant_and_calibrate_forward_kernel(x_ptr, weight_ptr
         maxs = tl.maximum(x, maxs)
 
         x *= w*smooth_scale
-        scale = tl.maximum(tl.max(x, 1)/448, 1e-30)
+        scale = tl.max(x, 1)/448
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(out_ptr+row_offs+col_offs, x, mask=mask)
         row_offs += n*W
 
     maxs = tl.sqrt(tl.max(maxs,0))
-    maxs = tl.where(maxs<4, 1.0, maxs)
+    maxs = tl.maximum(maxs, 1.0)
+    maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
     tl.store(max_ptr+eid*sm*n + tid*n+tl.arange(0, n), maxs)
 
 
 
 
 @triton.jit
-def batch_sum_kernel(x_ptr, out_ptr, M, N, W:tl.constexpr, H: tl.constexpr):
+def batch_max_kernel(x_ptr, out_ptr, M, N, W:tl.constexpr, H: tl.constexpr):
     eid = tl.program_id(axis=0)
     bid = tl.program_id(axis=1)
 
@@ -605,7 +633,8 @@ def batch_sum_kernel(x_ptr, out_ptr, M, N, W:tl.constexpr, H: tl.constexpr):
 
 
 # used in shared expert
-def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale, counts, out=None, scale=None, maxs=None):
+def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth_scale, counts, out=None, scale=None, maxs=None, round_scale=False):
+    assert round_scale
     # row-wise read, row-wise write
     M, N = x.shape
     n_experts = counts.shape[0]
@@ -636,6 +665,7 @@ def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth
         N, 
         N//2,
         W,
+        round_scale,
         num_stages=3,
         num_warps=16
     )
@@ -645,7 +675,7 @@ def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth
     W = N//2//T
     H = 16
     grid = (n_experts, T)
-    batch_sum_kernel[grid](tmp_maxs, 
+    batch_max_kernel[grid](tmp_maxs, 
                            maxs, 
                            sm, 
                            N//2, 
@@ -657,7 +687,7 @@ def triton_batch_weighted_silu_and_quant_and_calibrate_forward(x, weight, smooth
 
 
 @triton.jit
-def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_scale_ptr, count_ptr, accum_ptr, dx_ptr, dx_scale_ptr, dw_ptr, M, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, REVERSE: tl.constexpr):
+def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_scale_ptr, count_ptr, accum_ptr, dx_ptr, dx_scale_ptr, dw_ptr, M, N: tl.constexpr, n:tl.constexpr, W: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     eid = tl.program_id(axis=0)
     tid = tl.program_id(axis=1)
     sm = tl.num_programs(axis=1)
@@ -688,6 +718,8 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smoo
         dx2 = g*x1*sigmoid*w*smooth_scale_2
 
         scale = tl.maximum(tl.maximum(tl.max(dx1, 1), tl.max(dx2, 1)), 1e-30)/448
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         dx1 = (dx1/scale[:,None]).to(dx_ptr.dtype.element_ty)
         dx2 = (dx2/scale[:,None]).to(dx_ptr.dtype.element_ty)
 
@@ -699,7 +731,8 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smoo
         hoffs += n*W
 
 # used in routed experts
-def triton_batch_weighted_silu_and_quant_backward(g, x, weight, smooth_scales, counts, reverse=True):
+def triton_batch_weighted_silu_and_quant_backward(g, x, weight, smooth_scales, counts, reverse=True, round_scale=False):
+    assert round_scale
     # row-wise read, row-wise write
     M, N = x.shape
     n_expert = counts.shape[0]
@@ -729,6 +762,7 @@ def triton_batch_weighted_silu_and_quant_backward(g, x, weight, smooth_scales, c
         N//2,
         W,
         reverse,
+        round_scale,
         num_stages=3,
         num_warps=16
     )

@@ -34,10 +34,11 @@ if True:
         benchmark_func(triton_weighted_silu_backward, grad_output, x, weight, n_repeat=100, ref_bytes=M*N*5)
 
     if True:
-        x_q, x_scale = triton_weighted_silu_and_quant_forward(x,weight,smooth_scale)    
+        x_q, x_scale = triton_weighted_silu_and_quant_forward(x,weight,smooth_scale,round_scale=True)    
         y = weighted_swiglu(x,weight)
         y_smooth = y/smooth_scale
         x_scale_ref = y_smooth.float().abs().amax(1)/448
+        x_scale_ref = torch.exp2(torch.ceil(torch.log2(x_scale_ref)))
         x_q_ref = (y_smooth/x_scale_ref[:,None]).to(torch.float8_e4m3fn)
 
         output_check(x_q_ref.float(), x_q.float(), 'data')
@@ -45,19 +46,19 @@ if True:
 
         def split_silu_and_quant_forward(x,weight,smooth_scale):
             y = triton_weighted_silu_forward(x,weight)
-            return triton_tokenwise_reused_smooth_quant(y,smooth_scale)
+            return triton_tokenwise_reused_smooth_quant(y,smooth_scale,round_scale=True)
 
         def split_silu_and_quant_backward(grad_output, x,weight,smooth_scale):
             dx, dw = triton_weighted_silu_backward(grad_output, x, weight)
-            return triton_tokenwise_reused_smooth_quant(dx,smooth_scale)
+            return triton_tokenwise_reused_smooth_quant(dx,smooth_scale,round_scale=True)
 
 
         ref_time = benchmark_func(split_silu_and_quant_forward,x,weight,smooth_scale, n_repeat=100, ref_bytes=M*N*4.5)
-        benchmark_func(triton_weighted_silu_and_quant_forward,x,weight,smooth_scale, n_repeat=100, ref_bytes=M*N*2.5, ref_time=ref_time)
-        benchmark_func(triton_weighted_silu_and_quant_and_calibrate_forward,x,weight,smooth_scale, n_repeat=100, ref_bytes=M*N*2.5, ref_time=ref_time)
+        benchmark_func(triton_weighted_silu_and_quant_forward,x,weight,smooth_scale,round_scale=True, n_repeat=100, ref_bytes=M*N*2.5, ref_time=ref_time)
+        benchmark_func(triton_weighted_silu_and_quant_and_calibrate_forward,x,weight,smooth_scale, round_scale=True, n_repeat=100, ref_bytes=M*N*2.5, ref_time=ref_time)
 
         ref_time = benchmark_func(split_silu_and_quant_backward,grad_output,x,weight,smooth_scale, n_repeat=100, ref_bytes=M*N*8)
-        benchmark_func(triton_weighted_silu_and_quant_backward,grad_output,x,weight,grad_smooth_scale, n_repeat=100, ref_bytes=M*N*4, ref_time=ref_time)
+        benchmark_func(triton_weighted_silu_and_quant_backward,grad_output,x,weight,grad_smooth_scale,round_scale=True, n_repeat=100, ref_bytes=M*N*4, ref_time=ref_time)
 
 
 
@@ -83,19 +84,19 @@ if True:
 
     def split_batch_silu_and_quant_forward(x,weight,smooth_scales,counts):
         y = triton_weighted_silu_forward(x,weight)
-        return triton_batch_smooth_quant(y,smooth_scales,counts)
+        return triton_batch_smooth_quant(y,smooth_scales,counts, round_scale=True)
 
 
     def split_batch_silu_and_quant_backward(grad_output,x,weight,grad_smooth_scales,counts):
         dx, dw = triton_weighted_silu_backward(grad_output, x, weight)
-        return triton_batch_smooth_quant(dx,grad_smooth_scales,counts)
+        return triton_batch_smooth_quant(dx,grad_smooth_scales,counts, round_scale=True)
 
 
     ref_time = benchmark_func(split_batch_silu_and_quant_forward,x,weight,smooth_scales,counts, n_repeat=100, ref_bytes=n_experts*M*N*4.5)
-    benchmark_func(triton_batch_weighted_silu_and_quant_forward,x,weight,smooth_scales,counts, n_repeat=100, ref_bytes=n_experts*M*N*2.5, ref_time=ref_time)
-    benchmark_func(triton_batch_weighted_silu_and_quant_and_calibrate_forward,x,weight,smooth_scales,counts, n_repeat=100, ref_bytes=n_experts*M*N*2.5, ref_time=ref_time)
+    benchmark_func(triton_batch_weighted_silu_and_quant_forward,x,weight,smooth_scales,counts, round_scale=True, n_repeat=100, ref_bytes=n_experts*M*N*2.5, ref_time=ref_time)
+    benchmark_func(triton_batch_weighted_silu_and_quant_and_calibrate_forward,x,weight,smooth_scales,counts, round_scale=True, n_repeat=100, ref_bytes=n_experts*M*N*2.5, ref_time=ref_time)
 
     ref_time = benchmark_func(split_batch_silu_and_quant_backward,grad_output,x,weight,grad_smooth_scales,counts, n_repeat=100, ref_bytes=n_experts*M*N*8)
-    benchmark_func(triton_batch_weighted_silu_and_quant_backward,grad_output,x,weight,smooth_scales,counts, n_repeat=100, ref_bytes=n_experts*M*N*4, ref_time=ref_time)
+    benchmark_func(triton_batch_weighted_silu_and_quant_backward,grad_output,x,weight,smooth_scales,counts, round_scale=True, n_repeat=100, ref_bytes=n_experts*M*N*4, ref_time=ref_time)
 
 

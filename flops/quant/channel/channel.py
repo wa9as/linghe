@@ -101,7 +101,7 @@ def tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, N: tl.constexpr, ROUND
     tl.store(out_ptr+pid*N+tl.arange(0, N), x)
 
 
-def triton_tokenwise_row_quant(x, out=None, scale=None, round_scale=True):
+def triton_tokenwise_row_quant(x, out=None, scale=None, round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     device = x.device 
