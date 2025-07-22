@@ -34,7 +34,7 @@ def group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, K: t
 def triton_group_quant(
     x: torch.Tensor, dtype=torch.float8_e4m3fn, group_size: int = 128, round_scale = False
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    assert round_scale 
+     
     M, N= x.shape
     K = 16
     assert N % group_size == 0 and N%(group_size*K) == 0

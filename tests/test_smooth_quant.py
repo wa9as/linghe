@@ -13,7 +13,7 @@ if False:
     N, K = w.shape
 else:
     M,N,K=4096*4,8192,8192
-    x = torch.randn((M,K),dtype=dtype,device=device)
+    x = torch.randn((M,K),dtype=dtype,device=device)*3
     w = torch.randn((N,K),dtype=dtype,device=device)
     y = torch.randn((M,N),dtype=dtype,device=device)
 
@@ -68,20 +68,21 @@ if False:
     quant_check(ref_dx, yq, wq, dx,mode)
     quant_check(ref_dw, ytq, xq, dw,mode)
 
-if False:
+if True:
     from flops.quant.smooth.reused_smooth import *
     from flops.quant.smooth.seperate_smooth import *
     smooth_scale = torch.randn((K,),device=device,dtype=torch.float32).abs()
-    x_q, x_scale = triton_tokenwise_reused_smooth_quant(x, smooth_scale, reverse=False, pad_scale=True, round_scale=False)
     tmp = x.float()/smooth_scale
-    maxs = tmp.abs().amax(1)/448
-    x_q_ref = tmp/maxs[:,None]
-    output_check(x_q_ref, x_q.float(), 'data')
-    output_check(x_scale[:M], maxs, 'scale')
+    scales = tmp.abs().amax(1)/448
+    scales_ref = torch.exp2(torch.ceil(torch.log2(scales)))
+    x_q_ref = (tmp/scales_ref[:,None]).to(torch.float8_e4m3fn)
+    x_q, x_scale = triton_depracated_tokenwise_reused_smooth_quant(x, smooth_scale, reverse=False, round_scale=True)
+    output_check(x_q_ref.float(), x_q.float(), 'data')
+    output_check(scales_ref, x_scale, 'scale')
     # output_check(x_q_ref[-1], x_q.float()[-1], 'data[-1]')
     # print(x_scale[-1])
 
-    x_q_, x_scale_ = triton_reused_smooth_quant(x, smooth_scale, reverse=False, pad_scale=True, round_scale=False)
+    x_q_, x_scale_ = triton_reused_smooth_quant(x, smooth_scale, reverse=False, round_scale=True)
     output_check(x_q_.float(), x_q.float(), 'data')
     output_check(x_scale_, x_scale, 'scale')
 

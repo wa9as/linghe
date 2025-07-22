@@ -43,8 +43,8 @@ def fp32_gemm_kernel(
 
     c = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     for i in range(k):
-        a = tl.load(a_ptrs) #.to(tl.float32)
-        b = tl.load(b_ptrs) #.to(tl.float32)
+        a = tl.load(a_ptrs).to(tl.float32)
+        b = tl.load(b_ptrs).to(tl.float32)
         # c += tl.dot(a, b)
         c = tl.dot(a, b, c)
         a_ptrs += BLOCK_SIZE_K
@@ -173,7 +173,7 @@ def fp32_gemm_for_backward_kernel(
         c = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
     for i in range(k):
-        a = tl.load(a_ptrs)  #.to(tl.float32)
+        a = tl.load(a_ptrs)
         b = tl.load(b_ptrs).to(tl.float32)
         # c += tl.dot(a, b)
         c = tl.dot(a, b, c)

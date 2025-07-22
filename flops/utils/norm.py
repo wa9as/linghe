@@ -147,7 +147,7 @@ def rms_norm_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_p
     if CALIBRATE:
         maxs = tl.max(maxs, 0)
         maxs = tl.sqrt(tl.max(maxs,0))
-        maxs = tl.where(maxs<4, 1.0, maxs)
+        maxs = tl.maximum(maxs, 1.0)
         maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
         tl.store(max_ptr+tl.arange(0, N), maxs)
 

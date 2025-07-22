@@ -31,11 +31,11 @@ w_q = w.to(torch.float8_e4m3fn)
 mode = 'batch_transpose'
 if mode == 'block':
     ref_output = x_q.t().contiguous()
-    opt_output = triton_block_transpose(x_q)
-    # opt_output = triton_block_pad_transpose(x_q, pad=True)
+    opt_output = triton_transpose(x_q)
+    # opt_output = triton_transpose_and_pad(x_q, pad=True)
     output_check(ref_output.float(),opt_output[:,:M].float(),'transpose')
     
-    benchmark_func(triton_block_transpose, x_q, n_repeat=n_repeat, ref_bytes=M*K*2)
+    benchmark_func(triton_transpose, x_q, n_repeat=n_repeat, ref_bytes=M*K*2)
 
 if mode == 'batch_transpose':
     xs = [torch.randn((M,K), dtype=dtype,device=device).to(torch.float8_e4m3fn) for _ in range(8)]
@@ -44,7 +44,7 @@ if mode == 'batch_transpose':
     def triton_split_transpose(xs):
         outputs = []
         for x in xs:
-            output = triton_block_transpose(x)
+            output = triton_transpose(x)
             outputs.append(output)
         return outputs 
 
@@ -57,14 +57,14 @@ if mode == 'batch_pad_transpose':
     count_list = [random.randint(1500,2600) for x in range(32)]
     counts = torch.tensor(count_list, device=device)
     xs = torch.randn((sum(count_list),K), dtype=dtype,device=device).to(torch.float8_e4m3fn)
-    x_t = triton_batch_pad_transpose(xs, count_list, x_t=None, pad=True)
+    x_t = triton_batch_transpose_and_pad(xs, count_list, x_t=None, pad=True)
 
     def triton_split_transpose(xs, count_list):
         s = 0
         outputs = []
         for i, c in enumerate(count_list):
             x = xs[s:s+c]
-            output = triton_block_pad_transpose(x, pad=True)
+            output = triton_transpose_and_pad(x, pad=True)
             outputs.append(output)
             s += c
         return outputs 
@@ -76,4 +76,4 @@ if mode == 'batch_pad_transpose':
 
     n_repeat = 100
     ref_time = benchmark_func(triton_split_transpose, xs, count_list, n_repeat=n_repeat)
-    benchmark_func(triton_batch_pad_transpose, xs, count_list, x_t=None, pad=True, n_repeat=n_repeat, ref_time=ref_time)
+    benchmark_func(triton_batch_transpose_and_pad, xs, count_list, x_t=None, pad=True, n_repeat=n_repeat, ref_time=ref_time)

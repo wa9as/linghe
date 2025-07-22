@@ -340,6 +340,7 @@ def fp16_f_and_b(x,w,y):
 
 
 def output_check(org_out, opt_out, mode=''):
+    assert org_out.shape == opt_out.shape
     abs_error = (opt_out.float() - org_out.float()).abs().mean().item()
     rel_error = abs_error/org_out.float().abs().mean().item()
     print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \

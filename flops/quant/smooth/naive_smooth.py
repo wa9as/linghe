@@ -5,7 +5,7 @@ import triton
 import triton.language as tl
 from triton import Config
 from flops.quant.channel.channel import row_quant_kernel
-from flops.utils.transpose import triton_transpose,triton_block_transpose,triton_block_pad_transpose
+from flops.utils.transpose import triton_transpose,triton_transpose,triton_transpose_and_pad
 from flops.utils.util import round_up
 
 

@@ -329,7 +329,7 @@ x_q: [bs*topk, dim]
 x_scale: [bs*topk]
 """
 def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
-    assert round_scale
+    
     # row-wise read, row-wise write
     M, N = grad_data.shape
     n_expert, n = smooth_scales.shape
@@ -425,7 +425,6 @@ def triton_smooth_permute_with_mask_map(
     reverse=True,
     round_scale=False
     ):
-    assert round_scale
     assert row_id_map.shape[1] == num_experts
     output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype, device="cuda")
 
