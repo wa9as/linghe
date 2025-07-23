@@ -115,9 +115,9 @@ def weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, 
     row_offs = pid*T*W*n+tl.arange(0, W)[:,None]*n
     col_offs = tl.arange(0, n)[None,:]
     smooth_scale = tl.load(smooth_scale_ptr+tl.arange(0, n))
-    smooth_scale = 1.0/tl.maximum(smooth_scale, 1e-30)
+    smooth_scale = 1.0/smooth_scale
     if CALIBRATE:
-        maxs = tl.zeros((W,n), dtype=tl.float32) + 1e-30
+        maxs = tl.zeros((W,n), dtype=tl.float32)
 
     for i in range(T):
         indices = pid*T*W+i*W+tl.arange(0, W)
@@ -139,9 +139,6 @@ def weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, 
 
     if CALIBRATE:
         maxs = tl.max(maxs,0)
-        maxs = tl.sqrt(maxs)
-        maxs = tl.maximum(maxs, 1.0)
-        maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
         tl.store(max_ptr+pid*n+tl.arange(0, n), maxs)
 
 
@@ -197,7 +194,7 @@ def silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, m
     smooth_scale = tl.load(smooth_scale_ptr+tl.arange(0, n))
     smooth_scale = 1.0/smooth_scale
     if CALIBRATE:
-        maxs = tl.zeros((W,n), dtype=tl.float32) + 1e-30
+        maxs = tl.zeros((W,n), dtype=tl.float32)
 
     for i in range(T):
         indices = pid*T*W+i*W+tl.arange(0, W)
@@ -218,9 +215,6 @@ def silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr, m
 
     if CALIBRATE:
         maxs = tl.max(maxs,0)
-        maxs = tl.sqrt(tl.maximum(maxs,1))
-        maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
-        # tl.atomic_max(max_ptr+tl.arange(0, n), maxs)  # very slow
         tl.store(max_ptr+pid*n+tl.arange(0, n), maxs)
 
 
@@ -243,14 +237,11 @@ def compatible_silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, s
         x1 = tl.load(x_ptr+row_offs*2+col_offs).to(tl.float32)
         x2 = tl.load(x_ptr+n+row_offs*2+col_offs).to(tl.float32)
         x = x1/(1+tl.exp(-x1))*x2 
-        x = x.abs()
         if CALIBRATE:
-            x_maxs = tl.max(x, 0)
-            x_maxs = tl.sqrt(tl.maximum(x_maxs,1))
-            x_maxs = tl.exp2(tl.ceil(tl.log2(x_maxs)))
+            x_maxs = tl.max(x.abs(), 0)
             tl.store(max_ptr+pid*n+i*B+tl.arange(0, B), x_maxs)
         x = x/smooth_scale
-        maxs = tl.maximum(tl.max(x, 1), maxs)
+        maxs = tl.maximum(tl.max(x.abs(), 1), maxs)
         col_offs += B
 
 
@@ -340,8 +331,8 @@ def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_sca
     smooth_scale_1 = tl.load(smooth_scale_ptr+tl.arange(0, n))
     smooth_scale_2 = tl.load(smooth_scale_ptr+n+tl.arange(0, n))
     if not REVERSE:
-        smooth_scale_1 = 1/tl.maximum(smooth_scale_1,1e-30)
-        smooth_scale_2 = 1/tl.maximum(smooth_scale_2,1e-30)
+        smooth_scale_1 = 1/smooth_scale_1
+        smooth_scale_2 = 1/smooth_scale_2
 
 
     offs = pid*W*T*N+tl.arange(0, W)[:,None]*N+tl.arange(0, n)[None,:]
@@ -358,7 +349,7 @@ def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smooth_sca
         dx1 = g*x2*w*sigmoid*(1+x1*tl.exp(-x1)* sigmoid)*smooth_scale_1
         dx2 = g*x1*sigmoid*w*smooth_scale_2
 
-        scale = tl.maximum(tl.maximum(tl.max(dx1, 1), tl.max(dx2, 1)), 1e-30)/448
+        scale = tl.maximum(tl.maximum(tl.max(dx1.abs(), 1), tl.max(dx2.abs(), 1))/448, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         dx1 = (dx1/scale[:,None]).to(dx_ptr.dtype.element_ty)
@@ -414,8 +405,8 @@ def silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr, dx_ptr, dx_sc
     smooth_scale_1 = tl.load(smooth_scale_ptr+tl.arange(0, n))
     smooth_scale_2 = tl.load(smooth_scale_ptr+n+tl.arange(0, n))
     if not REVERSE:
-        smooth_scale_1 = 1/tl.maximum(smooth_scale_1,1e-30)
-        smooth_scale_2 = 1/tl.maximum(smooth_scale_2,1e-30)
+        smooth_scale_1 = 1/smooth_scale_1
+        smooth_scale_2 = 1/smooth_scale_2
 
 
     offs = pid*W*T*n*2+tl.arange(0, W)[:,None]*n*2+tl.arange(0, n)[None,:]
@@ -429,7 +420,7 @@ def silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr, dx_ptr, dx_sc
         dx1 = g*x2*sigmoid*(1+x1*tl.exp(-x1)* sigmoid)*smooth_scale_1
         dx2 = g*x1*sigmoid*smooth_scale_2
 
-        scale = tl.maximum(tl.maximum(tl.max(dx1.abs(), 1), tl.max(dx2.abs(), 1)), 1e-30)/448
+        scale = tl.maximum(tl.maximum(tl.max(dx1.abs(), 1), tl.max(dx2.abs(), 1))/448, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         dx1 = (dx1/scale[:,None]).to(dx_ptr.dtype.element_ty)
@@ -569,10 +560,10 @@ def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale
     row_offs = si*n + tid*c*W*n+tl.arange(0, W)[:,None]*n
     col_offs = tl.arange(0, n)[None,:]
     smooth_scale = tl.load(smooth_scale_ptr+n*eid+tl.arange(0, n))
-    smooth_scale = 1.0/tl.maximum(smooth_scale, 1e-30)
+    smooth_scale = 1.0/smooth_scale
 
     if CALIBRATE:
-        maxs = tl.zeros((W,n), dtype=tl.float32) + 1e-30
+        maxs = tl.zeros((W,n), dtype=tl.float32)
 
     for i in range(c):
         indices = si + tid*c*W+i*W+tl.arange(0, W)
@@ -584,10 +575,10 @@ def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale
         x = x1/(1+tl.exp(-x1))*x2  
 
         if CALIBRATE:
-            maxs = tl.maximum(x, maxs)
+            maxs = tl.maximum(x.abs(), maxs)
 
         x *= w*smooth_scale
-        scale = tl.max(x, 1)/448
+        scale = tl.maximum(tl.max(x.abs(), 1)/448, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(scale_ptr+indices, scale, mask=indices<M)
@@ -596,9 +587,7 @@ def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale
         row_offs += n*W
 
     if CALIBRATE:
-        maxs = tl.sqrt(tl.max(maxs,0))
-        maxs = tl.maximum(maxs, 1.0)
-        maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
+        maxs = tl.max(maxs,0)
         tl.store(max_ptr+eid*sm*n + tid*n+tl.arange(0, n), maxs)
 
 
@@ -609,7 +598,7 @@ def batch_max_kernel(x_ptr, out_ptr, M, N, W:tl.constexpr, H: tl.constexpr):
     eid = tl.program_id(axis=0)
     bid = tl.program_id(axis=1)
 
-    maxs = tl.zeros((W,), dtype=tl.float32) + 1e-30
+    maxs = tl.zeros((W,), dtype=tl.float32)
     c = tl.cdiv(M, H)
     offs = eid * M * N + bid * W + tl.arange(0, H)[:,None] * N + tl.arange(0,W)[None,:]
     for i in range(c):
@@ -698,8 +687,8 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smoo
     smooth_scale_1 = tl.load(smooth_scale_ptr+n*eid*2+tl.arange(0, n))
     smooth_scale_2 = tl.load(smooth_scale_ptr+n*eid*2+n+tl.arange(0, n))
     if not REVERSE:
-        smooth_scale_1 = 1/tl.maximum(smooth_scale_1,1e-30)
-        smooth_scale_2 = 1/tl.maximum(smooth_scale_2,1e-30)
+        smooth_scale_1 = 1/smooth_scale_1
+        smooth_scale_2 = 1/smooth_scale_2
 
     offs = si*N + tid*c*W*N +tl.arange(0, W)[:,None]*N+tl.arange(0, n)[None,:]
     hoffs = si*n + tid*c*W*n+tl.arange(0, W)[:,None]*n+tl.arange(0, n)[None,:]
@@ -715,7 +704,7 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr, smoo
         dx1 = g*x2*w*sigmoid*(1+x1*tl.exp(-x1)* sigmoid)*smooth_scale_1
         dx2 = g*x1*sigmoid*w*smooth_scale_2
 
-        scale = tl.maximum(tl.maximum(tl.max(dx1, 1), tl.max(dx2, 1)), 1e-30)/448
+        scale = tl.maximum(tl.maximum(tl.max(dx1.abs(), 1), tl.max(dx2.abs(), 1))/448, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         dx1 = (dx1/scale[:,None]).to(dx_ptr.dtype.element_ty)

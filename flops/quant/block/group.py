@@ -10,7 +10,7 @@ from triton import Config
 
 
 @triton.jit
-def group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, K: tl.constexpr, ROUND: tl.constexpr):
+def group_quant_kernel(x_ptr, y_ptr, s_ptr, N, BLOCK_SIZE: tl.constexpr, K: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     offs = pid * N + tl.arange(0, K*BLOCK_SIZE)
     n = tl.cdiv(N, K*BLOCK_SIZE)
@@ -18,9 +18,10 @@ def group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, K: t
     for i in range(n):
         x = tl.load(x_ptr + offs).to(tl.float32)
         x = tl.reshape(x, (K, BLOCK_SIZE), can_reorder=False)
-        s = tl.maximum(tl.max(tl.abs(x),1), 1e-30) / 448.0
+        s = tl.maximum(tl.max(tl.abs(x),1) / 448.0, 1e-30)
         if ROUND:
-            s = tl.exp2(tl.floor(tl.log2(s) + 0.5))
+            # s = tl.exp2(tl.floor(tl.log2(s) + 0.5))
+            s = tl.exp2(tl.ceil(tl.log2(s)))
         y = x / s[:,None]
         y = y.to(y_ptr.dtype.element_ty)
         y = tl.reshape(y, (K*BLOCK_SIZE,), can_reorder=False)
@@ -31,9 +32,7 @@ def group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, K: t
 
 
 
-def triton_group_quant(
-    x: torch.Tensor, dtype=torch.float8_e4m3fn, group_size: int = 128, round_scale = False
-) -> Tuple[torch.Tensor, torch.Tensor]:
+def triton_group_quant(x, dtype=torch.float8_e4m3fn, group_size = 128, round_scale = False):
      
     M, N= x.shape
     K = 16
@@ -46,7 +45,6 @@ def triton_group_quant(
     group_quant_kernel[grid](x, 
                              y, 
                              s, 
-                             M, 
                              N, 
                              group_size, 
                              K, 
@@ -58,7 +56,7 @@ def triton_group_quant(
 
 
 @triton.jit
-def persist_group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, B:tl.constexpr,  K: tl.constexpr, ROUND: tl.constexpr):
+def persist_group_quant_kernel(x_ptr, y_ptr, s_ptr, N, BLOCK_SIZE: tl.constexpr, B:tl.constexpr,  K: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     offs = pid * B * N + tl.arange(0, B)[:,None] * N + tl.arange(0, K*BLOCK_SIZE)[None,:]
     n = tl.cdiv(N, K*BLOCK_SIZE)
@@ -68,9 +66,9 @@ def persist_group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constex
         x = tl.load(x_ptr + offs).to(tl.float32)
         x = tl.reshape(x, (B, K, BLOCK_SIZE))
 
-        s = tl.maximum(tl.max(tl.abs(x),2), 1e-30) / 448.0
+        s = tl.maximum(tl.max(tl.abs(x),2) / 448.0, 1e-30)
         if ROUND:
-            s = tl.exp2(tl.floor(tl.log2(s)))
+            s = tl.exp2(tl.ceil(tl.log2(s)))
         y = x / s[:,:,None]
         y = y.to(y_ptr.dtype.element_ty)
         y = tl.reshape(y, (B, K*BLOCK_SIZE))
@@ -80,9 +78,7 @@ def persist_group_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constex
         soffs += K
 
 
-def triton_persist_group_quant(
-    x: torch.Tensor, dtype=torch.float8_e4m3fn, group_size: int = 128, round_scale = False
-) -> Tuple[torch.Tensor, torch.Tensor]:
+def triton_persist_group_quant(x, dtype=torch.float8_e4m3fn, group_size = 128, round_scale = False):
     M, N= x.shape
     device = x.device
     K = 8
@@ -97,7 +93,6 @@ def triton_persist_group_quant(
     persist_group_quant_kernel[grid](x, 
                                      y, 
                                      s, 
-                                     M, 
                                      N, 
                                      group_size, 
                                      B, 

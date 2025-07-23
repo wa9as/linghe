@@ -150,13 +150,11 @@ def index_select_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, ac
         index = tl.load(index_ptr+si+i)
         x = tl.load(x_ptr+ index*N+tl.arange(0, N)).to(tl.float32)
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
-
+        x_max = tl.max(tl.abs(x))
+        scale = tl.maximum(x_max/448.0, 1e-30)
         if ROUND:
-            scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-        else:
-            scale = x_max/448.0
-
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+            
         tl.store(qs_ptr+si+i, scale)
 
         s = 1.0/scale
@@ -222,13 +220,11 @@ def index_select_smooth_quant_and_sum_kernel(grads_ptr, tokens_ptr, q_ptr, ss_pt
         tl.store(sum_ptr+si+i, sums)
 
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
-
+        x_max = tl.max(tl.abs(x))
+        scale = tl.maximum(x_max/448.0, 1e-30)
         if ROUND:
-            scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-        else:
-            scale = x_max/448.0
-
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+            
         tl.store(qs_ptr+si+i, scale)
 
         s = 1.0/scale
@@ -305,10 +301,9 @@ def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_
             x *= gs
 
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-33)
+        x_max = tl.max(tl.abs(x))
 
-
-        scale = x_max/448.0
+        scale = tl.maximum(x_max/448.0, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
 
@@ -393,9 +388,9 @@ def smooth_permute_with_mask_map_kernel(grads_data_ptr, quant_data_ptr, mask_map
                 x *= gs
 
             x *= smooth_scale
-            x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
+            x_max = tl.max(tl.abs(x))
 
-            scale = x_max/448.0
+            scale = tl.maximum(x_max/448.0, 1e-30)
             if ROUND:
                 scale = tl.exp2(tl.ceil(tl.log2(scale)))
 
@@ -453,4 +448,5 @@ def triton_smooth_permute_with_mask_map(
         group
     )
     return output, permuted_scale
+
 

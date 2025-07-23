@@ -119,26 +119,28 @@ def triton_rms_norm_backward(grad_output, x, w, eps=1e-6):
 
 
 @triton.jit
-def rms_norm_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, rms_ptr, eps, M, T, N: tl.constexpr, W: tl.constexpr, CALIBRATE: tl.constexpr, OUTPUT: tl.constexpr):
+def rms_norm_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_ptr, scale_ptr, max_ptr, rms_ptr, eps, M, T, N: tl.constexpr, W: tl.constexpr, CALIBRATE: tl.constexpr, OUTPUT: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
     weight = tl.load(weight_ptr+tl.arange(0, N))[None,:]
     smooth_scale = tl.load(smooth_scale_ptr+tl.arange(0, N))[None,:]
-    smooth_scale = 1.0/tl.maximum(smooth_scale, 1e-37)
+    smooth_scale = 1.0/smooth_scale
     if CALIBRATE:
-        maxs = tl.zeros((W,N), dtype=tl.float32) + 1e-37
+        maxs = tl.zeros((W,N), dtype=tl.float32)
     offs = pid*W*T*N+tl.arange(0, W)[:,None]*N+tl.arange(0, N)[None,:]
     for i in range(T):
         indices = pid*W*T+i*W+tl.arange(0, W)
         x = tl.load(x_ptr+offs, mask=indices[:,None]<M).to(tl.float32)
         if CALIBRATE:
-            maxs = tl.maximum(maxs, x)
+            maxs = tl.maximum(maxs, x.abs())
         rms = tl.sqrt(tl.sum(x*x, axis=1)/N+eps)
         rms = 1/rms
         if OUTPUT:
             tl.store(rms_ptr+indices, rms, mask=indices<M)
         x = (x*rms[:,None])*(weight*smooth_scale)
-        scale = tl.maximum(tl.max(tl.abs(x),1)/448.0, 1e-37)
+        scale = tl.maximum(tl.max(tl.abs(x),1)/448.0, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
         x = (x/scale[:,None]).to(out_ptr.dtype.element_ty)
         tl.store(scale_ptr+indices, scale, mask=indices<M)
         tl.store(out_ptr+offs, x, mask=indices[:,None]<M)
@@ -146,14 +148,11 @@ def rms_norm_and_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr, out_p
     
     if CALIBRATE:
         maxs = tl.max(maxs, 0)
-        maxs = tl.sqrt(tl.max(maxs,0))
-        maxs = tl.maximum(maxs, 1.0)
-        maxs = tl.exp2(tl.ceil(tl.log2(maxs)))
         tl.store(max_ptr+tl.arange(0, N), maxs)
 
 
 # rms is used for moe routing, it is stored as 1/rms
-def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=None, scale=None, calibrate=False, output_rms=False):
+def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=None, scale=None, calibrate=False, output_rms=False, round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
@@ -171,7 +170,7 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
     else:
         rms = None
     
-    sm = torch.cuda.get_device_properties(x.device).multi_processor_count #TODO:liangchen figure out effect with deepep
+    sm = torch.cuda.get_device_properties(x.device).multi_processor_count  #TODO:liangchen figure out effect with deepep
     
     W = 8192//N 
     sm = torch.cuda.get_device_properties(device).multi_processor_count
@@ -192,18 +191,8 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6, out=Non
         W,
         calibrate,
         output_rms,
+        round_scale,
         num_stages=3,
         num_warps=16
     )
     return out,scale,maxs,rms
-
-# M, N, K = 8192, 8192, 2048
-# dtype = torch.bfloat16
-# device = 'cuda:0'
-
-# x = torch.randn(M, K, dtype=dtype, requires_grad=True, device=device)
-# weight = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
-# scale = torch.randn(K, dtype=dtype,requires_grad=True,  device=device)
-# dy = torch.randn(M, K, dtype=dtype, device=device)
-
-# triton_rms_norm_and_quant_forward(x, weight, scale)

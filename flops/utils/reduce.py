@@ -23,9 +23,10 @@ def update_weight_smooth_scale_kernel(x_ptr, smooth_scale_ptr, M, N, H: tl.const
         x_max = tl.maximum(x_max, tl.max(tl.abs(x), axis=0))
         offs += H*N
     
-    scale = 1.0/tl.sqrt(tl.maximum(x_max,1.0))
-    if ROUND:
-        scale = tl.exp2(tl.ceil(tl.log2(scale)))
+    scale = x_max
+    # scale = 1.0/tl.sqrt(tl.maximum(x_max,1.0))
+    # if ROUND:
+    #     scale = tl.exp2(tl.ceil(tl.log2(scale)))
     
     tl.store(smooth_scale_ptr + pid * W + tl.arange(0, W), scale)
 

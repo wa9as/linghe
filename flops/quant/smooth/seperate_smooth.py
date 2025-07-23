@@ -63,7 +63,7 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
     return y_q,yt_q,y_scale,yt_scale
 
 
-def triton_smooth_quant_partial_w(w, smooth_scale, w_q, quant_scale, offset=0, round_scale=False):
+def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0, round_scale=False):
      
     M,N = w_q.shape 
     assert w.size(1) == smooth_scale.size(0)

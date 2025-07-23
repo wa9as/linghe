@@ -15,7 +15,7 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: 
     # row-wise read, row-wise write
     offs = pid*W*N + tl.arange(0, W)[:,None]*N + tl.arange(0, H)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-30
+    x_max = tl.zeros((W,),dtype=tl.float32)
     n = tl.cdiv(N, H)
     for i in range(n):
         if EVEN:
@@ -34,10 +34,10 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, H: 
         offs += H 
         soffs += H
 
+    scale = tl.maximum(x_max/448, 1e-30)
     if ROUND:
-        scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-    else:
-        scale = x_max/448.0
+        scale = tl.exp2(tl.ceil(tl.log2(scale)))
+
 
     tl.store(qs_ptr+pid*W+tl.arange(0, W), scale, mask=pid*W+tl.arange(0, W)<M)
         
@@ -210,24 +210,21 @@ def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, xm_ptr, count_ptr, a
         smooth_scale = 1.0/smooth_scale
 
     if CALIBRATE:
-        x_maxs = tl.zeros((N,),dtype=tl.float32) + 1e-30
+        x_maxs = tl.zeros((N,),dtype=tl.float32)
 
     count = tl.load(count_ptr+i_expert)
     ei = tl.load(accum_ptr+i_expert)
     si = ei - count
 
-    n = (count-1)//T+1  # samples for each task
+    n = tl.cdiv(count, T)  # samples for each task
     for i in range(i_batch*n, min((i_batch+1)*n, count)):
         x = tl.load(x_ptr + si*N + i*N + tl.arange(0, N)).to(tl.float32)
         if CALIBRATE:
-            x_maxs = tl.maximum(x_maxs, x)
+            x_maxs = tl.maximum(x_maxs, x.abs())
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
-
+        scale = tl.maximum(tl.max(tl.abs(x))/448.0, 1e-30)
         if ROUND:
-            scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-        else:
-            scale = x_max/448.0
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
 
         tl.store(qs_ptr+si+i, scale)
 
@@ -237,9 +234,6 @@ def batch_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, xm_ptr, count_ptr, a
         tl.store(q_ptr+si*N+i*N+tl.arange(0, N), xq)
 
     if CALIBRATE:
-        x_maxs = tl.sqrt(x_maxs)
-        x_maxs = tl.maximum(x_maxs, 1.0)
-        x_maxs = tl.exp2(tl.ceil(tl.log2(x_maxs)))
         tl.store(xm_ptr+pid*N+tl.arange(0, N), x_maxs)
 
 
@@ -290,81 +284,13 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
 
 
 
-# @triton.jit
-# def batch_calibrate_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, T, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
-#     pid = tl.program_id(axis=0)
-
-#     i_expert = pid//T 
-#     i_batch = pid%T
-
-#     # row-wise read, row-wise write
-#     smooth_scale = tl.load(ss_ptr+i_expert*N+tl.arange(0, N))
-#     if not REVERSE:
-#         smooth_scale = 1.0/smooth_scale
-
-#     count = tl.load(count_ptr+i_expert)
-#     ei = tl.load(accum_ptr+i_expert)
-#     si = ei - count
-
-#     n = (count-1)//T+1  # samples for each task
-#     for i in range(i_batch*n, min((i_batch+1)*n, count)):
-#         x = tl.load(x_ptr + si*N + i*N + tl.arange(0, N)).to(tl.float32)
-#         x *= smooth_scale
-#         x_max = tl.maximum(tl.max(tl.abs(x)), 1e-30)
-
-#         if ROUND:
-#             scale = tl.exp2(tl.ceil(tl.log2(x_max/448.0)))
-#         else:
-#             scale = x_max/448.0
-
-#         tl.store(qs_ptr+si+i, scale)
-
-#         s = 1.0/scale
-#         x *= s
-#         xq = x.to(q_ptr.dtype.element_ty)
-#         tl.store(q_ptr+si*N+i*N+tl.arange(0, N), xq)
-
-# """
-# select and smooth and quant
-# x: [bs, dim]
-# smooth_scales: [n_experts, dim]
-# token_count_per_expert: [n_experts]
-# x_q: [bs, dim]
-# x_scale: [bs]
-# """
-# def triton_batch_calibrate(x, token_count_per_expert, x_m=None):
-#     # row-wise read, row-wise write
-#     M, N = x.shape
-#     device = x.device 
-#     n_expert = token_count_per_expert.shape[0]
-#     assert 128 % n_expert == 0
-#     if x_m is None:
-#         x_m = torch.empty((n_expert, N), device=device, dtype=torch.float32)
-#     accum_token_count = torch.cumsum(token_count_per_expert, 0)
-#     T = 128//n_expert
-#     assert N % T == 0
-#     W = N//T
-
-#     grid = (128, )
-#     batch_calibrate_kernel[grid](
-#         x,
-#         x_m,
-#         token_count_per_expert,
-#         accum_token_count,
-#         T, W,
-#         num_stages=3,
-#         num_warps=8
-#     )
-#     return x_m
-
-
 @triton.jit
 def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,),dtype=tl.float32) + 1e-30
+    x_max = tl.zeros((W,),dtype=tl.float32)
     m = tl.cdiv(M, H)
     for i in range(m):
         if EVEN:
@@ -382,7 +308,7 @@ def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N,
         offs += H*N 
         soffs += H
 
-    scale = x_max/448.0
+    scale = tl.maximum(x_max/448.0, 1e-30)
     if ROUND:
         scale = tl.exp2(tl.ceil(tl.log2(scale)))
 
