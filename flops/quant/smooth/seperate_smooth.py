@@ -3,7 +3,7 @@ import torch
 import triton
 import triton.language as tl
 from triton import Config
-from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_pad_smooth_quant
+from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_smooth_quant
 from flops.utils.transpose import triton_transpose_and_pad
 
 
@@ -56,7 +56,7 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
     y_q,y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True, round_scale=round_scale)
     if transpose:
         # assert pad or y.size(0) == transpose_smooth_scale.size(0)
-        yt_q, yt_scale = triton_reused_transpose_pad_smooth_quant(y, transpose_smooth_scale, reverse=reverse, pad=pad, round_scale=round_scale)
+        yt_q, yt_scale = triton_reused_transpose_smooth_quant(y, transpose_smooth_scale, reverse=reverse, pad=pad, round_scale=round_scale)
     else:
         yt_q, yt_scale = None, None
 

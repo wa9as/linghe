@@ -37,7 +37,7 @@ def triton_dot(x, y):
 
     grid = (triton.cdiv(M,W), )
     dot_kernel[grid](
-        x, y,
+        x, y, s,
         M, N,
         H, W,
         num_stages=num_stages,

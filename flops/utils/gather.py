@@ -137,7 +137,7 @@ def triton_permute_with_mask_map(
 
 
 @triton.jit
-def index_select_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, M, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def smooth_permute_with_indices_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, M, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
     smooth_scale = tl.load(ss_ptr+pid*N+tl.arange(0, N))
@@ -170,7 +170,7 @@ indices: [n_experts*topk]
 x_q: [bs*topk, dim]
 x_scale: [bs*topk]
 """
-def triton_index_select_smooth_quant(x, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
+def triton_smooth_permute_with_indices(x, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n_expert = smooth_scales.shape[0]
@@ -183,7 +183,7 @@ def triton_index_select_smooth_quant(x, smooth_scales, token_count_per_expert, i
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     # TODO: adapt for n_expert <= 64
     grid = (n_expert, )
-    index_select_smooth_quant_kernel[grid](
+    smooth_permute_with_indices_kernel[grid](
         x,
         x_q,
         smooth_scales,
@@ -203,7 +203,7 @@ def triton_index_select_smooth_quant(x, smooth_scales, token_count_per_expert, i
 
 
 @triton.jit
-def index_select_smooth_quant_and_sum_kernel(grads_ptr, tokens_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, sum_ptr, M, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def smooth_weighted_unpermute_with_indices_backward_kernel(grads_ptr, tokens_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, sum_ptr, M, N: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
     smooth_scale = tl.load(ss_ptr+pid*N+tl.arange(0, N))
@@ -240,7 +240,7 @@ indices: [n_experts*topk]
 x_q: [bs*topk, dim]
 x_scale: [bs*topk]
 """
-def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, x_sum=None, reverse=False, round_scale=False):
+def triton_smooth_weighted_unpermute_with_indices_backward(grads, tokens, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, x_sum=None, reverse=False, round_scale=False):
     # row-wise read, row-wise write
     M, N = grads.shape
     n_expert, n = smooth_scales.shape
@@ -255,7 +255,7 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
         x_sum = torch.empty((E,), device=device, dtype=grads.dtype)
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     grid = (n_expert, )
-    index_select_smooth_quant_and_sum_kernel[grid](
+    smooth_weighted_unpermute_with_indices_backward_kernel[grid](
         grads,
         tokens,
         x_q,
@@ -276,7 +276,7 @@ def triton_index_select_smooth_quant_and_sum(grads, tokens, smooth_scales, token
 
 
 @triton.jit
-def smooth_unpermute_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, hs: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr, GROUP: tl.constexpr):
+def smooth_unpermute_with_indices_backward_kernel(grads_data_ptr, grads_scale_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr, accum_ptr, index_ptr, N: tl.constexpr, hs: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr, GROUP: tl.constexpr):
     eid = tl.program_id(axis=0)
     wid = tl.program_id(axis=1)
     T = tl.num_programs(axis=1)
@@ -323,7 +323,7 @@ indices: [n_experts*topk]
 x_q: [bs*topk, dim]
 x_scale: [bs*topk]
 """
-def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
+def triton_smooth_unpermute_with_indices_backward(grad_data, grad_scale, smooth_scales, token_count_per_expert, indices, x_q=None, x_scale=None, reverse=False, round_scale=False):
     
     # row-wise read, row-wise write
     M, N = grad_data.shape
@@ -343,7 +343,7 @@ def triton_smooth_unpermute_backward(grad_data, grad_scale, smooth_scales, token
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     W = 128//n_expert
     grid = (n_expert, W)
-    smooth_unpermute_backward_kernel[grid](
+    smooth_unpermute_with_indices_backward_kernel[grid](
         grad_data,
         grad_scale,
         x_q,

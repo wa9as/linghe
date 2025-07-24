@@ -1,6 +1,7 @@
 from flops.utils.norm import *
 
-class RMSNormtriton(torch.autograd.Function):
+
+class RMSNormFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, eps=1e-6):
         M, N = x.shape
@@ -62,4 +63,4 @@ class RMSNormtriton(torch.autograd.Function):
             num_warps=16
         )
 
-        return dx, tmp_dw.sum(dim=0).to(x.dtype)
+        return dx, tmp_dw.sum(dim=0).to(x.dtype), None

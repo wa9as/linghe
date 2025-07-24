@@ -157,65 +157,64 @@ def triton_scatter_add_with_count(x, outputs, indices, counts):
 
 
 
-# @triton.jit
-# def unpermute_with_mask_map_kernel(grads_ptr, probs_ptr, mask_map_ptr, output_ptr, output_probs_ptr, num_experts: tl.constexpr, N: tl.constexpr, PROB: tl.constexpr):
-#     pid = tl.program_id(axis=0)
-#     M = tl.num_programs(axis=0)
+@triton.jit
+def depracated_unpermute_with_mask_map_kernel(grads_ptr, probs_ptr, mask_map_ptr, output_ptr, output_probs_ptr, num_experts: tl.constexpr, N: tl.constexpr, PROB: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    M = tl.num_programs(axis=0)
 
-#     sums = tl.zeros((N,), dtype=tl.float32)
+    sums = tl.zeros((N,), dtype=tl.float32)
 
-#     for i in range(num_experts):
+    for i in range(num_experts):
 
-#         index = tl.load(mask_map_ptr+i*M+pid)
-#         mask = index >= 0
-#         sums  += tl.load(grads_ptr + index*N+tl.arange(0, N), mask=mask).to(tl.float32)
+        index = tl.load(mask_map_ptr+i*M+pid)
+        mask = index >= 0
+        sums  += tl.load(grads_ptr + index*N+tl.arange(0, N), mask=mask).to(tl.float32)
 
-#         if PROB:
-#             prob = tl.load(probs_ptr+index, mask=mask)
-#             tl.store(output_probs_ptr+pid*num_experts+i, prob, mask=mask)
+        if PROB:
+            prob = tl.load(probs_ptr+index, mask=mask)
+            tl.store(output_probs_ptr+pid*num_experts+i, prob, mask=mask)
 
-#     tl.store(output_ptr+pid*N+tl.arange(0, N), sums)
+    tl.store(output_ptr+pid*N+tl.arange(0, N), sums)
 
 
 
-# # """
-# # gather and smooth quant
-# # inp: [num_tokens, hidden_size], rowwise_data
-# # row_id_map: [n_experts, num_tokens], indices
-# # scale: [num_tokens], rowwise_scale_inv
-# # smooth_scale_ptrs: [n_experts], data_ptr
-# # """
+# """
+# gather and smooth quant
+# inp: [num_tokens, hidden_size], rowwise_data
+# row_id_map: [n_experts, num_tokens], indices
+# scale: [num_tokens], rowwise_scale_inv
+# smooth_scale_ptrs: [n_experts], data_ptr
+# """
+def triton_depracated_unpermute_with_mask_map(
+    grad: torch.Tensor,
+    row_id_map: torch.Tensor,
+    probs: torch.Tensor,
+    ):
+    hidden_size = grad.shape[1]
+    num_experts, num_tokens = row_id_map.shape
 
-# def triton_unpermute_with_mask_map(
-#     grad: torch.Tensor,
-#     row_id_map: torch.Tensor,
-#     probs: torch.Tensor,
-#     ):
-#     hidden_size = grad.shape[1]
-#     num_experts, num_tokens = row_id_map.shape
+    output = torch.empty((num_tokens, hidden_size), dtype=grad.dtype, device="cuda")
 
-#     output = torch.empty((num_tokens, hidden_size), dtype=grad.dtype, device="cuda")
+    PROB = probs is not None
+    if PROB:
+        restore_probs = torch.zeros((num_tokens, num_experts), dtype=probs.dtype, device="cuda")
+    else:
+        restore_probs = None
 
-#     PROB = probs is not None
-#     if PROB:
-#         restore_probs = torch.zeros((num_tokens, num_experts), dtype=probs.dtype, device="cuda")
-#     else:
-#         restore_probs = None
-
-#     grid = (num_tokens, )
-#     unpermute_with_mask_map_kernel[grid](
-#         grad,
-#         probs,
-#         row_id_map,
-#         output,
-#         restore_probs,
-#         num_experts,
-#         hidden_size,
-#         PROB,
-#         num_stages=4,
-#         num_warps=8
-#     )
-#     return output, restore_probs
+    grid = (num_tokens, )
+    depracated_unpermute_with_mask_map_kernel[grid](
+        grad,
+        probs,
+        row_id_map,
+        output,
+        restore_probs,
+        num_experts,
+        hidden_size,
+        PROB,
+        num_stages=4,
+        num_warps=8
+    )
+    return output, restore_probs
 
 
 

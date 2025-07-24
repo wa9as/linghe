@@ -12,8 +12,8 @@ from flops.gemm.fp32_gemm import *
 
 
 
-if True:
-    M, N, K = 2048, 8192, 8192-16
+def test_scaled_mm(M=2048,N=8192,K=8192):
+    # M, N, K = 2048, 8192, 8192-16
     dtype = torch.bfloat16
     device = 'cuda:0'
     n_repeat = 100
@@ -35,8 +35,8 @@ if True:
 
 
 
-if False:
-    M, N, K = 4096, 256, 8192
+def test_fp32_matmul(M=2048,N=256,K=8192):
+    # M, N, K = 4096, 256, 8192
     dtype = torch.bfloat16
     device = 'cuda:0'
     n_repeat = 100
@@ -91,3 +91,8 @@ if False:
     benchmark_func(triton_fp32_gemm_for_update, dy, x, n_repeat=n_repeat, ref_bytes=M*K*2+N*K*8+M*N*4, ref_flops=2*M*N*K, ref_time=ref_time)
     benchmark_func(triton_scaled_fp32_gemm_for_update, dy, x, scale, n_repeat=n_repeat, ref_bytes=M*K*2+N*K*8+M*N*4, ref_flops=2*M*N*K, ref_time=ref_time)
 
+
+
+if __name__ == '__main__':
+    test_scaled_mm(M=2048,N=8192,K=8192)
+    test_fp32_matmul(M=2048,N=256,K=8192)

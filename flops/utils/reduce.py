@@ -8,7 +8,7 @@ from triton import Config
 
 
 @triton.jit
-def update_weight_smooth_scale_kernel(x_ptr, smooth_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, ROUND: tl.constexpr):
+def abs_max_kernel(x_ptr, smooth_scale_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, col-wise write
     x_max = tl.zeros((W,),dtype=tl.float32)
@@ -31,28 +31,27 @@ def update_weight_smooth_scale_kernel(x_ptr, smooth_scale_ptr, M, N, H: tl.const
     tl.store(smooth_scale_ptr + pid * W + tl.arange(0, W), scale)
 
 # update weight smooth scale for next step with x input 
-def triton_update_weight_smooth_scale(x, round_scale=False):
+def triton_abs_max(x):
     
     N = x.size(-1)
     M = x.numel()//N
     device = x.device 
-    weight_smooth_scale = torch.empty((N,), device=device, dtype=torch.float32)
+    maxs = torch.empty((N,), device=device, dtype=torch.float32)
     H = 512
     W = 16
     assert N%W == 0
     EVEN = M%H == 0
     grid = (triton.cdiv(N, W), )
-    update_weight_smooth_scale_kernel[grid](
+    abs_max_kernel[grid](
         x,
-        weight_smooth_scale,
+        maxs,
         M, N,
         H, W, 
         EVEN,
-        round_scale,
         num_stages=2,
         num_warps=4
     )
-    return weight_smooth_scale
+    return maxs
 
 
 

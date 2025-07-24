@@ -7,56 +7,125 @@ def round_up(x, b=16):
     return ((x-1)//b+1)*b
 
 
-def torch_tensor_quant(x, dtype=torch.float8_e4m3fn):
+def torch_tensor_quant(x, dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
-    x_scale = torch.max(torch.abs(x))/fmax + 1e-30
-    x_q = (x/x_scale).to(dtype)
-    return x_q,x_scale
+    scale = torch.max(torch.abs(x))/fmax + 1e-30
+    if round_scale:
+        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    x_q = (x/scale).to(dtype)
+    return x_q,scale
 
 
-def torch_row_quant(x,dtype=torch.float8_e4m3fn):
+def torch_row_quant(x,dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
-    x_scale = (torch.max(torch.abs(x),dim=1)[0]+1e-30)/fmax
-    x_q = (x/x_scale[:,None]).to(dtype)
-    return x_q,x_scale
+    scale = (torch.max(torch.abs(x),dim=1)[0]+1e-30)/fmax
+    if round_scale:
+        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    x_q = (x/scale[:,None]).to(dtype)
+    return x_q,scale
 
 
-def torch_column_quant(x, dtype=torch.float8_e4m3fn):
+def torch_column_quant(x, dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
-    x_scale = (torch.max(torch.abs(x),dim=0)[0]+1e-30)/fmax
-    x_q = (x/x_scale).to(dtype)
-    return x_q,x_scale
+    scale = (torch.max(torch.abs(x),dim=0)[0]+1e-30)/fmax
+    if round_scale:
+        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    x_q = (x/scale).to(dtype)
+    return x_q,scale
 
 
 
-def torch_group_quant(x,B,dtype=torch.float8_e4m3fn):
+def torch_group_quant(x,B,dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     M, K = x.shape 
 
     xp = torch.reshape(x.contiguous(),(M,K//B,B))
-    x_scale = torch.amax(torch.abs(xp).float(),dim=2)/fmax
-    xq = (xp/x_scale[:,:,None]).to(dtype)
+    scale = torch.amax(torch.abs(xp).float(),dim=2)/fmax
+    if round_scale:
+        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    xq = (xp/scale[:,:,None]).to(dtype)
     xq = torch.reshape(xq,(M,K)).contiguous()
 
-    return xq,x_scale
+    return xq,scale
 
 
-def torch_block_quant(w,B,dtype=torch.float8_e4m3fn):
+def torch_block_quant(w,B,dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
     w = w.clone()
     N, K = w.shape
 
     wp = torch.reshape(w.t().contiguous(),(K//B,B,N//B,B)).permute(0,2,1,3)
-    w_scale = torch.amax(torch.amax(torch.abs(wp).float(),dim=2),dim=2)/fmax
-    wq = (wp/w_scale[:,:,None,None]).to(dtype)
+    scale = torch.amax(torch.amax(torch.abs(wp).float(),dim=2),dim=2)/fmax
+    if round_scale:
+        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    wq = (wp/scale[:,:,None,None]).to(dtype)
     wq = wq.permute(0,2,1,3)
     wq = torch.reshape(wq,(K,N)).t().contiguous()
 
-    return wq,w_scale
+    return wq,scale
+
+
+def torch_smooth_quant(x, smooth_scale, reverse=False, round_scale=False):
+    x = x.float()
+    if reverse:
+        x_smooth = x*smooth_scale
+    else:
+        x_smooth = x/smooth_scale 
+    x_max = x_smooth.abs().amax(1)
+    scale = x_max/448
+    if round_scale:
+        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+    x_q = (x_smooth/scale[:,None]).to(torch.float8_e4m3fn)
+    return x_q, scale
+
+def torch_batch_smooth_quant(xs, smooth_scales, indices, token_count_per_expert, reverse=False, round_scale=False):
+    q_refs = []
+    scale_refs = []
+    s = 0
+    for i, c in enumerate(token_count_per_expert):
+        idx = indices[s:s+c]
+        y_slice = xs[idx]
+        if reverse:
+            y_smooth = y_slice*smooth_scales[i]
+        else:
+            y_smooth = y_slice/smooth_scales[i]
+        scale = y_smooth.abs().amax(1)/448
+        if round_scale:
+            scale = torch.exp2(torch.ceil(torch.log2(scale)))
+        q_refs.append((y_smooth/scale[:,None]).to(torch.float8_e4m3fn))
+        scale_refs.append(scale)
+        s += c
+    q_ref = torch.cat(q_refs,0)
+    scale_ref = torch.cat(scale_refs, 0)
+    return q_ref, scale_ref
+
+
+def torch_make_indices(logits, topk=8, bias=-0.01):
+    M, n_experts = logits.shape 
+    device = logits.device
+    logits = logits.to(torch.float64)+ 1e-10 * torch.arange(n_experts, device=device).to(torch.float32)
+    topk_values, topk_indices = torch.topk(logits, topk, dim=-1, sorted=True)
+    logits[logits<topk_values[:,-1:]+bias] = -1000000
+    probs = torch.nn.Softmax(dim=1)(logits)
+    route_map = probs>0
+    token_count_per_expert = route_map.sum(0)
+    # token_count_per_expert_list = token_count_per_expert.tolist()
+    # out_tokens = sum(token_count_per_expert_list)
+
+    token_indices = (
+        torch.arange(M, device=logits.device).unsqueeze(0).expand(n_experts, -1)
+    )
+    indices = token_indices.masked_select(route_map.T.contiguous())
+    row_id_map = torch.reshape(torch.cumsum(route_map.T.contiguous().view(-1), 0),(n_experts, M)) - 1
+    row_id_map[torch.logical_not(route_map.T)] = -1
+    row_id_map = row_id_map.T.contiguous()
+    return probs, route_map, token_count_per_expert, indices, row_id_map
+
+
 
 # quant with scaling to 448
-def torch_smooth_tensor_quant(x, w, dtype):
+def torch_duplex_smooth_tensor_quant(x, w, dtype):
     # w:[bs, in]  w:[out, in]
     x = x.clone()
     w = w.clone()
@@ -74,7 +143,7 @@ def torch_smooth_tensor_quant(x, w, dtype):
 
     return x_q, w_q, scale, rescale
 
-def torch_smooth_quant(x, w, dtype):
+def torch_duplex_smooth_quant(x, w, dtype=torch.float8_e4m3fn):
     # w:[bs, in]  w:[out, in]
     x = x.clone()
     w = w.clone()
@@ -88,8 +157,8 @@ def torch_smooth_quant(x, w, dtype):
     w_smooth = w/w_scale
     x_max = torch.max(torch.abs(x_smooth).float(), dim=1, keepdim=True)[0]
     w_max = torch.max(torch.abs(w_smooth).float(), dim=1, keepdim=True)[0]
-    x_scale = x_max/448.0
-    w_scale = w_max/448.0
+    x_scale = x_max/fmax
+    w_scale = w_max/fmax
     x_q = (x_smooth*(1.0/x_scale).to(x.dtype)).to(dtype)
     w_q = (w_smooth*(1.0/w_scale).to(x.dtype)).to(dtype)
 
@@ -339,10 +408,14 @@ def fp16_f_and_b(x,w,y):
 
 
 
-def output_check(org_out, opt_out, mode=''):
+def output_check(org_out, opt_out, mode='', rtol=0.02):
     assert org_out.shape == opt_out.shape
-    abs_error = (opt_out.float() - org_out.float()).abs().mean().item()
-    rel_error = abs_error/org_out.float().abs().mean().item()
+    org_out = org_out.float()
+    opt_out = opt_out.float()
+    abs_error = (opt_out - org_out).abs().mean().item()
+    rel_error = abs_error/org_out.abs().mean().item()
+    if rel_error > rtol:
+        torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=1000)
     print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \
             f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
             f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ')

@@ -18,7 +18,7 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr,  M, N,  BLOCK_SIZE: tl.constexpr, ROUN
         offs = pid*N + j*BLOCK_SIZE + indices
         x = tl.load(x_ptr + offs, mask=j*BLOCK_SIZE + indices<N, other=0).to(tl.float32)
         max_val = tl.maximum(tl.max(tl.abs(x)), max_val)
-    scale = tl.maxmimum(max_val/448.0, 1e-30)
+    scale = tl.maximum(max_val/448.0, 1e-30)
     if ROUND:
         scale = tl.exp2(tl.ceil(tl.log2(scale)))
     tl.store(s_ptr + pid, scale)

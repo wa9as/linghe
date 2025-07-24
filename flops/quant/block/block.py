@@ -43,7 +43,6 @@ def block_quant(x, dtype=torch.float8_e4m3fn, block_size = 128, round_scale=Fals
                              N, 
                              BLOCK_SIZE=block_size, 
                              ROUND=round_scale,
-                             round_scale,
                              num_stages=6, 
                              num_warps=8)
     return y, s

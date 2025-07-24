@@ -9,7 +9,7 @@ from triton import Config
 
 
 @triton.jit
-def block_add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, ACCUM: tl.constexpr):
+def add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, ACCUM: tl.constexpr):
     rid = tl.program_id(axis=0)
     cid = tl.program_id(axis=1)
     offs = rid*H*N + cid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:] 
@@ -31,7 +31,7 @@ def block_add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr, EVEN:
             tl.store(x_ptr+offs, y, mask=(cid*W+tl.arange(0, W)[:,None] < N) & (rid*H+tl.arange(0, H)[None,:] < M))
 
 
-def triton_block_add(x, y, accum=True):
+def triton_add(x, y, accum=True):
     shape = x.shape[-1]
     N = shape 
     M = x.numel()//N
@@ -43,7 +43,7 @@ def triton_block_add(x, y, accum=True):
     num_warps = 8
 
     grid = (triton.cdiv(M,H), triton.cdiv(N,W))
-    block_add_kernel[grid](
+    add_kernel[grid](
         x, y,
         M, N,
         H, W,

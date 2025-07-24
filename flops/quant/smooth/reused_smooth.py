@@ -285,7 +285,7 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert, x_q=None
 
 
 @triton.jit
-def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
+def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, REVERSE: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
@@ -346,7 +346,7 @@ def reused_transpose_pad_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N,
 
 
 
-def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad=False, round_scale=False):
+def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False, pad=False, round_scale=False):
     # col-wise read, row-wise write
     # M should be padded
     
@@ -360,7 +360,7 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
     EVEN = M%H == 0 and N%W == 0 
 
     grid = (triton.cdiv(N, W), )
-    reused_transpose_pad_smooth_quant_kernel[grid](
+    reused_transpose_smooth_quant_kernel[grid](
         x,
         x_q,
         smooth_scale,
@@ -380,7 +380,7 @@ def triton_reused_transpose_pad_smooth_quant(x, smooth_scale, reverse=False, pad
 
 
 @triton.jit
-def reused_transpose_pad_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_scale_ptr, org_quant_scale_ptr, transpose_smooth_scale_ptr, transpose_quant_scale_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, ROUND: tl.constexpr):
+def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr, org_smooth_scale_ptr, org_quant_scale_ptr, transpose_smooth_scale_ptr, transpose_quant_scale_ptr, M, N, P, H: tl.constexpr, W: tl.constexpr, EVEN: tl.constexpr, ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, row-wise write
     offs = pid*W + tl.arange(0, H)[:,None]*N + tl.arange(0, W)[None,:]
@@ -450,7 +450,7 @@ smooth scale and quant scale should be power of 2
 step: dequant x_q -> apply smooth scale -> quant -> transpose -> pad
 implement: x_q/org_smooth_scale*(org_quant_scale*smooth_scale) -> colwise quant and transpose
 """
-def triton_reused_transpose_pad_rescale_smooth_quant(x_q, org_smooth_scale, org_quant_scale, transpose_smooth_scale, reverse=True, pad=False, round_scale=False):
+def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale, org_quant_scale, transpose_smooth_scale, reverse=True, pad=False, round_scale=False):
     # col-wise read, row-wise write
     
     assert reverse
@@ -464,7 +464,7 @@ def triton_reused_transpose_pad_rescale_smooth_quant(x_q, org_smooth_scale, org_
     EVEN = P == M and M%H == 0 and N%W == 0 
 
     grid = (triton.cdiv(N, W), )
-    reused_transpose_pad_rescale_smooth_quant_kernel[grid](
+    reused_transpose_rescale_smooth_quant_kernel[grid](
         x_q,
         xt_q,
         org_smooth_scale,
