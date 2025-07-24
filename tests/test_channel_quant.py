@@ -1,7 +1,7 @@
 import math
 import torch 
-from flops.utils.util import *
-from flops.quant.channel.channel import *
+from flops.utils.util import *   # noqa: F403
+from flops.quant.channel.channel import *   # noqa: F403
 from flops.utils.benchmark import benchmark_func
 
 

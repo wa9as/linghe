@@ -1,10 +1,10 @@
 import torch 
-from flops.utils.util import *
+from flops.utils.util import *   # noqa: F403
 from flops.utils.benchmark import benchmark_func
-from flops.quant.hadamard.naive_hadamard import *
-from flops.quant.hadamard.seperate_hadamard import *
-from flops.quant.hadamard.fused_hadamard import *
-from flops.quant.hadamard.duplex_hadamard import *
+from flops.quant.hadamard.naive_hadamard import *   # noqa: F403
+from flops.quant.hadamard.seperate_hadamard import *   # noqa: F403
+from flops.quant.hadamard.fused_hadamard import *   # noqa: F403
+from flops.quant.hadamard.duplex_hadamard import *   # noqa: F403
 
 # 5b: hidden_size:4k  seq_length:8K shape:(M,N,K)
 # qkv: 8192, 6144, 4096

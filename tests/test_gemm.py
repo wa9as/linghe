@@ -4,11 +4,11 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.gemm.fp8_gemm import *
-from flops.gemm.channelwise_fp8_gemm import *
-from flops.utils.util import *
-from flops.utils.add import *
-from flops.gemm.fp32_gemm import *
+from flops.gemm.fp8_gemm import *   # noqa: F403
+from flops.gemm.channelwise_fp8_gemm import *   # noqa: F403
+from flops.utils.util import *   # noqa: F403
+from flops.utils.add import *   # noqa: F403
+from flops.gemm.fp32_gemm import *   # noqa: F403
 
 
 

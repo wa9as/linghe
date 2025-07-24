@@ -2,8 +2,8 @@
 import torch
 from flops.utils.util import output_check
 from flops.utils.benchmark import benchmark_func
-from flops.utils.silu import *
-from flops.quant.smooth.reused_smooth import *
+from flops.utils.silu import *   # noqa: F403
+from flops.quant.smooth.reused_smooth import *   # noqa: F403
 
 # from megatron.core.fusions.fused_bias_swiglu import weighted_swiglu, weighted_swiglu_back
 

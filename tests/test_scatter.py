@@ -5,8 +5,8 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *
-from flops.utils.scatter import *
+from flops.utils.util import *   # noqa: F403
+from flops.utils.scatter import *   # noqa: F403
 from flops.utils.benchmark import benchmark_func
 
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"

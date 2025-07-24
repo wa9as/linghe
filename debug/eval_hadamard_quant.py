@@ -1,7 +1,7 @@
 import torch
 
-from flops.quant.hadamard.naive_hadamard import *
-from flops.utils.util import *
+from flops.quant.hadamard.naive_hadamard import *   # noqa: F403
+from flops.utils.util import *   # noqa: F403
 
 qtype = torch.float8_e4m3fn
 device = 'cuda:0'
@@ -57,7 +57,7 @@ if 'torch_channel' in modes:
     quant_check(org_out, xq, wq, opt_out, 'torch_channel')
 
 if 'megatron' in modes:
-    from flops.quant.hadamard.seperate_hadamard import *
+    from flops.quant.hadamard.seperate_hadamard import *   # noqa: F403
 
     opt_out, xq, wq, x_scale, w_scale = hadamard_quant_forward_debug_megatron(x,
                                                                               w,
@@ -85,7 +85,7 @@ if 'naive' in modes:
     quant_check(y.t() @ x, yq, xq, opt_out, 'hadamard_quant_update')
 
 if 'fused' in modes:
-    from flops.quant.hadamard.fused_hadamard import *
+    from flops.quant.hadamard.fused_hadamard import *   # noqa: F403
 
     output, x_q, x_s, w_q, w_s = fused_hadamard_quant_forward_debug(x, w, hm)
     quant_check(org_out, x_q, w_q, output, 'fuse_hadamard_quant_forward')
@@ -97,7 +97,7 @@ if 'fused' in modes:
     quant_check(y.t() @ x, y_q, x_q, output, 'fuse_hadamard_quant_update')
 
 if 'duplex' in modes:
-    from flops.quant.hadamard.duplex_hadamard import *
+    from flops.quant.hadamard.duplex_hadamard import *   # noqa: F403
 
     output, x_bt, w_bt, x_q, w_q, x_scale, w_scale = duplex_hadamard_quant_forward_debug(
         x, w, hm)

@@ -2,7 +2,7 @@
 import torch
 from torch.profiler import profile, record_function, ProfilerActivity
 
-from flops.quant.block.group import *
+from flops.quant.block.group import *   # noqa: F403
 
 
 

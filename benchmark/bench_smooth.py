@@ -1,10 +1,10 @@
 
 import torch 
-from flops.quant.smooth.naive_smooth import *
-from flops.quant.smooth.reused_smooth import *
-from flops.quant.smooth.seperate_smooth import *
+from flops.quant.smooth.naive_smooth import *   # noqa: F403
+from flops.quant.smooth.reused_smooth import *   # noqa: F403
+from flops.quant.smooth.seperate_smooth import *   # noqa: F403
 
-from flops.utils.util import *
+from flops.utils.util import *   # noqa: F403
 from flops.utils.benchmark import benchmark_func
 
 
