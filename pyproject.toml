@@ -1,0 +1,44 @@
+# poetry 详细配置说明请参考: https://python-poetry.org/docs/pyproject/ https://github.com/python-poetry/poetry
+
+[tool.poetry]
+name = "tflops" # 建议由字母、数字、- 组成，不要使用 _ . 等字符，按照命名规范 https://packaging.python.org/en/latest/specifications/name-normalization/ 包名会被统一格式化, 如果包含 _ . 可能会造成困扰
+version = "0.0.1"
+description = "op for flood"
+authors = ["nanxiao.zy <nanxiao.zy@antgroup.com>, liangchen.liangche <liangchen.liangche@antgroup.com>"] # 请修改为owner信息
+include = [{ path = "tests", format = "wheel" }]
+
+# repository = "https://code.alipay.com/templates/pypi.git" # 请修改为实际仓库地址
+# homepage = "" # 请修改为实际主页
+
+# README file(s) are used as the package description
+readme = ["README.md", "LICENSE", "LEGAL.md"]
+# Keywords (translated to tags on the package index)
+keywords = ["sample"] # 请修改为实际标签
+
+[tool.mypy]
+files = "flops, tests"
+mypy_path = "flops"
+namespace_packages = true
+explicit_package_bases = true
+strict = true
+
+[[tool.poetry.source]]
+name = "antpypi"
+url = "https://pypi.antfin-inc.com/simple/"
+
+[tool.poetry.dependencies] # 依赖声明示例，请按需调整依赖. 强烈建议明确指定版本号、或限定版本上下区间
+# Compatible Python versions
+python = "^3.8" # 大于等于 3.7, 小于4
+torch = ">=2.6"
+triton = ">=3.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.1.2"
+pytest-cov = "^3.0"
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "--strict-config", "--strict-markers", "--cov=src", "--cov-report=xml:./pytest_report/TEST-cov.xml", "--junit-xml=./pytest_report/TEST-junit.xml"]
+pythonpath = "src"
+testpaths = ["tests"]
+log_cli_level = "INFO"
+xfail_strict = true

@@ -6,7 +6,7 @@ with pathlib.Path("requirements.txt").open() as f:
     install_requires = [str(requirement) for requirement in pkg_resources.parse_requirements(f)]
 
 setup(
-    name="flops",
+    name="tflops",
     version="0.0.1",
     license="MIT",
     license_files=("LICENSE",),
