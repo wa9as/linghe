@@ -7,8 +7,8 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import *
-from flops.utils.rearange import *
+from flops.utils.util import *   # noqa: F403
+from flops.utils.rearange import *   # noqa: F403
 
 
 

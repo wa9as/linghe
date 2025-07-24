@@ -13,7 +13,7 @@ jobs:
     component: python-ut
     inputs:
       languageConfig:
-        pythonVersion: "3.8.0"
+        pythonVersion: "3.9.0"
       customTestConfig:
         dockerImage: reg.docker.alibaba-inc.com/dockerhub_common/python:3.9
         testScript: |

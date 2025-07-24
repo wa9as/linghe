@@ -307,7 +307,7 @@ def triton_opt_transpose(x):
     device = x.device
     D = 0 if x.dtype.itemsize == 1 else 1
     t = torch.empty((N, M), device=device, dtype=x.dtype)
-    grid = (N // META["W"],)
+    grid = lambda META: (N // META["W"],) # noqa 
     opt_transpose_kernel[grid](
         x, t,
         M, N, D

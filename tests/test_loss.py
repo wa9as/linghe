@@ -2,7 +2,7 @@
 import torch
 
 from flops.facade.loss import SoftmaxCrossEntropyFunction
-from flops.utils.loss import *
+from flops.utils.loss import triton_softmax_cross_entropy_forward, triton_softmax_cross_entropy_backward
 from flops.utils.util import output_check
 from flops.utils.benchmark import benchmark_func
 

@@ -1,8 +1,8 @@
 import torch 
 
-from flops.utils.util import *
-from flops.quant.block.group import *
-from flops.quant.block.block import *
+from flops.utils.util import *   # noqa: F403
+from flops.quant.block.group import *   # noqa: F403
+from flops.quant.block.block import *   # noqa: F403
 from flops.utils.benchmark import benchmark_func
 
 

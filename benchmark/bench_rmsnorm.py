@@ -6,8 +6,8 @@ import time
 import os
 import random
 import numpy as np
-from flops.utils.util import *
-from flops.utils.norm import *
+from flops.utils.util import *   # noqa: F403
+from flops.utils.norm import *   # noqa: F403
 from flops.facade.rmsnorm import RMSNormtriton
 from flops.utils.benchmark import benchmark_func
 import transformer_engine as te

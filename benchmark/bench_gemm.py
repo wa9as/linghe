@@ -4,17 +4,17 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.gemm.fp8_gemm import *
-from flops.gemm.blockwise_fp8_gemm import *
-from flops.gemm.channelwise_fp8_gemm import *
-from flops.utils.util import *
-from flops.utils.transpose import *
-from flops.utils.add import *
-from flops.quant.channel.channel import *
-from flops.quant.block.block import *
-from flops.quant.block.group import *
-from flops.quant.smooth.seperate_smooth import *
-from flops.utils.rearange import *
+from flops.gemm.fp8_gemm import *   # noqa: F403
+from flops.gemm.blockwise_fp8_gemm import *   # noqa: F403
+from flops.gemm.channelwise_fp8_gemm import *   # noqa: F403
+from flops.utils.util import *   # noqa: F403
+from flops.utils.transpose import *   # noqa: F403
+from flops.utils.add import *   # noqa: F403
+from flops.quant.channel.channel import *   # noqa: F403
+from flops.quant.block.block import *   # noqa: F403
+from flops.quant.block.group import *   # noqa: F403
+from flops.quant.smooth.seperate_smooth import *   # noqa: F403
+from flops.utils.rearange import *   # noqa: F403
 
 
 
@@ -66,11 +66,11 @@ elif mode == 'channelwise':
 
     def separate_gemm(x_q,w_q,x_scales,w_scales,c=None, accum=True):
         bf16_out = torch._scaled_mm(x_q, 
-                                w_q.t(),
-                                scale_a=x_scales.view(-1,1),
-                                scale_b=w_scales.view(1,-1),
-                                out_dtype=torch.bfloat16,
-                                use_fast_accum=True,
+                                    w_q.t(),
+                                    scale_a=x_scales.view(-1,1),
+                                    scale_b=w_scales.view(1,-1),
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True,
                                 )
         triton_block_add(c, bf16_out, accum=accum)
         return c

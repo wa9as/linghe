@@ -2,7 +2,7 @@
 import torch
 
 from flops.facade.loss import SoftmaxCrossEntropyFunction
-from flops.utils.loss import *
+from flops.utils.loss import *   # noqa: F403
 from flops.utils.util import output_check
 from flops.utils.benchmark import benchmark_func
 from transformer_engine.pytorch.cross_entropy import parallel_cross_entropy

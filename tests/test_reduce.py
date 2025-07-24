@@ -6,9 +6,9 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *
+from flops.utils.util import *   # noqa: F403
 from flops.utils.benchmark import benchmark_func
-from flops.utils.reduce import *
+from flops.utils.reduce import *   # noqa: F403
 
 
 def torch_sum(xs):

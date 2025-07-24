@@ -4,29 +4,33 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.gemm.channelwise_fp8_gemm import *
+from flops.gemm.channelwise_fp8_gemm import *   # noqa: F403
 
-from flops.utils.util import *
-from flops.utils.add import *
+from flops.utils.util import *   # noqa: F403
+from flops.utils.add import *   # noqa: F403
 
 
 def triton_accum_weight(x,w,out,x_scale,w_scale):
-    output = torch._scaled_mm(x,
-                                    w,
-                                    scale_a=x_scale,
-                                    scale_b=w_scale,
-                                    out_dtype=torch.bfloat16,
-                                    use_fast_accum=True)
-    triton_add(out, output)
+    output = torch._scaled_mm(
+        x,
+        w,
+        scale_a=x_scale,
+        scale_b=w_scale,
+        out_dtype=torch.bfloat16,
+        use_fast_accum=True
+    )
+    triton_block_add(out, output)
     return out
 
 def torch_accum_weight(x,w,out,x_scale,w_scale):
-    output = torch._scaled_mm(x,
-                                    w,
-                                    scale_a=x_scale,
-                                    scale_b=w_scale,
-                                    out_dtype=torch.bfloat16,
-                                    use_fast_accum=True)
+    output = torch._scaled_mm(
+        x,
+        w,
+        scale_a=x_scale,
+        scale_b=w_scale,
+        out_dtype=torch.bfloat16,
+        use_fast_accum=True
+    )
     out.add_(output)
     return out
     

@@ -6,8 +6,8 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *
-from flops.utils.transpose import *
+from flops.utils.util import *   # noqa: F403
+from flops.utils.transpose import *   # noqa: F403
 from torch.profiler import profile, record_function, ProfilerActivity
 
 
