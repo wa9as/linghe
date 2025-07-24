@@ -66,11 +66,11 @@ elif mode == 'channelwise':
 
     def separate_gemm(x_q,w_q,x_scales,w_scales,c=None, accum=True):
         bf16_out = torch._scaled_mm(x_q, 
-                                w_q.t(),
-                                scale_a=x_scales.view(-1,1),
-                                scale_b=w_scales.view(1,-1),
-                                out_dtype=torch.bfloat16,
-                                use_fast_accum=True,
+                                    w_q.t(),
+                                    scale_a=x_scales.view(-1,1),
+                                    scale_b=w_scales.view(1,-1),
+                                    out_dtype=torch.bfloat16,
+                                    use_fast_accum=True,
                                 )
         triton_block_add(c, bf16_out, accum=accum)
         return c

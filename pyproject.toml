@@ -28,7 +28,7 @@ url = "https://pypi.antfin-inc.com/simple/"
 
 [tool.poetry.dependencies] # 依赖声明示例，请按需调整依赖. 强烈建议明确指定版本号、或限定版本上下区间
 # Compatible Python versions
-python = "^3.8" # 大于等于 3.7, 小于4
+python = "^3.9" # 大于等于 3.7, 小于4
 torch = ">=2.6"
 triton = ">=3.2"
 
