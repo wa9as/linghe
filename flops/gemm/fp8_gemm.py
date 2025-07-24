@@ -1,10 +1,6 @@
-from typing import Tuple
-import math
 import torch
 import triton
 import triton.language as tl
-from triton import Config
-
 
 
 # fp8_gemm_configs = [
@@ -24,15 +20,15 @@ from triton import Config
 # @triton.autotune(configs=fp8_gemm_configs, key=["N", "K"])
 @triton.jit
 def trival_fp8_gemm_kernel(
-    a_ptr,
-    b_ptr,
-    c_ptr,
-    M,
-    N: tl.constexpr,
-    K: tl.constexpr,
-    BLOCK_SIZE_K: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
+        a_ptr,
+        b_ptr,
+        c_ptr,
+        M,
+        N: tl.constexpr,
+        K: tl.constexpr,
+        BLOCK_SIZE_K: tl.constexpr,
+        BLOCK_SIZE_M: tl.constexpr,
+        BLOCK_SIZE_N: tl.constexpr,
 ):
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
@@ -58,39 +54,36 @@ def trival_fp8_gemm_kernel(
     tl.store(c_ptrs, c)
 
 
-
-
-
-def trival_fp8_gemm(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
+def trival_fp8_gemm(a: torch.Tensor, b: torch.Tensor, dtype: torch.types):
     assert a.is_contiguous() and b.is_contiguous()
     M, K = a.size()
     N, K = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+                         triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
-    trival_fp8_gemm_kernel[grid](a, b, c, M, N, K, 
-                                BLOCK_SIZE_K,
-                                128,
-                                128,
+    trival_fp8_gemm_kernel[grid](a, b, c, M, N, K,
+                                 BLOCK_SIZE_K,
+                                 128,
+                                 128,
                                  num_stages=3,
                                  num_warps=8
                                  )
     return c
 
 
-
 # @triton.autotune(configs=fp8_gemm_configs, key=["N", "K"])
 @triton.jit
 def fp8_gemm_nn_kernel(
-    a_ptr,
-    b_ptr,
-    c_ptr,
-    M,
-    N: tl.constexpr,
-    K: tl.constexpr,
-    BLOCK_SIZE_K: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
+        a_ptr,
+        b_ptr,
+        c_ptr,
+        M,
+        N: tl.constexpr,
+        K: tl.constexpr,
+        BLOCK_SIZE_K: tl.constexpr,
+        BLOCK_SIZE_M: tl.constexpr,
+        BLOCK_SIZE_N: tl.constexpr,
 ):
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
@@ -109,7 +102,7 @@ def fp8_gemm_nn_kernel(
         accumulator = tl.dot(a, b, accumulator)
 
         a_ptrs += BLOCK_SIZE_K
-        b_ptrs += BLOCK_SIZE_K*N
+        b_ptrs += BLOCK_SIZE_K * N
     c = accumulator.to(c_ptr.dtype.element_ty)
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
@@ -117,58 +110,91 @@ def fp8_gemm_nn_kernel(
     tl.store(c_ptrs, c)
 
 
-def fp8_gemm_nn(a: torch.Tensor,  b: torch.Tensor, dtype: torch.types):
+def fp8_gemm_nn(a: torch.Tensor, b: torch.Tensor, dtype: torch.types):
     assert a.is_contiguous() and b.is_contiguous()
     M, K = a.size()
     K, N = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+                         triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
-    fp8_gemm_nn_kernel[grid](a, b, c, M, N, K, 
-                                BLOCK_SIZE_K,
-                                128,
-                                128,
-                                 num_stages=3,
-                                 num_warps=8
-                            )
+    fp8_gemm_nn_kernel[grid](a, b, c, M, N, K,
+                             BLOCK_SIZE_K,
+                             128,
+                             128,
+                             num_stages=3,
+                             num_warps=8
+                             )
     return c
 
 
 def get_cuda_autotune_config():
     return [
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3,
-                      num_warps=8),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=5,
-                      num_warps=2),
-        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=5,
-                      num_warps=2),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64,
+             'GROUP_SIZE_M': 8}, num_stages=3,
+            num_warps=8),
+        triton.Config(
+            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=5,
+            num_warps=2),
+        triton.Config(
+            {'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32,
+             'GROUP_SIZE_M': 8}, num_stages=5,
+            num_warps=2),
         # Good config for fp8 inputs.
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 128, 'GROUP_SIZE_M': 8}, num_stages=3,
-                      num_warps=8),
-        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 128, 'GROUP_SIZE_M': 8}, num_stages=3,
-                      num_warps=8),
-        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 128, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 128, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 128, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=4,
-                      num_warps=4)
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 128,
+             'GROUP_SIZE_M': 8}, num_stages=3,
+            num_warps=8),
+        triton.Config(
+            {'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 128,
+             'GROUP_SIZE_M': 8}, num_stages=3,
+            num_warps=8),
+        triton.Config(
+            {'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 128,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 128,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 128,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 64,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 64,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4),
+        triton.Config(
+            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64,
+             'GROUP_SIZE_M': 8}, num_stages=4,
+            num_warps=4)
     ]
 
 
@@ -189,7 +215,8 @@ def persistent_fp8_gemm_kernel(
         stride_bk, stride_bn,  #
         stride_cm, stride_cn,
         # Meta-parameters
-        BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,  #
+        BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr,
+        BLOCK_SIZE_K: tl.constexpr,  #
         GROUP_SIZE_M: tl.constexpr
 ):
     """Kernel for computing the matmul C = A x B.
@@ -219,8 +246,10 @@ def persistent_fp8_gemm_kernel(
     offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-    b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+    a_ptrs = a_ptr + (
+                offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+    b_ptrs = b_ptr + (
+                offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
 
     # -----------------------------------------------------------
     # Iterate to compute a block of the C matrix.
@@ -264,7 +293,9 @@ def persistent_fp8_gemm(a, b, dtype):
     M, K = a.shape
     K, N = b.shape
     c = torch.empty((M, N), device=a.device, dtype=dtype)
-    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N, META['BLOCK_SIZE_N']), )
+    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,
+                                                                            META[
+                                                                                'BLOCK_SIZE_N']),)
     persistent_fp8_gemm_kernel[grid](
         a, b, c,  #
         M, N, K,  #
@@ -273,4 +304,3 @@ def persistent_fp8_gemm(a, b, dtype):
         c.stride(0), c.stride(1)
     )
     return c
-

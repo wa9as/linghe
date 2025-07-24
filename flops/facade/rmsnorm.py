@@ -1,4 +1,6 @@
-from flops.utils.norm import *
+import torch
+import triton
+from flops.utils.norm import rms_norm_forward_kernel,rms_norm_backward_kernel
 
 
 class RMSNormFunction(torch.autograd.Function):
@@ -6,14 +8,14 @@ class RMSNormFunction(torch.autograd.Function):
     def forward(ctx, x, weight, eps=1e-6):
         M, N = x.shape
         assert N <= 8192
-        device = x.device 
+        device = x.device
         out = torch.empty((M, N), device=device, dtype=x.dtype)
 
         sm = torch.cuda.get_device_properties(device).multi_processor_count
-        
-        W = 8192//N 
-        T = triton.cdiv(M, sm*W)
-        grid = (sm, )
+
+        W = 8192 // N
+        T = triton.cdiv(M, sm * W)
+        grid = (sm,)
 
         rms_norm_forward_kernel[grid](
             x,
@@ -22,7 +24,7 @@ class RMSNormFunction(torch.autograd.Function):
             # norm,
             eps,
             M, T,
-            N, 
+            N,
             W,
             num_stages=3,
             num_warps=16
@@ -34,7 +36,7 @@ class RMSNormFunction(torch.autograd.Function):
         ctx.N = N
 
         return out
-    
+
     @staticmethod
     def backward(ctx, dy):
         x, weight = ctx.saved_tensors
@@ -45,9 +47,9 @@ class RMSNormFunction(torch.autograd.Function):
         T = triton.cdiv(M, sm)
         dx = torch.empty(M, N, dtype=x.dtype, device=x.device)
         tmp_dw = torch.empty(sm, N, dtype=torch.float32, device=x.device)
-        
+
         eps = ctx.eps
-        grid = (sm, )
+        grid = (sm,)
 
         rms_norm_backward_kernel[grid](
             dy,

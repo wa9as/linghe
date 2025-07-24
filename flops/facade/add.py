@@ -1,6 +1,7 @@
-
 import torch
+
 from flops.utils.add import triton_add
+
 
 class InplaceAddFunction(torch.autograd.Function):
     @staticmethod

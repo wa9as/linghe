@@ -1,11 +1,6 @@
-
-from enum import IntEnum
-from typing import Tuple
-
 import torch
 import triton
 import triton.language as tl
-from triton import Config
 
 
 # Some triton kernels for tilewise and blockwise quantization are from the link below with modification:
@@ -13,7 +8,8 @@ from triton import Config
 
 
 @triton.jit
-def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, ROUND: tl.constexpr):
+def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
+                       ROUND: tl.constexpr):
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
     n = tl.cdiv(N, BLOCK_SIZE)
@@ -31,21 +27,21 @@ def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, ROUN
     tl.store(s_ptr + pid_m * n + pid_n, s)
 
 
-def block_quant(x, dtype=torch.float8_e4m3fn, block_size = 128, round_scale=False):
+def block_quant(x, dtype=torch.float8_e4m3fn, block_size=128,
+                round_scale=False):
     M, N = x.size()
     y = torch.empty_like(x, dtype=dtype)
-    s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size, dtype=torch.float32)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE"]), triton.cdiv(N, META["BLOCK_SIZE"]))  # noqa: E731
-    block_quant_kernel[grid](x, 
-                             y, 
-                             s, 
-                             M, 
-                             N, 
-                             BLOCK_SIZE=block_size, 
+    s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size,
+                    dtype=torch.float32)
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE"]),
+                         triton.cdiv(N, META["BLOCK_SIZE"]))  # noqa: E731
+    block_quant_kernel[grid](x,
+                             y,
+                             s,
+                             M,
+                             N,
+                             BLOCK_SIZE=block_size,
                              ROUND=round_scale,
-                             num_stages=6, 
+                             num_stages=6,
                              num_warps=8)
     return y, s
-
-
-

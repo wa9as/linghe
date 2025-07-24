@@ -1,9 +1,11 @@
-import math
-from typing import Optional, Union
+from typing import Optional
 
 import torch
-from flops.quant.smooth.naive_smooth import smooth_quant_forward, smooth_quant_update, smooth_quant_backward
-from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, reused_smooth_quant_update, reused_smooth_quant_backward
+
+from flops.quant.smooth.naive_smooth import smooth_quant_forward, \
+    smooth_quant_update, smooth_quant_backward
+from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, \
+    reused_smooth_quant_update, reused_smooth_quant_backward
 
 
 # https://code.alipay.com/Arc/atorch/blob/master/atorch/modules/fp8/scaled_linear.py#L45
@@ -11,10 +13,10 @@ from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, reused
 class _SmoothQuantLinear(torch.autograd.Function):
     @staticmethod
     def forward(
-        ctx,
-        input: torch.Tensor,
-        weight: torch.Tensor,
-        bias: Optional[torch.Tensor]
+            ctx,
+            input: torch.Tensor,
+            weight: torch.Tensor,
+            bias: Optional[torch.Tensor]
     ):
         ctx.input_requires_grad = input.requires_grad
         ctx.weight_requires_grad = weight.requires_grad
@@ -24,10 +26,11 @@ class _SmoothQuantLinear(torch.autograd.Function):
         ctx.input_shape = input.shape
         input = input.view(-1, input.shape[-1])
 
-        output,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(input, weight)
+        output, x_q, w_q, x_s, w_s, smooth_scale = smooth_quant_forward(input,
+                                                                        weight)
         if bias is not None:
             output += bias
-        
+
         saved_tensors = [
             input if ctx.weight_requires_grad else None,
             weight if ctx.input_requires_grad else None
@@ -39,20 +42,20 @@ class _SmoothQuantLinear(torch.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx,
-        output_grad: torch.Tensor,
+            ctx,
+            output_grad: torch.Tensor,
     ):
-        x,w = ctx.saved_tensors
+        x, w = ctx.saved_tensors
         results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
         # calculate input grad and assign to results[0]
-        dx=smooth_quant_backward(output_grad, w)
+        dx = smooth_quant_backward(output_grad, w)
         results[0] = dx.view(ctx.input_shape)
 
         # calculate weight grad and assign to results[1]
-        dw=smooth_quant_update(output_grad, x)
+        dw = smooth_quant_update(output_grad, x)
         results[1] = dw
 
         if ctx.bias_requires_grad:
@@ -62,15 +65,13 @@ class _SmoothQuantLinear(torch.autograd.Function):
         return tuple(results)
 
 
-
-
 class _MixSmoothQuantLinear(torch.autograd.Function):
     @staticmethod
     def forward(
-        ctx,
-        input: torch.Tensor,
-        weight: torch.Tensor,
-        bias: Optional[torch.Tensor],
+            ctx,
+            input: torch.Tensor,
+            weight: torch.Tensor,
+            bias: Optional[torch.Tensor],
     ):
         ctx.input_requires_grad = input.requires_grad
         ctx.weight_requires_grad = weight.requires_grad
@@ -80,11 +81,12 @@ class _MixSmoothQuantLinear(torch.autograd.Function):
         ctx.input_shape = input.shape
         input = input.view(-1, input.shape[-1])
 
-        output,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(input, weight)
+        output, x_q, w_q, x_s, w_s, smooth_scale = smooth_quant_forward(input,
+                                                                        weight)
 
         if bias is not None:
             output += bias
-        
+
         saved_tensors = [
             x_q if ctx.weight_requires_grad else None,
             x_s if ctx.weight_requires_grad else None,
@@ -99,21 +101,21 @@ class _MixSmoothQuantLinear(torch.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx,
-        output_grad: torch.Tensor,
-        smooth_scale_grad: Optional[torch.Tensor]
+            ctx,
+            output_grad: torch.Tensor,
+            smooth_scale_grad: Optional[torch.Tensor]
     ):
-        x_q,x_s,w_q,w_s,smooth_scale = ctx.saved_tensors
+        x_q, x_s, w_q, w_s, smooth_scale = ctx.saved_tensors
         results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
         # calculate input grad and assign to results[0]
-        dx=reused_smooth_quant_backward(output_grad, w_q, smooth_scale, w_s)
+        dx = reused_smooth_quant_backward(output_grad, w_q, smooth_scale, w_s)
         results[0] = dx.view(ctx.input_shape)
 
         # calculate weight grad and assign to results[1]
-        dw=reused_smooth_quant_update(output_grad, x_q, smooth_scale, x_s)
+        dw = reused_smooth_quant_update(output_grad, x_q, smooth_scale, x_s)
         results[1] = dw
 
         if ctx.bias_requires_grad:
@@ -123,16 +125,14 @@ class _MixSmoothQuantLinear(torch.autograd.Function):
         return tuple(results)
 
 
-
-
 class _ReusedSmoothQuantLinear(torch.autograd.Function):
     @staticmethod
     def forward(
-        ctx,
-        input: torch.Tensor,
-        weight: torch.Tensor,
-        bias: Optional[torch.Tensor],
-        smooth_scale: Optional[torch.Tensor]
+            ctx,
+            input: torch.Tensor,
+            weight: torch.Tensor,
+            bias: Optional[torch.Tensor],
+            smooth_scale: Optional[torch.Tensor]
     ):
         ctx.input_requires_grad = input.requires_grad
         ctx.weight_requires_grad = weight.requires_grad
@@ -143,13 +143,15 @@ class _ReusedSmoothQuantLinear(torch.autograd.Function):
         input = input.view(-1, input.shape[-1])
 
         if smooth_scale is None:
-            output,x_q,w_q,x_s,w_s,smooth_scale = smooth_quant_forward(input, weight)
+            output, x_q, w_q, x_s, w_s, smooth_scale = smooth_quant_forward(
+                input, weight)
         else:
-            output,x_q,w_q,x_s,w_s,smooth_scale = reused_smooth_quant_forward(input, weight,smooth_scale)
+            output, x_q, w_q, x_s, w_s, smooth_scale = reused_smooth_quant_forward(
+                input, weight, smooth_scale)
 
         if bias is not None:
             output += bias
-        
+
         saved_tensors = [
             x_q if ctx.weight_requires_grad else None,
             x_s if ctx.weight_requires_grad else None,
@@ -164,21 +166,21 @@ class _ReusedSmoothQuantLinear(torch.autograd.Function):
 
     @staticmethod
     def backward(
-        ctx,
-        output_grad: torch.Tensor,
-        smooth_scale_grad: Optional[torch.Tensor]
+            ctx,
+            output_grad: torch.Tensor,
+            smooth_scale_grad: Optional[torch.Tensor]
     ):
-        x_q,x_s,w_q,w_s,smooth_scale = ctx.saved_tensors
+        x_q, x_s, w_q, w_s, smooth_scale = ctx.saved_tensors
         results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
         # calculate input grad and assign to results[0]
-        dx=reused_smooth_quant_backward(output_grad, w_q, smooth_scale, w_s)
+        dx = reused_smooth_quant_backward(output_grad, w_q, smooth_scale, w_s)
         results[0] = dx.view(ctx.input_shape)
 
         # calculate weight grad and assign to results[1]
-        dw=reused_smooth_quant_update(output_grad, x_q, smooth_scale, x_s)
+        dw = reused_smooth_quant_update(output_grad, x_q, smooth_scale, x_s)
         results[1] = dw
 
         if ctx.bias_requires_grad:
@@ -190,20 +192,23 @@ class _ReusedSmoothQuantLinear(torch.autograd.Function):
 
 class QuantLinear(torch.nn.Module):
     def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        device=None,
-        dtype=None,
-        impl='mix'
+            self,
+            in_features: int,
+            out_features: int,
+            bias: bool = True,
+            device=None,
+            dtype=None,
+            impl='mix'
     ):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.weight = torch.nn.parameter.Parameter(torch.empty((out_features, in_features), device=device, dtype=dtype))
+        self.weight = torch.nn.parameter.Parameter(
+            torch.empty((out_features, in_features), device=device,
+                        dtype=dtype))
         if bias:
-            self.bias = torch.nn.parameter.Parameter(torch.empty(out_features, device=device, dtype=dtype))
+            self.bias = torch.nn.parameter.Parameter(
+                torch.empty(out_features, device=device, dtype=dtype))
         else:
             self.bias = None
 
@@ -222,20 +227,28 @@ class QuantLinear(torch.nn.Module):
             if self.impl == 'naive':
                 return _SmoothQuantLinear.apply(input, self.weight, self.bias)
             elif self.impl == 'mix':
-                output, _ =  _MixSmoothQuantLinear.apply(input, self.weight, self.bias)
+                output, _ = _MixSmoothQuantLinear.apply(input, self.weight,
+                                                        self.bias)
                 return output
             elif self.impl == 'reused':
                 if self.smooth_update_step % self.gap_step == 0:
-                    output, smooth_scale = _ReusedSmoothQuantLinear.apply(input, self.weight, self.bias, None)
+                    output, smooth_scale = _ReusedSmoothQuantLinear.apply(input,
+                                                                          self.weight,
+                                                                          self.bias,
+                                                                          None)
                 else:
-                    output, smooth_scale = _ReusedSmoothQuantLinear.apply(input, self.weight, self.bias, self.smooth_scale.detach())
+                    output, smooth_scale = _ReusedSmoothQuantLinear.apply(input,
+                                                                          self.weight,
+                                                                          self.bias,
+                                                                          self.smooth_scale.detach())
                 if self.smooth_update_step == 0:
                     self.smooth_scale = smooth_scale
                 elif self.smooth_update_step % self.gap_step == 0:
-                    self.smooth_scale = self.decay_coef*self.smooth_scale + (1.0-self.decay_coef)*smooth_scale
+                    self.smooth_scale = self.decay_coef * self.smooth_scale + (
+                                1.0 - self.decay_coef) * smooth_scale
                 self.smooth_update_step += 1
         else:
-            output = input@self.weight.t()
+            output = input @ self.weight.t()
             if self.bias is not None:
                 output = output + self.bias
         return output

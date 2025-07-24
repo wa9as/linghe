@@ -1,19 +1,15 @@
-from enum import IntEnum
-from typing import Tuple
-import math
 import torch
 import triton
 import triton.language as tl
-from triton import Config
 from triton.tools.tensor_descriptor import TensorDescriptor
-
 
 
 def matmul_tma_persistent_get_configs(pre_hook=None):
     return [
         triton.Config(
             {
-                'BLOCK_SIZE_M': BM, 'BLOCK_SIZE_N': BN, "BLOCK_SIZE_K": BK, "GROUP_SIZE_M": 8, "EPILOGUE_SUBTILE":
+                'BLOCK_SIZE_M': BM, 'BLOCK_SIZE_N': BN, "BLOCK_SIZE_K": BK,
+                "GROUP_SIZE_M": 8, "EPILOGUE_SUBTILE":
                 SUBTILE
             }, num_stages=s, num_warps=w, pre_hook=pre_hook)  #
         for BM in [128]  #
@@ -40,7 +36,8 @@ def matmul_tma_set_block_size_hook(nargs):
 
 def _matmul_launch_metadata(grid, kernel, args):
     ret = {}
-    M, N, K, WS = args["M"], args["N"], args["K"], args.get("WARP_SPECIALIZE", False)
+    M, N, K, WS = args["M"], args["N"], args["K"], args.get("WARP_SPECIALIZE",
+                                                            False)
     ws_str = "_ws" if WS else ""
     ret["name"] = f"{kernel.name}{ws_str} [M={M}, N={N}, K={K}]"
     if "c_ptr" in args:
@@ -63,7 +60,8 @@ def _compute_pid(tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS):
 
 
 @triton.autotune(
-    configs=matmul_tma_persistent_get_configs(pre_hook=matmul_tma_set_block_size_hook),
+    configs=matmul_tma_persistent_get_configs(
+        pre_hook=matmul_tma_set_block_size_hook),
     key=["M", "N", "K", "WARP_SPECIALIZE"],
 )
 @triton.jit(launch_metadata=_matmul_launch_metadata)
@@ -91,8 +89,10 @@ def matmul_kernel_tma_persistent(a_desc, b_desc, c_desc,  #
     # Enable warp specialization to leverage async warp scheduling in the GPU.
     # FIXME: This only works on Blackwell right now. On older GPUs, this will
     # use software pipelining.
-    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS, flatten=True, warp_specialize=WARP_SPECIALIZE):
-        pid_m, pid_n = _compute_pid(tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
+    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS, flatten=True,
+                            warp_specialize=WARP_SPECIALIZE):
+        pid_m, pid_n = _compute_pid(tile_id, num_pid_in_group, num_pid_m,
+                                    GROUP_SIZE_M, NUM_SMS)
         offs_am = pid_m * BLOCK_SIZE_M
         offs_bn = pid_n * BLOCK_SIZE_N
 
@@ -104,7 +104,8 @@ def matmul_kernel_tma_persistent(a_desc, b_desc, c_desc,  #
             accumulator = tl.dot(a, b.T, accumulator)
 
         tile_id_c += NUM_SMS
-        pid_m, pid_n = _compute_pid(tile_id_c, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
+        pid_m, pid_n = _compute_pid(tile_id_c, num_pid_in_group, num_pid_m,
+                                    GROUP_SIZE_M, NUM_SMS)
         offs_am_c = pid_m * BLOCK_SIZE_M
         offs_bn_c = pid_n * BLOCK_SIZE_N
 
@@ -127,7 +128,8 @@ def matmul_kernel_tma_persistent(a_desc, b_desc, c_desc,  #
 
 def matmul_tma_persistent(a, b, warp_specialize: bool):
     # Check constraints.
-    assert a.shape[1] == b.shape[1], "Incompatible dimensions"  # b is transposed
+    assert a.shape[1] == b.shape[
+        1], "Incompatible dimensions"  # b is transposed
     assert a.dtype == b.dtype, "Incompatible dtypes"
 
     M, K = a.shape
@@ -151,7 +153,7 @@ def matmul_tma_persistent(a, b, warp_specialize: bool):
         return (min(
             NUM_SMS,
             triton.cdiv(M, BLOCK_M) * triton.cdiv(N, BLOCK_N),
-        ), )
+        ),)
 
     matmul_kernel_tma_persistent[grid](
         a_desc, b_desc, c_desc,  #
