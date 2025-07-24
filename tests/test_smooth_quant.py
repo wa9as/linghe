@@ -33,7 +33,6 @@ def triton_split_smooth_quant(x_split,smooth_scales):
     return x_qs,x_scales
 
 
-
 def test_triton_reused_smooth_quant(M=4096, N=4096):
     device = 'cuda:0'
     x = torch.randn((M,N),dtype=torch.bfloat16,device=device)
@@ -76,7 +75,7 @@ def test_triton_reused_transpose_rescale_smooth_quant(M=4096,N=4096, round_scale
     output_check(yt_scale_ref, yt_scale.float(), 'scale')
 
 
-def test_triton_batch_smooth_quant(M=4096,N=4096, n_experts=32, topk=8, round_scale=False):
+def test_triton_batch_smooth_quant(M=4096,N=4096, n_experts=32, topk=8, round_scale=False,bench=False):
     device = 'cuda:0'
 
     smooth_scales = 1+10*torch.rand((n_experts,N),device=device,dtype=torch.float32)
@@ -96,10 +95,11 @@ def test_triton_batch_smooth_quant(M=4096,N=4096, n_experts=32, topk=8, round_sc
     output_check(x_scale_ref.float(), x_scale.float(), 'scale')
     output_check(x_maxs_ref.float(), x_maxs.float(), 'maxs')
 
-    n_repeat = 100
-    ref_time = benchmark_func(triton_split_smooth_quant, x_split, smooth_scales, n_repeat=n_repeat)
-    benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=round_scale, n_repeat=n_repeat, ref_time=ref_time)
-    benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=round_scale, calibrate=True, n_repeat=n_repeat, ref_time=ref_time)
+    if bench:
+        n_repeat = 100
+        ref_time = benchmark_func(triton_split_smooth_quant, x_split, smooth_scales, n_repeat=n_repeat)
+        benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=round_scale, n_repeat=n_repeat, ref_time=ref_time)
+        benchmark_func(triton_batch_smooth_quant, x, smooth_scales, token_count_per_expert, reverse=False, round_scale=round_scale, calibrate=True, n_repeat=n_repeat, ref_time=ref_time)
 
 
 

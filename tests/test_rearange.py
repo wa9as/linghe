@@ -24,7 +24,7 @@ def torch_split_and_cat(x,scales,counts,indices):
     return output_data, output_scale
 
 
-def test_triton_split_and_cat(M=4096,N=4096):
+def test_triton_split_and_cat(M=4096,N=4096,bench=False):
     # M, N, K = 8192, 10240, 8192  # max qkv
     # M, N, K = 8192, 8192, 8192  # max out
     # M, N, K = 2048, 4096, 8192  # max gate_up
@@ -59,12 +59,13 @@ def test_triton_split_and_cat(M=4096,N=4096):
     output_check(data_ref.view(torch.float8_e4m3fn).float(), data.float(), mode='data')
     output_check(scale_ref, scale, mode='scale')
 
-    benchmark_func(torch.split,x_q.view(torch.uint8),split_size_list, n_repeat=n_repeat)
-    benchmark_func(torch.cat,chunks,dim=0, n_repeat=n_repeat)
-    benchmark_func(torch.split,x_scales,split_size_list, n_repeat=n_repeat)
-    benchmark_func(torch.cat,scale_chunks,dim=0, n_repeat=n_repeat)
-    benchmark_func(torch_split_and_cat,x_q.view(torch.float8_e4m3fn),x_scales,split_size_list,sorted_indices_list, n_repeat=n_repeat)
-    benchmark_func(triton_split_and_cat,x_q,counts,indices,scales=x_scales, n_repeat=n_repeat)
+    if bench:
+        benchmark_func(torch.split,x_q.view(torch.uint8),split_size_list, n_repeat=n_repeat)
+        benchmark_func(torch.cat,chunks,dim=0, n_repeat=n_repeat)
+        benchmark_func(torch.split,x_scales,split_size_list, n_repeat=n_repeat)
+        benchmark_func(torch.cat,scale_chunks,dim=0, n_repeat=n_repeat)
+        benchmark_func(torch_split_and_cat,x_q.view(torch.float8_e4m3fn),x_scales,split_size_list,sorted_indices_list, n_repeat=n_repeat)
+        benchmark_func(triton_split_and_cat,x_q,counts,indices,scales=x_scales, n_repeat=n_repeat)
 
 
 if __name__ == '__main__':

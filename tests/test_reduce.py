@@ -21,7 +21,7 @@ def torch_count_zero(xs):
     return count
 
 
-def test_triton_abs_max(M=4096, N=4096):
+def test_triton_abs_max(M=4096, N=4096,bench=False):
     x = 100*torch.randn(M, 1, N, dtype=torch.bfloat16, device='cuda:0')
 
     # scales = 1.0/torch.sqrt(torch.maximum(x[:,0].abs().float().amax(0), torch.ones(M,N,dtype=dtype,device=device)) )
@@ -30,10 +30,11 @@ def test_triton_abs_max(M=4096, N=4096):
 
     maxs = triton_abs_max(x)
     output_check(maxs_ref, maxs)
-    benchmark_func(triton_abs_max, x, n_repeat=100, ref_bytes=M*N*2)
+    if bench:
+        benchmark_func(triton_abs_max, x, n_repeat=100, ref_bytes=M*N*2)
 
 
-def test_count_zero(M=4096,N=8192,k=32):
+def test_count_zero(M=4096,N=8192,k=32,bench=False):
 
     xs = [torch.randn(M, N, dtype=torch.float32, device='cuda:0').to(torch.float8_e4m3fn).to(torch.float32) for i in range(k)]
 
@@ -49,13 +50,14 @@ def test_count_zero(M=4096,N=8192,k=32):
     sums = triton_batch_sum_with_ord(xs)
     output_check(sum_ref, sums)
 
-    n_repeat = 100
-    ref_time = benchmark_func(torch_count_zero, xs,  n_repeat=n_repeat, ref_bytes=ref_bytes)
-    benchmark_func(triton_batch_count_zero, xs, n_repeat=n_repeat, ref_bytes=ref_bytes, ref_time=ref_time)
+    if bench:
+        n_repeat = 100
+        ref_time = benchmark_func(torch_count_zero, xs,  n_repeat=n_repeat, ref_bytes=ref_bytes)
+        benchmark_func(triton_batch_count_zero, xs, n_repeat=n_repeat, ref_bytes=ref_bytes, ref_time=ref_time)
 
 
 
-def test_ord_sum(M=4096,N=8192,k=32):
+def test_ord_sum(M=4096,N=8192,k=32,bench=False):
 
     xs = [torch.randn(M, N, dtype=torch.float32, device='cuda:0').to(torch.float8_e4m3fn).to(torch.float32) for i in range(k)]
 
@@ -65,9 +67,10 @@ def test_ord_sum(M=4096,N=8192,k=32):
     sums = triton_batch_sum_with_ord(xs)
     output_check(sum_ref, sums)
 
-    n_repeat = 100
-    ref_time = benchmark_func(torch_sum, xs,  n_repeat=n_repeat, ref_bytes=ref_bytes)
-    benchmark_func(triton_batch_sum_with_ord, xs, n_repeat=n_repeat, ref_bytes=ref_bytes, ref_time=ref_time)
+    if bench:
+        n_repeat = 100
+        ref_time = benchmark_func(torch_sum, xs,  n_repeat=n_repeat, ref_bytes=ref_bytes)
+        benchmark_func(triton_batch_sum_with_ord, xs, n_repeat=n_repeat, ref_bytes=ref_bytes, ref_time=ref_time)
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ def torch_fp16_dot(x,y):
   return (x*y).sum(1).float()
 
 
-def test_dot(M=4096,N=4096):
+def test_dot(M=4096,N=4096,bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
 
@@ -34,8 +34,9 @@ def test_dot(M=4096,N=4096):
     sums = triton_mix_precise_dot(x,q,smooth_scale,quant_scale,reverse=True)
     output_check(sums_ref,sums,'sum')
 
-    ref_time = benchmark_func(torch_fp16_dot,x,y,n_repeat=n_repeat)
-    benchmark_func(triton_mix_precise_dot,x,q,smooth_scale,quant_scale,reverse=True,n_repeat=n_repeat,ref_time=ref_time)
+    if bench:
+      ref_time = benchmark_func(torch_fp16_dot,x,y,n_repeat=n_repeat)
+      benchmark_func(triton_mix_precise_dot,x,q,smooth_scale,quant_scale,reverse=True,n_repeat=n_repeat,ref_time=ref_time)
 
 
 if __name__ == '__main__':

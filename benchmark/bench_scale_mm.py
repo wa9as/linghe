@@ -17,7 +17,7 @@ def triton_accum_weight(x,w,out,x_scale,w_scale):
                                     scale_b=w_scale,
                                     out_dtype=torch.bfloat16,
                                     use_fast_accum=True)
-    triton_block_add(out, output)
+    triton_add(out, output)
     return out
 
 def torch_accum_weight(x,w,out,x_scale,w_scale):

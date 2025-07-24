@@ -32,7 +32,7 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
 
 def triton_row_quant(x, round_scale=False):
     M, N = x.shape
-    BLOCK_SIZE = 8192
+    BLOCK_SIZE = max([N%x==0 for x in [512,1024,2048,4096,8192]])
     x_q = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=x.device)
     x_scale = torch.empty((M,), dtype=torch.float32, device=x.device)
     grid = (M,)
@@ -180,6 +180,8 @@ def triton_transpose_row_quant(x, side=0, round_scale=False):
         num_warps=4
     )
     return x_q, x_scale
+
+
 
 
 def triton_channel_quant_nt(x, w):

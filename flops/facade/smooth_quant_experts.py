@@ -2,10 +2,13 @@ from typing import Optional
 
 import torch
 
-from flops.quant.smooth import reused_smooth_quant_forward, \
-    reused_smooth_quant_update, reused_smooth_quant_backward
-from flops.quant.smooth import smooth_quant_forward, smooth_quant_update, \
-    smooth_quant_backward
+
+from flops.quant.smooth.naive_smooth import smooth_quant_forward, smooth_quant_backward,smooth_quant_update
+from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, reused_smooth_quant_update,reused_smooth_quant_backward
+from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_smooth_quant
+
+
+
 
 
 # https://code.alipay.com/Arc/atorch/blob/master/atorch/modules/fp8/scaled_linear.py#L45

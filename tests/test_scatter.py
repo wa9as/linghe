@@ -21,14 +21,13 @@ def torch_fp16_scatter_add(x, outputs, indices, weights):
 
 
 
-def test_scatter(M=4098, N=4096, n_experts=32, topk=2):
+def test_scatter(M=4098, N=4096, n_experts=32, topk=2, bias=0.0, bench=False):
 
     dtype = torch.bfloat16
     device = 'cuda:0'
 
-    weights = torch.randn(M*topk, dtype=dtype,device=device)
     logits = torch.randn((M,n_experts),dtype=torch.float32,device=device)
-    probs, mask_map,token_count_per_expert, indices, row_id_map = torch_make_indices(logits, topk=topk, bias=0.0)
+    probs, mask_map,token_count_per_expert, indices, row_id_map = torch_make_indices(logits, topk=topk, bias=bias)
     
     token_count_per_expert_list = token_count_per_expert.tolist()
     out_tokens = sum(token_count_per_expert_list)
@@ -53,13 +52,15 @@ def test_scatter(M=4098, N=4096, n_experts=32, topk=2):
     assert (row_id_map-row_id_map_output).abs().sum().item() == 0
 
 
-    n_repeat = 100
-    # ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
-    # benchmark_func(triton_aligned_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
-    ref_time=benchmark_func(triton_scatter_add,x, outputs, indices, n_repeat=n_repeat)
-    benchmark_func(triton_scatter_add_with_count,x, outputs, indices, counts, n_repeat=n_repeat,ref_time=ref_time)
-    benchmark_func(triton_unpermute_with_mask_map,x, row_id_map, probs, n_repeat=n_repeat,ref_time=ref_time)
+    if bench:
+        n_repeat = 100
+        # ref_time = benchmark_func(torch_fp16_scatter_add,x, outputs, indices, weights,n_repeat=n_repeat)
+        # benchmark_func(triton_aligned_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
+        ref_time=benchmark_func(triton_scatter_add,x, outputs, indices, n_repeat=n_repeat)
+        benchmark_func(triton_scatter_add_with_count,x, outputs, indices, counts, n_repeat=n_repeat,ref_time=ref_time)
+        benchmark_func(triton_unpermute_with_mask_map,x, row_id_map, probs, n_repeat=n_repeat,ref_time=ref_time)
 
 
 if __name__ == '__main__':
-    test_scatter(M=4098, N=4096, n_experts=32, topk=2)
+    test_scatter(M=4098, N=4096, n_experts=32, topk=2, bias=0.0)
+    test_scatter(M=2467, N=4096, n_experts=32, topk=2, bias=-0.1)

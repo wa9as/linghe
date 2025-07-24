@@ -143,7 +143,7 @@ def triton_transpose_and_pad(x, out=None, pad=True):
     W = 64
     num_stages = 5
     num_warps = 2
-    EVEN = M % H == 0
+    EVEN = M % H == 0 and M == P
     grid = (triton.cdiv(M, H), triton.cdiv(N, W))
     transpose_and_pad_kernel[grid](
         x, out,
