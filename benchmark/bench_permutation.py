@@ -4,9 +4,12 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *   # noqa: F403
-from flops.utils.gather import *   # noqa: F403
-from flops.utils.scatter import *   # noqa: F403
+from flops.utils.util import torch_make_indices
+from flops.utils.gather import triton_permute_with_mask_map
+from flops.utils.scatter import ( triton_scatter_add,
+                                  triton_scatter_add_with_count,
+                                  triton_unpermute_with_mask_map,
+                                  triton_make_row_id_map)
 
 from flops.utils.benchmark import benchmark_func
 

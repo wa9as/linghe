@@ -2,7 +2,9 @@
 import torch
 from torch.profiler import profile, record_function, ProfilerActivity
 
-from flops.quant.block.group import *   # noqa: F403
+from flops.quant.block.group import ( group_quant_kernel,
+                                      triton_group_quant,
+                                      triton_persist_group_quant )
 
 
 
@@ -28,7 +30,7 @@ y_q = y.to(torch.float8_e4m3fn)
 
 with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]) as prof:
     for i in range(100):
-        group_quant(x)
+        triton_group_quant(x)
 print(prof.key_averages().table(sort_by=None, top_level_events_only=True, row_limit=2000))
 print(prof.key_averages(group_by_stack_n=5).table(sort_by=None, row_limit=100))
 prof.export_chrome_trace("trace.json")

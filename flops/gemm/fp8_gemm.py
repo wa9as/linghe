@@ -59,7 +59,7 @@ def trival_fp8_gemm(a: torch.Tensor, b: torch.Tensor, dtype: torch.types):
     M, K = a.size()
     N, K = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     trival_fp8_gemm_kernel[grid](a, b, c, M, N, K,
@@ -115,7 +115,7 @@ def fp8_gemm_nn(a: torch.Tensor, b: torch.Tensor, dtype: torch.types):
     M, K = a.size()
     K, N = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     fp8_gemm_nn_kernel[grid](a, b, c, M, N, K,
@@ -293,9 +293,7 @@ def persistent_fp8_gemm(a, b, dtype):
     M, K = a.shape
     K, N = b.shape
     c = torch.empty((M, N), device=a.device, dtype=dtype)
-    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,
-                                                                            META[
-                                                                                'BLOCK_SIZE_N']),)
+    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,META['BLOCK_SIZE_N']),) # noqa: E731
     persistent_fp8_gemm_kernel[grid](
         a, b, c,  #
         M, N, K,  #

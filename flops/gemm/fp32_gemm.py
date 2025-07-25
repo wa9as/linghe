@@ -63,7 +63,7 @@ def triton_fp32_gemm(a: torch.Tensor, b: torch.Tensor):
     N, K = b.size()
     assert N >= 128
     c = torch.empty(M, N, dtype=torch.float32, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     BLOCK_SIZE_M = 32
@@ -128,7 +128,7 @@ def triton_scaled_fp32_gemm(a: torch.Tensor, b: torch.Tensor,
     M, K = a.size()
     N, K = b.size()
     c = torch.empty(M, N, dtype=torch.float32, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     BLOCK_SIZE_M = 32
@@ -200,7 +200,7 @@ def triton_fp32_gemm_for_backward(a: torch.Tensor, b: torch.Tensor,
     if c is None:
         c = torch.empty((M, N), dtype=b.dtype, device=b.device)
         accum = False
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     BLOCK_SIZE_M = 32
@@ -263,7 +263,7 @@ def triton_fp32_gemm_for_update(a: torch.Tensor, b: torch.Tensor):
     K, M = a.size()
     K, N = b.size()
     c = torch.empty((M, N), dtype=b.dtype, device=b.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     BLOCK_SIZE_M = 32
@@ -330,7 +330,7 @@ def triton_scaled_fp32_gemm_for_update(a: torch.Tensor, b: torch.Tensor,
     K, M = a.size()
     K, N = b.size()
     c = torch.empty((M, N), dtype=b.dtype, device=b.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
                          triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     BLOCK_SIZE_M = 32

@@ -1,8 +1,12 @@
 import torch 
-from flops.utils.util import *   # noqa: F403
+from flops.utils.util import ( fp16_backward,
+                               fp16_f_and_b,
+                               fp16_forward,
+                               fp16_update )
 from flops.utils.benchmark import benchmark_func
-from flops.quant.channel.channel import *   # noqa: F403
-
+from flops.quant.channel.channel import ( channel_quant_backward,
+                                          channel_quant_forward,
+                                          channel_quant_update )
 
 # 5b: hidden_size:4k  seq_length:8K shape:(M,N,K)
 # qkv: 8192, 6144, 4096
