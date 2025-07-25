@@ -1,31 +1,39 @@
 import torch
 
-from flops.utils.util import (fp16_forward)
+from flops.utils.util import (fp16_forward, 
+                             read_and_tile, 
+                             torch_row_quant, 
+                             torch_channel_quant_f_and_b, 
+                             fp16_f_and_b, 
+                             output_check, 
+                             quant_check)
 
 device = 'cuda:0'
 dtype = torch.bfloat16
 M, N, K = 8192, 8192, 8192
+dataset = 'mock'
 
-if False:
+if dataset == 'mock':
+    x = torch.randn((M, K), dtype=dtype, device=device)
+    w = torch.randn((N, K), dtype=dtype, device=device)
+    y = torch.randn((M, N), dtype=dtype, device=device)
+else:
     x, w, y = read_and_tile('/mntnlp/nanxiao/dataset/flops/down_fb_1.pkl',
                             tile=True)
     M, K = x.shape
     N, K = w.shape
-else:
-    x = torch.randn((M, K), dtype=dtype, device=device)
-    w = torch.randn((N, K), dtype=dtype, device=device)
-    y = torch.randn((M, N), dtype=dtype, device=device)
 
 org_out = fp16_forward(x, w.t())
 
-if False:
+mode = 'channel'
+if mode == 'channel':
     xq, x_scale = torch_row_quant(x, dtype=torch.float8_e4m3fn)
     wq, w_scale = torch_row_quant(w, dtype=torch.float8_e4m3fn)
     opt_out = (xq.to(dtype) @ wq.to(dtype).t()) * x_scale.to(
         dtype) * w_scale.to(dtype)[:, 0]
     quant_check(org_out, xq, wq, opt_out, 'channel')
 
-if False:
+if mode == 'channels':
     xq, wq, yq, ytq, o, dx, dw = torch_channel_quant_f_and_b(x, w, y)
     ref_o, ref_dx, ref_dw = fp16_f_and_b(x, w, y)
     mode = 'channels'
