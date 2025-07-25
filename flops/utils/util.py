@@ -36,7 +36,7 @@ def torch_column_quant(x, dtype=torch.float8_e4m3fn, round_scale=False):
     return x_q, scale
 
 
-def torch_group_quant(x, B, dtype=torch.float8_e4m3fn, round_scale=False):
+def torch_group_quant(x, B=128, dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
     x = x.clone()
     M, K = x.shape
@@ -51,7 +51,7 @@ def torch_group_quant(x, B, dtype=torch.float8_e4m3fn, round_scale=False):
     return xq, scale
 
 
-def torch_block_quant(w, B, dtype=torch.float8_e4m3fn, round_scale=False):
+def torch_block_quant(w, B=128, dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
     w = w.clone()
     N, K = w.shape

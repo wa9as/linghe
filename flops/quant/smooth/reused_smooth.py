@@ -324,7 +324,7 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
     offs = pid * W + tl.arange(0, H)[:, None] * N + tl.arange(0, W)[None, :]
     soffs = tl.arange(0, H)
     x_max = tl.zeros((W,), dtype=tl.float32)
-    m = tl.cdiv(M, H)
+    m = tl.cdiv(P, H)
     for i in range(m):
         if EVEN:
             x = tl.load(x_ptr + offs)
@@ -399,7 +399,8 @@ def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False,
     x_scale = torch.empty((N,), device=device, dtype=torch.float32)
     H = 256
     W = 32
-    EVEN = M % H == 0 and N % W == 0
+    assert N % W == 0
+    EVEN = M % H == 0
 
     grid = (triton.cdiv(N, W),)
     reused_transpose_smooth_quant_kernel[grid](
@@ -434,16 +435,11 @@ def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
     # col-wise read, row-wise write
     offs = pid * W + tl.arange(0, H)[:, None] * N + tl.arange(0, W)[None, :]
     soffs = tl.arange(0, H)
-    x_max = tl.zeros((W,), dtype=tl.float32) + 1e-25
-    if EVEN:
-        org_smooth_scale = tl.load(
-            org_smooth_scale_ptr + pid * W + tl.arange(0, W))[None, :]
-    else:
-        org_smooth_scale = tl.load(
-            org_smooth_scale_ptr + pid * W + tl.arange(0, W),
-            mask=pid * W + tl.arange(0, W) < N, other=1e25)[None, :]
+    x_max = tl.zeros((W,), dtype=tl.float32)
+    org_smooth_scale = tl.load(
+        org_smooth_scale_ptr + pid * W + tl.arange(0, W))[None, :]
 
-    m = tl.cdiv(M, H)
+    m = tl.cdiv(P, H)
     for i in range(m):
         if EVEN:
             x = tl.load(x_ptr + offs).to(tl.float32)
@@ -452,8 +448,7 @@ def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
                 transpose_smooth_scale_ptr + soffs)[:, None]
         else:
             x = tl.load(x_ptr + offs,
-                        mask=(i * H + tl.arange(0, H)[:, None] < M) & (
-                                    pid * W + tl.arange(0, W)[None, :] < N)).to(
+                        mask=(i * H + tl.arange(0, H)[:, None] < M)).to(
                 tl.float32)
             org_quant_scale = tl.load(org_quant_scale_ptr + soffs,
                                       mask=soffs < M, other=0.0)[:, None]
@@ -465,14 +460,11 @@ def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
         offs += H * N
         soffs += H
 
-    scale = x_max / 448.0
+    scale = tl.maximum(x_max / 448.0, 1e-30)
     if ROUND:
         scale = tl.exp2(tl.ceil(tl.log2(scale)))
-    if EVEN:
-        tl.store(transpose_quant_scale_ptr + pid * W + tl.arange(0, W), scale)
-    else:
-        tl.store(transpose_quant_scale_ptr + pid * W + tl.arange(0, W), scale,
-                 mask=pid * W + tl.arange(0, W) < N)
+
+    tl.store(transpose_quant_scale_ptr + pid * W + tl.arange(0, W), scale)
 
     s = (1.0 / scale)[None, :]
 
@@ -497,15 +489,14 @@ def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
             transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr + soffs,
                                              mask=soffs < M, other=0.0)[:, None]
 
-        x = x * s / org_smooth_scale * org_quant_scale * transpose_smooth_scale
+        x = x * s / org_smooth_scale * (org_quant_scale * transpose_smooth_scale)
         # x = tl.maximum(tl.minimum(x, 448.0), -448.0)
         x = tl.trans(x.to(q_ptr.dtype.element_ty))
         if EVEN:
             tl.store(q_ptr + toffs, x)
         else:
             tl.store(q_ptr + toffs, x,
-                     mask=(i * H + tl.arange(0, H)[None, :] < P) & (
-                                 pid * W + tl.arange(0, W)[:, None] < N))
+                     mask=(i * H + tl.arange(0, H)[None, :] < P))
         offs += H * N
         toffs += H
         soffs += H
@@ -523,7 +514,8 @@ implement: x_q/org_smooth_scale*(org_quant_scale*smooth_scale) -> colwise quant 
 def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
                                                  org_quant_scale,
                                                  transpose_smooth_scale,
-                                                 reverse=True, pad=False,
+                                                 reverse=True, 
+                                                 pad=False,
                                                  round_scale=False):
     # col-wise read, row-wise write
 
@@ -535,7 +527,8 @@ def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
     x_scale = torch.empty((N,), device=device, dtype=torch.float32)
     H = 256
     W = 16
-    EVEN = P == M and M % H == 0 and N % W == 0
+    assert N%W == 0
+    EVEN = P == M and M % H == 0
 
     grid = (triton.cdiv(N, W),)
     reused_transpose_rescale_smooth_quant_kernel[grid](

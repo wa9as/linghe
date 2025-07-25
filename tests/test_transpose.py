@@ -31,7 +31,7 @@ def triton_split_transpose(xs, count_list):
     return outputs 
 
 
-def test_transpose(M=4096,N=4096):
+def test_transpose(M=4096,N=4096,bench=False):
     # M, N, K = 8192, 4096, 13312
     # M, N, K = 4096, 4096, 6144
     # M, N, K = 4096, 4096, 4096
@@ -48,11 +48,11 @@ def test_transpose(M=4096,N=4096):
     ref_output = x_q.t().contiguous()
     opt_output = triton_transpose(x_q)
     output_check(ref_output.float(),opt_output.float(),'transpose')
-    
-    benchmark_func(triton_transpose, x_q, n_repeat=n_repeat, ref_bytes=M*N*2)
+    if bench:
+        benchmark_func(triton_transpose, x_q, n_repeat=n_repeat, ref_bytes=M*N*2)
 
 
-def test_transpose_and_pad(M=4095,N=4096):
+def test_transpose_and_pad(M=4095,N=4096,bench=False):
     # M, N, K = 8192, 4096, 13312
     # M, N, K = 4096, 4096, 6144
     # M, N, K = 4096, 4096, 4096
@@ -72,11 +72,12 @@ def test_transpose_and_pad(M=4095,N=4096):
     ref_output = x_q.t().contiguous()
     opt_output = torch.randn((N,P),dtype=dtype,device=device).to(torch.float8_e4m3fn)
     opt_output = triton_transpose_and_pad(x_q,out=opt_output,pad=True)
-    output_check(ref_output.float(),opt_output[:,:M].float(),'transpose')
+    output_check(ref_output.float(),opt_output[:,:M].float(),'transpose_and_pad')
     if tail>0:
         assert opt_output[:,-tail:].float().abs().sum().item() == 0
     
-    benchmark_func(triton_transpose_and_pad, x_q, n_repeat=n_repeat, ref_bytes=M*N*2)
+    if bench:
+        benchmark_func(triton_transpose_and_pad, x_q, n_repeat=n_repeat, ref_bytes=M*N*2)
 
 
 def test_batch_transpose(M=4096,N=4096,k=32,bench=False):
@@ -89,7 +90,7 @@ def test_batch_transpose(M=4096,N=4096,k=32,bench=False):
 
     x_t_ref = triton_sequence_transpose(xs)
     for i in range(len(xs)):
-        output_check(x_t_ref[i].float(),xts[i].float(),f'{i}')
+        output_check(x_t_ref[i].float(),xts[i].float(),f'batch_transpose_{i}')
 
     if bench:
         n_repeat = 100
@@ -107,7 +108,7 @@ def test_batch_transpose_and_pad(M=4096,N=4096,k=32,bench=False):
     x_t_ref = triton_split_transpose(xs, count_list)
 
     for i in range(len(count_list)):
-        output_check(x_t_ref[i].float(),x_t[i].float(),f'{i}')
+        output_check(x_t_ref[i].float(),x_t[i].float(),f'batch_transpose_and_pad_{i}')
 
     if bench:
         n_repeat = 100

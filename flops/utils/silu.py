@@ -703,13 +703,14 @@ def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale,
 
     if calibrate:
         if 128%n_experts == 0:
+            M = tmp_maxs.shape[1]
             T = 128 // n_experts
             W = N // 2 // T
             H = 16
             grid = (n_experts, T)
             batch_max_kernel[grid](tmp_maxs,
                                 maxs,
-                                sm,
+                                M,
                                 N // 2,
                                 W,
                                 H)
