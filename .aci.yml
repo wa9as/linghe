@@ -14,14 +14,6 @@ jobs:
     inputs:
       languageConfig:
         pythonVersion: "3.9.0"
-      customTestConfig:
-        dockerImage: reg.docker.alibaba-inc.com/dockerhub_common/python:3.9
-        testScript: |
-          python3 -m pip install 'poetry>=1.5.1,<2' -i https://pypi.antfin-inc.com/simple/ # todo 安装到基础镜像里
-          python3 -m poetry install
-          python3 -m poetry run pytest
-        caseReportPath: "./pytest_report/TEST-junit.xml"
-        coverageReportPath: "./pytest_report/TEST-cov.xml"
     config:
       execute:
         isAllowSkip: true
@@ -61,9 +53,11 @@ jobs:
     inputs:
       buildImage: reg.docker.alibaba-inc.com/aii/aistudio:aistudio-190677225-3221750112-1752554942251 # 请指定3.8+以上python版本的镜像(默认3.7,poetry推荐3.8以上)
       # buildTool: poetry
-      artifactType: "wheel" # 仅打wheel包，如需要 tgz，请删除此行
+      # artifactType: "wheel" # 仅打wheel包，如需要 tgz，请删除此行
       registry: "https://artifacts.antgroup-inc.cn/artifact/repositories/simple-dev/" # 测试库地址
       workdir: . # pypi 工程目录，默认在此目录下进行 python -m build 并输出到 dist 目录, 详细可参考组件首页说明
+    only:
+     - master
 
   选择迁移制品:
     id: check
