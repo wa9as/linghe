@@ -4,18 +4,11 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.gemm.fp8_gemm import *   # noqa: F403
-from flops.gemm.blockwise_fp8_gemm import *   # noqa: F403
-from flops.gemm.channelwise_fp8_gemm import *   # noqa: F403
-from flops.utils.util import *   # noqa: F403
-from flops.utils.transpose import *   # noqa: F403
-from flops.utils.add import *   # noqa: F403
-from flops.quant.channel.channel import *   # noqa: F403
-from flops.quant.block.block import *   # noqa: F403
-from flops.quant.block.group import *   # noqa: F403
-from flops.quant.smooth.seperate_smooth import *   # noqa: F403
-from flops.utils.rearange import *   # noqa: F403
-
+from flops.gemm.fp8_gemm import ( persistent_fp8_gemm,
+                                  trival_fp8_gemm )
+from flops.gemm.blockwise_fp8_gemm import fp8_gemm
+from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm 
+from flops.utils.add import triton_block_add
 
 
 
@@ -70,8 +63,7 @@ elif mode == 'channelwise':
                                     scale_a=x_scales.view(-1,1),
                                     scale_b=w_scales.view(1,-1),
                                     out_dtype=torch.bfloat16,
-                                    use_fast_accum=True,
-                                )
+                                    use_fast_accum=True)
         triton_block_add(c, bf16_out, accum=accum)
         return c
 

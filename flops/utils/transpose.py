@@ -24,11 +24,7 @@ def deprecated_transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr,
             y = tl.trans(tl.load(x_ptr + offs))
             tl.store(t_ptr + toffs, y)
         else:
-            y = tl.trans(tl.load(x_ptr + offs, mask=(pid * W + tl.arange(0, W)[
-                                                               None, :] < N) & (
-                                                                i * H + tl.arange(
-                                                            0, H)[:,
-                                                                        None] < M)))
+            y = tl.trans(tl.load(x_ptr + offs, mask=(pid * W + tl.arange(0, W)[None, :] < N) & (i * H + tl.arange(0, H)[:, None] < M)))
             tl.store(t_ptr + toffs, y,
                      mask=(pid * W + tl.arange(0, W)[:, None] < N) & (
                                  i * H + tl.arange(0, H)[None, :] < M))

@@ -1,8 +1,9 @@
 import torch 
 
-from flops.utils.util import *   # noqa: F403
-from flops.quant.block.group import *   # noqa: F403
-from flops.quant.block.block import *   # noqa: F403
+from flops.utils.util import ( output_check,
+                               torch_group_quant)
+from flops.quant.block.group import ( triton_group_quant,
+                                      triton_persist_group_quant )
 from flops.utils.benchmark import benchmark_func
 
 

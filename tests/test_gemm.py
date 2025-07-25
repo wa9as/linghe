@@ -4,11 +4,13 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.gemm.fp8_gemm import *   # noqa: F403
-from flops.gemm.channelwise_fp8_gemm import *   # noqa: F403
-from flops.utils.util import *   # noqa: F403
-from flops.utils.add import *   # noqa: F403
-from flops.gemm.fp32_gemm import *   # noqa: F403
+from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm
+from flops.utils.util import output_check                       
+from flops.gemm.fp32_gemm import ( triton_fp32_gemm,
+                                   triton_fp32_gemm_for_backward,
+                                   triton_fp32_gemm_for_update,
+                                   triton_scaled_fp32_gemm,
+                                   triton_scaled_fp32_gemm_for_update )
 
 
 

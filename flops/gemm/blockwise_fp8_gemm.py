@@ -173,8 +173,7 @@ def fp8_gemm(a: torch.Tensor, b: torch.Tensor, a_s: torch.Tensor,
     a_tile_scale = a_s.size(0) == a.size(0)
     b_tile_scale = b_s.size(0) == b.size(0)
     block_size = K // a_s.size(-1)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
-                         triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa
     if a_tile_scale and b_tile_scale:
         fp8_gemm_tt_kernel[grid](a, b, c, a_s, b_s, M, N, K, block_size)
     elif a_tile_scale and not b_tile_scale:

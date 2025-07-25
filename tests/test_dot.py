@@ -5,8 +5,9 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *   # noqa: F403
-from flops.utils.dot import *   # noqa: F403
+from flops.utils.util import output_check
+from flops.utils.dot import ( triton_dot,
+                              triton_mix_precise_dot )
 from flops.utils.benchmark import benchmark_func
 
 

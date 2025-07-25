@@ -5,7 +5,6 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *
 from flops.utils.benchmark import benchmark_func
 
 M, N, K = 8192, 4096, 8192

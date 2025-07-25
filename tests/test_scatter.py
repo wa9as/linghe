@@ -5,8 +5,12 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *   # noqa: F403
-from flops.utils.scatter import *   # noqa: F403
+from flops.utils.util import ( output_check,
+                               torch_make_indices )
+from flops.utils.scatter import ( triton_make_row_id_map,
+                                  triton_scatter_add,
+                                  triton_scatter_add_with_count,
+                                  triton_unpermute_with_mask_map )
 from flops.utils.benchmark import benchmark_func
 
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"

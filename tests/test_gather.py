@@ -5,9 +5,15 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *   # noqa: F403
-from flops.utils.gather import *   # noqa: F403
-from flops.quant.smooth.reused_smooth import *   # noqa: F403
+from flops.utils.util import ( output_check,
+                               torch_batch_smooth_quant,
+                               torch_make_indices )
+from flops.utils.gather import ( triton_index_select,
+                                 triton_permute_with_mask_map,
+                                 triton_smooth_permute_with_indices,
+                                 triton_smooth_permute_with_mask_map,
+                                 triton_smooth_unpermute_with_indices_backward,
+                                 triton_smooth_weighted_unpermute_with_indices_backward )
 from flops.utils.benchmark import benchmark_func
 
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"

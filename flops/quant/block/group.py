@@ -35,7 +35,7 @@ def triton_group_quant(x, dtype=torch.float8_e4m3fn, group_size=128,
 
     y = torch.empty((M, N), device=x.device, dtype=dtype)
     s = torch.empty(M, N // group_size, device=x.device, dtype=torch.float32)
-    grid = (M,)  # noqa: E731
+    grid = (M,)  # noqa
     group_quant_kernel[grid](x,
                              y,
                              s,
@@ -89,7 +89,7 @@ def triton_persist_group_quant(x, dtype=torch.float8_e4m3fn, group_size=128,
     y = torch.empty((M, N), dtype=dtype, device=device)
     s = torch.empty(M, N // group_size, device=x.device, dtype=torch.float32)
 
-    grid = (M // B,)  # noqa: E731
+    grid = (M // B,)  # noqa
     persist_group_quant_kernel[grid](x,
                                      y,
                                      s,

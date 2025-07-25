@@ -1,6 +1,8 @@
 import torch
 
-from flops.utils.util import *   # noqa: F403
+from flops.utils.util import ( fp16_forward,
+                               quant_check,
+                               torch_outlier_quant )
 
 qtype = torch.float8_e4m3fn
 device = 'cuda:0'

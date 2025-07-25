@@ -4,10 +4,9 @@ import time
 import os
 import random
 from flops.utils.benchmark import benchmark_func
-from flops.gemm.channelwise_fp8_gemm import *   # noqa: F403
+from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm 
 
-from flops.utils.util import *   # noqa: F403
-from flops.utils.add import *   # noqa: F403
+from flops.utils.util import fp16_forward
 
 
 def triton_accum_weight(x,w,out,x_scale,w_scale):
