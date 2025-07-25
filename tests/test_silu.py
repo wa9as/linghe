@@ -3,8 +3,16 @@ import torch
 import random
 from flops.utils.util import output_check, torch_smooth_quant
 from flops.utils.benchmark import benchmark_func
-from flops.utils.silu import *   # noqa: F403
-from flops.quant.smooth.reused_smooth import *   # noqa: F403
+from flops.utils.silu import ( triton_batch_weighted_silu_and_quant_backward,
+                               triton_batch_weighted_silu_and_quant_forward,
+                               triton_silu_and_quant_backward,
+                               triton_silu_and_quant_forward,
+                               triton_weighted_silu_and_quant_backward,
+                               triton_weighted_silu_and_quant_forward,
+                               triton_weighted_silu_backward,
+                               triton_weighted_silu_forward )
+from flops.quant.smooth.reused_smooth import ( triton_batch_smooth_quant,
+                                               triton_reused_smooth_quant )
 
 # from megatron.core.fusions.fused_bias_swiglu import weighted_swiglu, weighted_swiglu_back
 

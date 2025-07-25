@@ -6,11 +6,13 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *   # noqa: F403
-from flops.utils.transpose import *   # noqa: F403
-from torch.profiler import profile, record_function, ProfilerActivity
-
-
+from flops.utils.util import output_check
+from flops.utils.transpose import ( round_up,
+                                    triton_batch_transpose,
+                                    triton_batch_transpose_and_pad,
+                                    triton_transpose,
+                                    triton_transpose_and_pad )
+# from torch.profiler import profile, record_function, ProfilerActivity
 
 def triton_sequence_transpose(xs):
     outputs = []

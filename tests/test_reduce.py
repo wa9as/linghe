@@ -6,9 +6,11 @@ import torch
 import time
 import os
 import random
-from flops.utils.util import *   # noqa: F403
+from flops.utils.util import output_check
 from flops.utils.benchmark import benchmark_func
-from flops.utils.reduce import *   # noqa: F403
+from flops.utils.reduce import ( triton_abs_max,
+                                 triton_batch_count_zero,
+                                 triton_batch_sum_with_ord )
 
 
 def torch_sum(xs):

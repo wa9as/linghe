@@ -6,8 +6,11 @@ import time
 import os
 import random
 import numpy as np
-from flops.utils.util import *   # noqa: F403
-from flops.utils.norm import *   # noqa: F403
+from flops.utils.util import ( output_check,
+                               torch_smooth_quant )
+from flops.utils.norm import ( triton_rms_norm_and_quant_forward,
+                               triton_rms_norm_backward,
+                               triton_rms_norm_forward )
 from flops.facade.rmsnorm import RMSNormFunction
 from flops.utils.benchmark import benchmark_func
 
