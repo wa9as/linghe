@@ -16,7 +16,7 @@ readme = ["README.md", "LICENSE", "LEGAL.md"]
 keywords = ["sample"] # 请修改为实际标签
 
 [tool.mypy]
-files = "flops, tests"
+files = "flops, unit_test"
 mypy_path = "flops"
 namespace_packages = true
 explicit_package_bases = true
@@ -39,6 +39,6 @@ pytest-cov = "^3.0"
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-config", "--strict-markers", "--cov=src", "--cov-report=xml:./pytest_report/TEST-cov.xml", "--junit-xml=./pytest_report/TEST-junit.xml"]
 pythonpath = "src"
-testpaths = ["tests"]
+testpaths = ["unit_test"]
 log_cli_level = "INFO"
 xfail_strict = true

@@ -293,9 +293,7 @@ def persistent_fp8_gemm(a, b, dtype):
     M, K = a.shape
     K, N = b.shape
     c = torch.empty((M, N), device=a.device, dtype=dtype)
-    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,
-                                                                            META[
-                                                                                'BLOCK_SIZE_N']),)  # noqa
+    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,META['BLOCK_SIZE_N']),)  # noqa
     persistent_fp8_gemm_kernel[grid](
         a, b, c,  #
         M, N, K,  #
