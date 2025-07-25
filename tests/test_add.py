@@ -17,7 +17,7 @@ def test_triton_add(M=4096, N=4096, bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
 
-    outputs = torch.randn(M, N, dtype=torch.float16, device=device)
+    outputs = torch.randn(M, N, dtype=dtype, device=device)
     x = torch.randn(M, N, dtype=dtype, device=device)
 
     out = outputs.clone()

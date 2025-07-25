@@ -7,7 +7,7 @@ from flops.utils.util import output_check
 
 
 def torch_fp16_dot(x, y):
-    return (x * y).sum(1).float()
+    return (x * y).sum(1)
 
 
 def test_dot(M=4096, N=4096, bench=False):
@@ -23,14 +23,14 @@ def test_dot(M=4096, N=4096, bench=False):
     smooth_scale = torch.randn(N, dtype=torch.float32, device=device).abs()
 
     sums = triton_dot(x, q)
-    sums_ref = torch_fp16_dot(x, y)
+    sums_ref = torch_fp16_dot(x, q.float().to(dtype))
     output_check(sums_ref, sums, 'sum')
 
     sums_ref = (x.float() * (
                 q.to(torch.float32) * quant_scale[:, None] * smooth_scale[None,
                                                              :])).sum(dim=1)
     sums = triton_mix_precise_dot(x, q, smooth_scale, quant_scale, reverse=True)
-    output_check(sums_ref, sums, 'sum')
+    output_check(sums_ref, sums.float(), 'sum')
 
     if bench:
         ref_time = benchmark_func(torch_fp16_dot, x, y, n_repeat=n_repeat)

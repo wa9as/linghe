@@ -23,7 +23,7 @@ def test_triton_abs_max(M=4096, N=4096, bench=False):
 
     # scales = 1.0/torch.sqrt(torch.maximum(x[:,0].abs().float().amax(0), torch.ones(M,N,dtype=dtype,device=device)) )
     # smooth_scale_ref = torch.exp2(torch.ceil(torch.log2(scales)))
-    maxs_ref = x.abs().amax(0).view(N)
+    maxs_ref = x.abs().amax(0).float().view(N)
 
     maxs = triton_abs_max(x)
     output_check(maxs_ref, maxs)

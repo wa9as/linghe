@@ -7,7 +7,8 @@ from flops.quant.smooth.seperate_smooth import (triton_reused_smooth_quant,
 from flops.utils.benchmark import benchmark_func
 from flops.utils.util import (output_check,
                               torch_make_indices,
-                              torch_smooth_quant)
+                              torch_smooth_quant,
+                              round_up)
 
 
 def torch_split_smooth_quant(x_split, smooth_scales, round_scale=False):

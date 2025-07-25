@@ -12,8 +12,8 @@ def dot_kernel(x_ptr, y_ptr, sum_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
     n = tl.cdiv(N, H)
     sums = tl.zeros((W,), dtype=tl.float32)
     for i in range(n):
-        x = tl.load(x_ptr + offs)
-        q = tl.load(y_ptr + offs)
+        x = tl.load(x_ptr + offs).to(tl.float32)
+        q = tl.load(y_ptr + offs).to(tl.float32)
         sums += tl.sum(x * q, axis=1)
         offs += H
 
@@ -22,14 +22,14 @@ def dot_kernel(x_ptr, y_ptr, sum_ptr, M, N, H: tl.constexpr, W: tl.constexpr):
 
 def triton_dot(x, y):
     M, N = x.shape
-    device = x.device
-    s = torch.empty((M,), device=device, dtype=x.dtype)
-
     H = 128
     W = 16
+    assert M%W == 0
+
     num_stages = 5
     num_warps = 8
-
+    device = x.device
+    s = torch.empty((M,), device=device, dtype=x.dtype)
     grid = (triton.cdiv(M, W),)
     dot_kernel[grid](
         x, y, s,

@@ -242,13 +242,14 @@ def test_weighted_silu_and_quant(M=4096, N=4096, bench=False):
 
 def test_triton_batch_weighted_silu_and_quant(M=4096, N=4096, n_experts=32,
                                               bench=False):
-    if False:
+    if True:
         count_list = [random.randint(M // 2, M // 2 * 3)]
         counts = torch.tensor(count_list, device='cuda:0', dtype=torch.int32)
         bs = sum(count_list)
 
         x = torch.randn((bs, N), dtype=torch.bfloat16, device='cuda:0') ** 3 / 4
         weight = torch.randn((bs, 1), dtype=torch.float32, device='cuda:0')
+        smooth_scales = 1+torch.rand((n_experts,N//2),dtype=torch.float32,device='cuda:0')*10
     else:
         d = torch.load('/ossfs/workspace/Megatron-LM/silu.bin')
         counts = d['counts'].cuda()
@@ -261,7 +262,6 @@ def test_triton_batch_weighted_silu_and_quant(M=4096, N=4096, n_experts=32,
 
     grad_output = torch.randn((bs, N // 2), dtype=torch.bfloat16,
                               device='cuda:0') ** 3
-    # smooth_scales = 1+torch.rand((n_experts,N//2),dtype=torch.float32,device='cuda:0')*10
     grad_smooth_scales = 1 + torch.rand((n_experts, N), dtype=torch.float32,
                                         device='cuda:0') * 10
 
