@@ -33,8 +33,7 @@ def block_quant(x, dtype=torch.float8_e4m3fn, block_size=128,
     y = torch.empty_like(x, dtype=dtype)
     s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size,
                     dtype=torch.float32)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE"]),  # noqa: E731
-                         triton.cdiv(N, META["BLOCK_SIZE"]))  # noqa: E731
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE"]), triton.cdiv(N, META["BLOCK_SIZE"]))  # noqa: E731
     block_quant_kernel[grid](x,
                              y,
                              s,

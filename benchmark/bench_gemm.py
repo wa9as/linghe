@@ -8,7 +8,7 @@ from flops.gemm.fp8_gemm import ( persistent_fp8_gemm,
                                   trival_fp8_gemm )
 from flops.gemm.blockwise_fp8_gemm import fp8_gemm
 from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm 
-
+from flops.utils.add import triton_block_add
 
 
 
@@ -63,8 +63,7 @@ elif mode == 'channelwise':
                                     scale_a=x_scales.view(-1,1),
                                     scale_b=w_scales.view(1,-1),
                                     out_dtype=torch.bfloat16,
-                                    use_fast_accum=True,
-                                )
+                                    use_fast_accum=True)
         triton_block_add(c, bf16_out, accum=accum)
         return c
 

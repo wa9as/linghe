@@ -59,8 +59,7 @@ def trival_fp8_gemm(a: torch.Tensor, b: torch.Tensor, dtype: torch.types):
     M, K = a.size()
     N, K = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),  # noqa: E731
-                         triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa: E731
     BLOCK_SIZE_K = 128
     trival_fp8_gemm_kernel[grid](a, b, c, M, N, K,
                                  BLOCK_SIZE_K,

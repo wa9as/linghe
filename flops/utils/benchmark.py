@@ -6,7 +6,7 @@ import torch
 def benchmark_func(fn, *args, n_warmup=10, n_repeat=100, ref_flops=None,
                    ref_bytes=None, ref_time=None, name='', **kwargs):
     func_name = getattr(fn, '__name__', None)
-    func_name = name if func_name == 'apply' or func_name == None else func_name
+    func_name = name if func_name == 'apply' or func_name is None else func_name
 
     for i in range(n_warmup):
         fn(*args, **kwargs)
