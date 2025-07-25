@@ -360,7 +360,7 @@ def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
         dw = tl.sum(x1 * sigmoid * x2 * g, 1)
         tl.store(dw_ptr + mask, dw, mask=mask < M)
         dx1 = g * x2 * w * sigmoid * (
-                    1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
         dx2 = g * x1 * sigmoid * w * smooth_scale_2
 
         scale = tl.maximum(
@@ -437,7 +437,7 @@ def silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr, dx_ptr,
         g = tl.load(g_ptr + hoffs, mask=mask[:, None] < M).to(tl.float32)
         sigmoid = 1 / (1 + tl.exp(-x1))
         dx1 = g * x2 * sigmoid * (
-                    1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
         dx2 = g * x1 * sigmoid * smooth_scale_2
 
         scale = tl.maximum(
@@ -482,7 +482,7 @@ def compatible_silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr,
         g = tl.load(g_ptr + hoffs).to(tl.float32)
         sigmoid = 1 / (1 + tl.exp(-x1))
         dx1 = g * x2 * sigmoid * (
-                    1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
         dx2 = g * x1 * sigmoid * smooth_scale_2
 
         maxs = tl.maximum(
@@ -513,7 +513,7 @@ def compatible_silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr,
         g = tl.load(g_ptr + hoffs).to(tl.float32)
         sigmoid = 1 / (1 + tl.exp(-x1))
         dx1 = g * x2 * sigmoid * (
-                    1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
         dx2 = g * x1 * sigmoid * smooth_scale_2
 
         dx1 = (dx1 * s).to(dx_ptr.dtype.element_ty)
@@ -612,7 +612,8 @@ def batch_weighted_silu_and_quant_forward_kernel(x_ptr, weight_ptr,
         x2 = tl.load(x_ptr + n + row_offs * 2 + col_offs, mask=mask).to(
             tl.float32)
 
-        w = tl.load(weight_ptr + si + indices, mask=indices < count).to(tl.float32)[:,
+        w = tl.load(weight_ptr + si + indices, mask=indices < count).to(
+            tl.float32)[:,
             None]
         x = x1 / (1 + tl.exp(-x1)) * x2
 
@@ -672,7 +673,7 @@ def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale,
     if calibrate:
         if maxs is None:
             maxs = torch.empty((n_experts, N // 2), device=device,
-                           dtype=torch.float32)
+                               dtype=torch.float32)
         tmp_maxs = torch.empty((n_experts, sm, N // 2), device=device,
                                dtype=torch.float32)
     else:
@@ -702,18 +703,18 @@ def triton_batch_weighted_silu_and_quant_forward(x, weight, smooth_scale,
     )
 
     if calibrate:
-        if 128%n_experts == 0:
+        if 128 % n_experts == 0:
             M = tmp_maxs.shape[1]
             T = 128 // n_experts
             W = N // 2 // T
             H = 16
             grid = (n_experts, T)
             batch_max_kernel[grid](tmp_maxs,
-                                maxs,
-                                M,
-                                N // 2,
-                                W,
-                                H)
+                                   maxs,
+                                   M,
+                                   N // 2,
+                                   W,
+                                   H)
         else:
             maxs = tmp_maxs.amax(1)
     return out, scale, maxs
@@ -744,7 +745,8 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
         smooth_scale_1 = 1 / smooth_scale_1
         smooth_scale_2 = 1 / smooth_scale_2
 
-    offs = si * n * 2 + tid * c * W * n * 2 + tl.arange(0, W)[:, None] * n * 2 + tl.arange(
+    offs = si * n * 2 + tid * c * W * n * 2 + tl.arange(0, W)[:,
+                                              None] * n * 2 + tl.arange(
         0, n)[None, :]
     hoffs = si * n + tid * c * W * n + tl.arange(0, W)[:, None] * n + tl.arange(
         0, n)[None, :]
@@ -752,15 +754,17 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
         indices = tid * c * W + i * W + tl.arange(0, W)
         x1 = tl.load(x_ptr + offs, mask=indices[:, None] < count).to(tl.float32)
         # x1 = tl.maximum(x1, -80.7)
-        x2 = tl.load(x_ptr + offs + n, mask=indices[:, None] < count).to(tl.float32)
+        x2 = tl.load(x_ptr + offs + n, mask=indices[:, None] < count).to(
+            tl.float32)
         g = tl.load(g_ptr + hoffs, mask=indices[:, None] < count).to(tl.float32)
-        w = tl.load(weight_ptr + si + indices, mask=indices < count).to(tl.float32)[:, None]
+        w = tl.load(weight_ptr + si + indices, mask=indices < count).to(
+            tl.float32)[:, None]
         sigmoid = 1 / (1 + tl.exp(-x1))
         dw = tl.sum(x1 * sigmoid * x2 * g, 1)
         tl.store(dw_ptr + si + indices, dw, mask=indices < count)
 
         dx1 = g * x2 * w * sigmoid * (
-                    1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
         dx2 = g * x1 * sigmoid * w * smooth_scale_2
 
         dx1_max = tl.max(dx1.abs(), 1)
@@ -784,13 +788,13 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
 
 # used in routed experts
 def triton_batch_weighted_silu_and_quant_backward(g, x, weight, smooth_scales,
-                                                  counts, 
+                                                  counts,
                                                   reverse=True,
                                                   round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n_expert = counts.shape[0]
-    assert N <= 8192 and 8192%N == 0
+    assert N <= 8192 and 8192 % N == 0
     device = x.device
     dx = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     dx_scale = torch.empty((M,), device=device, dtype=torch.float32)

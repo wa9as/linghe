@@ -24,10 +24,14 @@ def deprecated_transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr,
             y = tl.trans(tl.load(x_ptr + offs))
             tl.store(t_ptr + toffs, y)
         else:
-            y = tl.trans(tl.load(x_ptr + offs, mask=(pid * W + tl.arange(0, W)[None, :] < N) & (i * H + tl.arange(0, H)[:, None] < M)))
+            y = tl.trans(tl.load(x_ptr + offs, mask=(pid * W + tl.arange(0, W)[
+                                                               None, :] < N) & (
+                                                                i * H + tl.arange(
+                                                            0, H)[:,
+                                                                        None] < M)))
             tl.store(t_ptr + toffs, y,
                      mask=(pid * W + tl.arange(0, W)[:, None] < N) & (
-                                 i * H + tl.arange(0, H)[None, :] < M))
+                             i * H + tl.arange(0, H)[None, :] < M))
         offs += H * N
         toffs += H
 
@@ -72,11 +76,11 @@ def transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr, W: tl.constexpr,
     else:
         y = tl.trans(tl.load(x_ptr + offs,
                              mask=(cid * W + tl.arange(0, W)[None, :] < N) & (
-                                         rid * H + tl.arange(0, H)[:,
-                                                   None] < M)))
+                                     rid * H + tl.arange(0, H)[:,
+                                               None] < M)))
         tl.store(t_ptr + toffs, y,
                  mask=(cid * W + tl.arange(0, W)[:, None] < N) & (
-                             rid * H + tl.arange(0, H)[None, :] < M))
+                         rid * H + tl.arange(0, H)[None, :] < M))
 
 
 def triton_transpose(x):
@@ -303,7 +307,7 @@ def triton_opt_transpose(x):
     device = x.device
     D = 0 if x.dtype.itemsize == 1 else 1
     t = torch.empty((N, M), device=device, dtype=x.dtype)
-    grid = lambda META: (N // META["W"],) # noqa 
+    grid = lambda META: (N // META["W"],)  # noqa
     opt_transpose_kernel[grid](
         x, t,
         M, N, D

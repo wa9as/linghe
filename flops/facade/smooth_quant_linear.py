@@ -245,7 +245,7 @@ class QuantLinear(torch.nn.Module):
                     self.smooth_scale = smooth_scale
                 elif self.smooth_update_step % self.gap_step == 0:
                     self.smooth_scale = self.decay_coef * self.smooth_scale + (
-                                1.0 - self.decay_coef) * smooth_scale
+                            1.0 - self.decay_coef) * smooth_scale
                 self.smooth_update_step += 1
         else:
             output = input @ self.weight.t()

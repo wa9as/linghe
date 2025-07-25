@@ -20,8 +20,8 @@ def get_expert_indices(logits, n_act=4):
     bs, length, expert = logits.shape
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=logits.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=logits.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -89,8 +89,8 @@ def split_moe(hs, logits, wgs, wus, wds, n_act=4):
     expert, ims, dim = wgs.shape
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -127,8 +127,8 @@ def moe_ref(hs, logits, ws, vs, n_act=4):
     expert, dim, ims = vs.shape
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -156,8 +156,8 @@ def moe(hs, logits, ws, vs, n_act=4):
     expert, dim, ims = vs.shape
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -196,8 +196,8 @@ def naive_fp8_moe(hs, logits, wfns, vfns, n_act=4):
     dim, ims = vfns[0].weight.shape
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -243,8 +243,8 @@ def fused_fp8_moe_forward(hs, logits, ws, vs, n_act=4):
     ims = ims2 // 2
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -313,8 +313,8 @@ def slide_fp8_moe_forward(hs, logits, ws, w_scales, vs, v_scales,
     ims = ims2 // 2
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],

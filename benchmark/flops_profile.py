@@ -1,12 +1,7 @@
-
 import torch
-from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler import profile, ProfilerActivity
 
-from flops.quant.block.group import ( group_quant_kernel,
-                                      triton_group_quant,
-                                      triton_persist_group_quant )
-
-
+from flops.quant.block.group import (triton_group_quant)
 
 # M, N, K = 8192, 10240, 8192  # max qkv
 # M, N, K = 8192, 8192, 8192  # max out
@@ -27,10 +22,11 @@ x_q = x.to(torch.float8_e4m3fn)
 w_q = w.to(torch.float8_e4m3fn)
 y_q = y.to(torch.float8_e4m3fn)
 
-
-with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]) as prof:
+with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA,
+                         ProfilerActivity.XPU]) as prof:
     for i in range(100):
         triton_group_quant(x)
-print(prof.key_averages().table(sort_by=None, top_level_events_only=True, row_limit=2000))
+print(prof.key_averages().table(sort_by=None, top_level_events_only=True,
+                                row_limit=2000))
 print(prof.key_averages(group_by_stack_n=5).table(sort_by=None, row_limit=100))
 prof.export_chrome_trace("trace.json")

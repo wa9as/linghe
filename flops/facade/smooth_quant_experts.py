@@ -2,13 +2,10 @@ from typing import Optional
 
 import torch
 
-
-from flops.quant.smooth.naive_smooth import smooth_quant_forward, smooth_quant_backward,smooth_quant_update
-from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, reused_smooth_quant_update,reused_smooth_quant_backward
-from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, triton_reused_transpose_smooth_quant
-
-
-
+from flops.quant.smooth.naive_smooth import smooth_quant_forward, \
+    smooth_quant_backward, smooth_quant_update
+from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, \
+    reused_smooth_quant_update, reused_smooth_quant_backward
 
 
 # https://code.alipay.com/Arc/atorch/blob/master/atorch/modules/fp8/scaled_linear.py#L45
@@ -242,7 +239,7 @@ class QuantExperts(torch.nn.Module):
                     self.smooth_scale = smooth_scale
                 elif self.smooth_update_step % self.gap_step == 0:
                     self.smooth_scale = self.decay_coef * self.smooth_scale + (
-                                1.0 - self.decay_coef) * smooth_scale
+                            1.0 - self.decay_coef) * smooth_scale
                 self.smooth_update_step += 1
         else:
             output = input @ self.weight.t()

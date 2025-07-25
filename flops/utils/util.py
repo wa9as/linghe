@@ -20,7 +20,8 @@ def torch_tensor_quant(x, dtype=torch.float8_e4m3fn, round_scale=False):
 def torch_row_quant(x, dtype=torch.float8_e4m3fn, round_scale=False):
     fmax = torch.finfo(dtype).max
     scale = torch.abs(x).amax(1) / fmax
-    scale = torch.maximum(scale, 1e-30*torch.ones((1,),dtype=torch.float32, device=x.device))
+    scale = torch.maximum(scale, 1e-30 * torch.ones((1,), dtype=torch.float32,
+                                                    device=x.device))
     if round_scale:
         scale = torch.exp2(torch.ceil(torch.log2(scale)))
     x_q = (x / scale[:, None]).to(dtype)
@@ -423,8 +424,8 @@ def fp16_f_and_b(x, w, y):
 
 def output_check(org_out, opt_out, mode='', rtol=0.02):
     assert org_out.shape == opt_out.shape
-    dtype = org_out.dtype 
-    assert opt_out.dtype == dtype 
+    dtype = org_out.dtype
+    assert opt_out.dtype == dtype
     if dtype != torch.float32:
         org_out = org_out.float()
         opt_out = opt_out.float()

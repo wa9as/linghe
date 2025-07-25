@@ -19,8 +19,8 @@ def moe_ref(hs, logits, ws, vs, n_act=4):
     expert, dim, ims = vs.shape
     logits = logits.view(bs * length, expert)
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -49,8 +49,8 @@ def moe(hs, logits, ws, vs, n_act=4):
     hs = hs.view(bs * length, dim)
 
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -125,8 +125,8 @@ def tp_moe(hs, logits, ws, vs, n_act=4, rank=0, world_size=2):
     logits = logitss
 
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=hs.device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=hs.device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -196,8 +196,8 @@ def ep_moe(hs, logits, ws, vs, n_act=4, rank=0, world_size=2, step=0):
     logits = logits.view(bs * length, expert)
 
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -343,8 +343,8 @@ def overlap_ep_moe(hs, logits, ws, vs, c_stream, d_stream, n_act=4, rank=0,
     logits = logits.view(bs * length, expert)
 
     double_logits = logits.to(torch.float64) * (
-                1 + torch.arange(expert, device=device,
-                                 dtype=torch.float64) * 1e-12)
+            1 + torch.arange(expert, device=device,
+                             dtype=torch.float64) * 1e-12)
     double_top_values, top_indices = torch.topk(double_logits, n_act, dim=-1,
                                                 largest=True, sorted=True)
     mask_logits = torch.where(double_logits >= double_top_values[:, -1:],
@@ -590,7 +590,7 @@ if __name__ == '__main__':
         dtype = torch.bfloat16
 
         inputs = torch.ones((tokens, dim), dtype=dtype, device=device) * (
-                    rank + 1)
+                rank + 1)
         outputs = torch.zeros((tokens * 2, dim), dtype=dtype, device=device)
         torch.cuda.synchronize()
         ts = time.time()
@@ -611,7 +611,7 @@ if __name__ == '__main__':
         for i in range(8):
             tokens = 2 ** (i + 12)
             inputs = torch.randn((tokens, dim), dtype=dtype, device=device) * (
-                        rank + 1)
+                    rank + 1)
             outputs = torch.zeros((tokens, dim), dtype=dtype, device=device)
             torch.cuda.synchronize()
             ts = time.time()

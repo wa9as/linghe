@@ -1,9 +1,9 @@
 import torch
 
-from flops.utils.util import ( fp16_forward,                               
-                               quant_check,
-                               torch_block_quant,
-                               torch_group_quant)
+from flops.utils.util import (fp16_forward,
+                              quant_check,
+                              torch_block_quant,
+                              torch_group_quant)
 
 qtype = torch.float8_e4m3fn
 device = 'cuda:0'

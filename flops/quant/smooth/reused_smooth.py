@@ -332,7 +332,7 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
         else:
             x = tl.load(x_ptr + offs,
                         mask=(i * H + tl.arange(0, H)[:, None] < M) & (
-                                    pid * W + tl.arange(0, W)[None, :] < N))
+                                pid * W + tl.arange(0, W)[None, :] < N))
             other = 0.0 if REVERSE else 1e30
             smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < M, other=other)[
                            :, None]
@@ -366,8 +366,8 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
         else:
             x = tl.trans(tl.load(x_ptr + offs,
                                  mask=(i * H + tl.arange(0, H)[:, None] < M) & (
-                                             pid * W + tl.arange(0, W)[None,
-                                                       :] < N)))
+                                         pid * W + tl.arange(0, W)[None,
+                                                   :] < N)))
             other = 0.0 if REVERSE else 1e30
             smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < M, other=other)
 
@@ -381,7 +381,7 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
             # mask with P instead of M
             tl.store(q_ptr + toffs, x,
                      mask=(i * H + tl.arange(0, H)[None, :] < P) & (
-                                 pid * W + tl.arange(0, W)[:, None] < N))
+                             pid * W + tl.arange(0, W)[:, None] < N))
         offs += H * N
         toffs += H
         soffs += H
@@ -482,14 +482,15 @@ def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
         else:
             x = tl.load(x_ptr + offs,
                         mask=(i * H + tl.arange(0, H)[:, None] < M) & (
-                                    pid * W + tl.arange(0, W)[None, :] < N)).to(
+                                pid * W + tl.arange(0, W)[None, :] < N)).to(
                 tl.float32)
             org_quant_scale = tl.load(org_quant_scale_ptr + soffs,
                                       mask=soffs < M, other=0.0)[:, None]
             transpose_smooth_scale = tl.load(transpose_smooth_scale_ptr + soffs,
                                              mask=soffs < M, other=0.0)[:, None]
 
-        x = x * s / org_smooth_scale * (org_quant_scale * transpose_smooth_scale)
+        x = x * s / org_smooth_scale * (
+                    org_quant_scale * transpose_smooth_scale)
         # x = tl.maximum(tl.minimum(x, 448.0), -448.0)
         x = tl.trans(x.to(q_ptr.dtype.element_ty))
         if EVEN:
@@ -514,7 +515,7 @@ implement: x_q/org_smooth_scale*(org_quant_scale*smooth_scale) -> colwise quant 
 def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
                                                  org_quant_scale,
                                                  transpose_smooth_scale,
-                                                 reverse=True, 
+                                                 reverse=True,
                                                  pad=False,
                                                  round_scale=False):
     # col-wise read, row-wise write
@@ -527,7 +528,7 @@ def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
     x_scale = torch.empty((N,), device=device, dtype=torch.float32)
     H = 256
     W = 16
-    assert N%W == 0
+    assert N % W == 0
     EVEN = P == M and M % H == 0
 
     grid = (triton.cdiv(N, W),)

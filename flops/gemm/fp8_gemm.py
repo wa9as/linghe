@@ -59,7 +59,8 @@ def trival_fp8_gemm(a: torch.Tensor, b: torch.Tensor, dtype: torch.types):
     M, K = a.size()
     N, K = b.size()
     c = torch.empty(M, N, dtype=dtype, device=a.device)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa
+    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]),
+                         triton.cdiv(N, META["BLOCK_SIZE_N"]))  # noqa
     BLOCK_SIZE_K = 128
     trival_fp8_gemm_kernel[grid](a, b, c, M, N, K,
                                  BLOCK_SIZE_K,
@@ -246,9 +247,9 @@ def persistent_fp8_gemm_kernel(
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
     a_ptrs = a_ptr + (
-                offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+            offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
     b_ptrs = b_ptr + (
-                offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+            offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
 
     # -----------------------------------------------------------
     # Iterate to compute a block of the C matrix.
@@ -292,7 +293,9 @@ def persistent_fp8_gemm(a, b, dtype):
     M, K = a.shape
     K, N = b.shape
     c = torch.empty((M, N), device=a.device, dtype=dtype)
-    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,META['BLOCK_SIZE_N']),) # noqa
+    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N,
+                                                                            META[
+                                                                                'BLOCK_SIZE_N']),)  # noqa
     persistent_fp8_gemm_kernel[grid](
         a, b, c,  #
         M, N, K,  #
