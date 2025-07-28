@@ -46,11 +46,12 @@ def torch_silu_and_quant_forward(x, smooth_scale, round_scale=True):
     x1, x2 = torch.split(x, N // 2, dim=1)
     y = torch.sigmoid(x1) * x1 * x2
     y_smooth = y / smooth_scale
+    x_maxs = y.abs().float().amax(0)
     y_scale = y_smooth.abs().amax(1) / 448
     if round_scale:
         y_scale = torch.exp2(torch.ceil(torch.log2(y_scale)))
     q = (y_smooth / y_scale[:, None]).to(torch.float8_e4m3fn)
-    return q, y_scale
+    return q, y_scale, x_maxs
 
 
 def torch_silu_and_quant_backward(grad, x, smooth_scale, round_scale=True):
@@ -140,20 +141,32 @@ def split_batch_weighted_silu_and_quant_backward(grad_output, x, weight,
 
 
 def test_silu_and_quant(M=4096, N=4096, bench=False):
-    x = torch.randn((M, N), dtype=torch.bfloat16, device='cuda:0')
-    x = (x ** 3 // 10).clone().detach().requires_grad_()
-    grad_output = torch.randn((M, N // 2), dtype=torch.bfloat16,
-                              device='cuda:0')
-    smooth_scale = 1 + torch.rand((N // 2,), dtype=torch.float32,
-                                  device='cuda:0')
-    grad_smooth_scale = 1 + torch.rand((N,), dtype=torch.float32,
-                                       device='cuda:0')
+    if True:
+        x = torch.randn((M, N), dtype=torch.bfloat16, device='cuda:0')
+        x = (x ** 3 // 10).clone().detach().requires_grad_()
+        grad_output = torch.randn((M, N // 2), dtype=torch.bfloat16,
+                                device='cuda:0')
+        smooth_scale = 1 + torch.rand((N // 2,), dtype=torch.float32,
+                                    device='cuda:0')
+        grad_smooth_scale = 1 + torch.rand((N,), dtype=torch.float32,
+                                        device='cuda:0')
+    else:   
+        d = torch.load('/ossfs/workspace/tmp/vis/silu.bin')
+        x = d['x'].clone().detach().to('cuda:0').requires_grad_()
+        grad_output = d['g'].to('cuda:0')
+        grad_smooth_scale = d['smooth_scale'].to('cuda:0')
+        N = x.shape[-1]
+        M = x.shape[0]
+        smooth_scale = 1 + torch.rand((N // 2,), dtype=torch.float32,
+                                    device='cuda:0')
 
-    y_q_ref, y_scale_ref = torch_silu_and_quant_forward(x, smooth_scale)
-    y_q, y_scale, _ = triton_silu_and_quant_forward(x, smooth_scale,
-                                                    round_scale=True)
+    y_q_ref, y_scale_ref, y_maxs_ref = torch_silu_and_quant_forward(x, smooth_scale)
+    y_q, y_scale, y_maxs = triton_silu_and_quant_forward(x, smooth_scale,
+                                                    round_scale=True,
+                                                    calibrate=True)
     output_check(y_q_ref.float(), y_q.float(), 'y_data')
     output_check(y_scale_ref, y_scale, 'y_scale')
+    output_check(y_maxs_ref, y_maxs, 'y_max')
 
     dx_q_ref, dx_scale_ref = torch_silu_and_quant_backward(grad_output, x,
                                                            grad_smooth_scale)
@@ -310,9 +323,10 @@ def test_triton_batch_weighted_silu_and_quant(M=4096, N=4096, n_experts=32,
 
 
 if __name__ == '__main__':
-    test_silu_and_quant(M=4096, N=4096)
-    test_silu_and_quant(M=3575, N=2048)
-    test_weighted_silu(M=4096, N=4096)
-    test_weighted_silu_and_quant(M=4096, N=4096)
-    test_triton_batch_weighted_silu_and_quant(M=4096, N=4096, n_experts=32)
-    test_triton_batch_weighted_silu_and_quant(M=3435, N=2048, n_experts=32)
+    test_silu_and_quant(M=4096, N=10240)
+    test_silu_and_quant(M=4096, N=5120)
+    # test_silu_and_quant(M=3575, N=2048)
+    # test_weighted_silu(M=4096, N=4096)
+    # test_weighted_silu_and_quant(M=4096, N=4096)
+    # test_triton_batch_weighted_silu_and_quant(M=4096, N=4096, n_experts=32)
+    # test_triton_batch_weighted_silu_and_quant(M=3435, N=2048, n_experts=32)

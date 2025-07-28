@@ -64,7 +64,11 @@ def test_transpose_and_pad(M=4095, N=4096, bench=False):
 
     n_repeat = 100
 
-    x = torch.randn(M, N, dtype=dtype, device=device)
+    if False:
+        x = torch.randn(M, N, dtype=dtype, device=device)
+    else:
+        x = torch.load('/ossfs/workspace/tmp/vis/backward.bin')['w']
+        M, N = x.shape
     P = round_up(M, b=32)
     tail = P - M
 
@@ -73,7 +77,7 @@ def test_transpose_and_pad(M=4095, N=4096, bench=False):
     ref_output = x_q.t().contiguous()
     opt_output = torch.randn((N, P), dtype=dtype, device=device).to(
         torch.float8_e4m3fn)
-    opt_output = triton_transpose_and_pad(x_q, out=opt_output, pad=True)
+    opt_output = triton_transpose_and_pad(x_q, out=opt_output, pad=False)
     output_check(ref_output.float(), opt_output[:, :M].float(),
                  'transpose_and_pad')
     if tail > 0:
@@ -128,7 +132,7 @@ def test_batch_transpose_and_pad(M=4096, N=4096, k=32, bench=False):
 
 
 if __name__ == '__main__':
-    test_transpose(M=4096, N=4096)
+    # test_transpose(M=4096, N=4096)
     test_transpose_and_pad(M=4095, N=4096)
     # test_batch_transpose(M=4096,N=4096,k=32)
     # test_batch_transpose_and_pad(M=4096,N=4096,k=32)

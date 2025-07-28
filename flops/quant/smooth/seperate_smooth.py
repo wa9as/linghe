@@ -1,7 +1,7 @@
 import torch
 
 from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, \
-    triton_reused_transpose_smooth_quant
+    triton_reused_transpose_smooth_quant, round_up, triton_subrow_reused_smooth_quant
 from flops.utils.transpose import triton_transpose_and_pad
 
 """
@@ -31,7 +31,7 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # dx = y @ wT
 # dwT = yT @ x
 def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None,
-                          transpose=True, pad=False, round_scale=False):
+                          transpose=True, pad=True, round_scale=False):
     # assert x.size(1) == smooth_scale.size(0)
     x_q, x_scale = triton_reused_smooth_quant(x, smooth_scale, x_q=x_q,
                                               x_scale=x_scale, reverse=False,
@@ -50,7 +50,7 @@ def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None,
 # dx = y @ wT
 # dwT = yT @ x
 def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
-                          transpose=True, pad=False, round_scale=False):
+                          transpose=True, pad=True, round_scale=False):
     assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     N = y.size(1)
     # assert N == smooth_scale.size(0)
@@ -70,16 +70,43 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
 
 
 def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0,
-                          round_scale=False):
-    M, N = w_q.shape
-    assert w.size(1) == smooth_scale.size(0)
-    size = w.numel()
-    m = size // N
-    ms = offset // N
-    w_q_slice = w_q[ms:ms + m].view(torch.float8_e4m3fn)
-    quant_scale_slice = quant_scale[ms:ms + m]
-    w_q, w_scale = triton_reused_smooth_quant(w, smooth_scale, x_q=w_q_slice,
-                                              x_scale=quant_scale_slice,
-                                              round_scale=round_scale)
+                          round_scale=False, default_scale=1e-5):
+    assert w.ndim == 1
+    assert w_q.size(1) == smooth_scale.size(0)
 
-    return w_q, w_scale
+    size = w.numel()
+    M, N = w_q.shape
+
+    if size == M * N:
+        triton_reused_smooth_quant(w.view(M, N), smooth_scale, x_q=w_q,
+                                                x_scale=quant_scale,
+                                                round_scale=round_scale)
+    elif offset % N == 0 and size % N == 0:
+        n_row = size // N
+        row_id = offset // N
+        w_q_slice = w_q[row_id:row_id + n_row]
+        quant_scale_slice = quant_scale[row_id:row_id + n_row]
+        triton_reused_smooth_quant(w.view(n_row,N), smooth_scale, x_q=w_q_slice,
+                                                x_scale=quant_scale_slice,
+                                                round_scale=round_scale)
+    else:
+        # import pdb; pdb.set_trace()
+        row_si = (offset - 1)//N + 1
+        row_ei = (offset + size) // N
+        col_si = offset % N 
+        col_ei = (offset + size ) % N
+        n_row = row_ei - row_si
+        mw_offset = 0 if col_si == 0 else N - col_si 
+        w_q_slice = w_q[row_si:row_ei]
+        quant_scale_slice = quant_scale[row_si:row_ei]
+        triton_reused_smooth_quant(w[mw_offset:mw_offset+n_row*N].view(n_row,N), smooth_scale, x_q=w_q_slice,
+                                                x_scale=quant_scale_slice,
+                                                round_scale=round_scale)
+
+        # subrow scale is writed by the row with leading master weight
+        if col_ei != 0:
+            weight_offset = row_ei*N
+            master_weight_offset = mw_offset + n_row * N 
+            triton_subrow_reused_smooth_quant(w, smooth_scale, w_q, quant_scale, weight_offset, master_weight_offset, col_ei,
+                                      reverse=False, round_scale=round_scale, scale=default_scale)
+

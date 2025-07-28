@@ -224,7 +224,7 @@ def silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr, scale_ptr,
         tl.store(max_ptr + pid * n + tl.arange(0, n), maxs)
 
 
-# n is NOT power of 2, N is next_power_of_2 of n
+# n is NOT power of 2
 @triton.jit
 def compatible_silu_and_quant_forward_kernel(x_ptr, smooth_scale_ptr, out_ptr,
                                              scale_ptr, max_ptr, M,
@@ -284,9 +284,9 @@ def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None,
         out = torch.empty((M, N // 2), device=device, dtype=torch.float8_e4m3fn)
     if scale is None:
         scale = torch.empty((M,), device=device, dtype=torch.float32)
-    if maxs is None and calibrate:
-        maxs = torch.empty((sm, N // 2), device=device, dtype=torch.float32)
     if triton.next_power_of_2(N) == N and N <= 8192:
+        if maxs is None and calibrate:
+            maxs = torch.empty((sm, N // 2), device=device, dtype=torch.float32)
         W = 8192 // N
         T = triton.cdiv(M, sm * W)
         grid = (sm,)
@@ -308,6 +308,8 @@ def triton_silu_and_quant_forward(x, smooth_scale, out=None, scale=None,
     else:
         B = 512
         T = 16
+        if maxs is None and calibrate:
+            maxs = torch.empty((M // T, N // 2), device=device, dtype=torch.float32)
         assert N // 2 % B == 0 and M % T == 0
         grid = (M // T,)
         compatible_silu_and_quant_forward_kernel[grid](
@@ -491,7 +493,7 @@ def compatible_silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr,
         offs += B
         hoffs += B
 
-    scale = maxs / 448
+    scale = tl.maximum(maxs / 448, 1e-30)
     if ROUND:
         scale = tl.exp2(tl.ceil(tl.log2(scale)))
     tl.store(dx_scale_ptr + pid * T + tl.arange(0, T), scale)
@@ -574,6 +576,11 @@ def triton_silu_and_quant_backward(g, x, smooth_scale, reverse=True,
             num_stages=3,
             num_warps=16
         )
+        # import math 
+        # if math.isnan(dx.float().max().item()):
+        #     print(f'dx is nan, device:{g.device.index} dy:{g.max().item()=} {smooth_scale.max().item()=} {smooth_scale.min().item()=}')
+        #     # torch.save({'g':g,'x':x,'smooth_scale':smooth_scale}, "/ossfs/workspace/tmp/vis/silu.bin")
+        #     exit()
     return dx, dx_scale
 
 

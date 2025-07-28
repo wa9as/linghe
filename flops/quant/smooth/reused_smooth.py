@@ -162,6 +162,62 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
     return x_q, x_scale
 
 
+
+
+
+@triton.jit
+def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
+                                         scale,
+                                         weight_offset,
+                                         master_weight_offset, 
+                                         length,
+                                         N, 
+                                         W: tl.constexpr,
+                                         REVERSE: tl.constexpr,
+                                         ROUND: tl.constexpr,
+                                         ):
+    pid = tl.program_id(axis=0)
+
+    if ROUND:
+        scale = tl.exp2(tl.ceil(tl.log2(scale)))
+    tl.store(qs_ptr + weight_offset//N, scale)
+
+    T = length//W
+    for i in range(T):
+        smooth_scale = tl.load(ss_ptr + i*W + tl.arange(0, W))
+        if not REVERSE:
+            smooth_scale = 1.0 / smooth_scale
+        x = tl.load(x_ptr + master_weight_offset + i * W + tl.arange(0, W)).to(tl.float32)
+        x *= smooth_scale
+        x /= scale
+        xq = tl.minimum(tl.maximum(x,-448),448).to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr + weight_offset + i * W + tl.arange(0, W), xq)
+
+
+def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, weight_offset, master_weight_offset, length,
+                                      reverse=False, round_scale=False, scale=1e-5):
+    M, N = x_q.shape
+    W = 128
+    assert length % W == 0
+    grid = (1,) 
+    subrow_reused_smooth_quant_kernel[grid](
+        x,
+        x_q,
+        smooth_scale,
+        x_scale,
+        scale,
+        weight_offset,
+        master_weight_offset,
+        length,
+        N,
+        W,
+        reverse,
+        round_scale,
+        num_stages=3,
+        num_warps=1
+    )
+
+
 @triton.jit
 def depracated_tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr,
                                                     qs_ptr, M, W,
@@ -491,7 +547,6 @@ def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
 
         x = x * s / org_smooth_scale * (
                     org_quant_scale * transpose_smooth_scale)
-        # x = tl.maximum(tl.minimum(x, 448.0), -448.0)
         x = tl.trans(x.to(q_ptr.dtype.element_ty))
         if EVEN:
             tl.store(q_ptr + toffs, x)

@@ -121,8 +121,11 @@ def transpose_and_pad_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr,
     else:
         y = tl.trans(tl.load(x_ptr + offs,
                              mask=(rid * H + tl.arange(0, H)[:, None] < M)))
-    # paddings are filled with 0
-    tl.store(t_ptr + toffs, y)
+    if EVEN:
+        tl.store(t_ptr + toffs, y)
+    else:
+        # paddings are filled with 0
+        tl.store(t_ptr + toffs, y, mask=(rid * H + tl.arange(0, H)[None,:] < P))
 
 
 """
@@ -143,8 +146,9 @@ def triton_transpose_and_pad(x, out=None, pad=True):
     W = 64
     num_stages = 5
     num_warps = 2
+    assert N % W == 0
     EVEN = M % H == 0 and M == P
-    grid = (triton.cdiv(M, H), triton.cdiv(N, W))
+    grid = (triton.cdiv(P, H), triton.cdiv(N, W))
     transpose_and_pad_kernel[grid](
         x, out,
         M, N, P,
