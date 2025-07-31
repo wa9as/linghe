@@ -79,8 +79,8 @@ furthermore, we clip the values of the subrow within the master weight, to avoid
 inconsistant values between training and evaluation.
 
 """
-def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0,
-                          round_scale=False, default_scale=1e-5):
+def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, subrow_scales, offset=0,
+                          round_scale=False):
     assert w.ndim == 1
     assert w_q.size(1) == smooth_scale.size(0)
 
@@ -116,14 +116,14 @@ def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0,
                                    round_scale=round_scale)
 
         # subrow scale is writed by the row with leading master weights
-        if col_ei != 0:
+        if col_si > 0 or col_ei > 0:
             triton_subrow_reused_smooth_quant(w, 
                                               smooth_scale, 
                                               w_q, 
                                               quant_scale, 
+                                              subrow_scales,
                                               offset, 
                                               size,
                                               reverse=False, 
-                                              round_scale=round_scale, 
-                                              scale=default_scale)
+                                              round_scale=round_scale)
 

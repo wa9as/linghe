@@ -165,7 +165,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
 
 @triton.jit
 def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
-                                         scale,
+                                         subrow_scales_ptr,
                                          tail_ri,
                                          tail_si,
                                          head_ri,
@@ -173,69 +173,85 @@ def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
                                          size,
                                          N, 
                                          W: tl.constexpr,
+                                         TAIL: tl.constexpr,
+                                         HEAD: tl.constexpr,
                                          REVERSE: tl.constexpr,
-                                         ROUND: tl.constexpr,
-                                         ):
+                                         ROUND: tl.constexpr):
+    
+    if TAIL:
+        # scale is saved as 448/max
+        scale = 1/tl.load(subrow_scales_ptr)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        # scale only stores in subrow with leading values
 
-    if ROUND:
-        scale = tl.exp2(tl.ceil(tl.log2(scale)))
-    tl.store(qs_ptr + head_ri, scale, mask=head_ei>0)
+        T = tl.cdiv(N-tail_si, W)
+        for i in range(T):
+            mask = tail_si + i*W + tl.arange(0, W)<N
+            if REVERSE:
+                smooth_scale = tl.load(ss_ptr + tail_si + i*W + tl.arange(0, W), mask=mask)
+            else:
+                smooth_scale = tl.load(ss_ptr + tail_si + i*W + tl.arange(0, W), other=1e30, mask=mask)
+                smooth_scale = 1.0 / smooth_scale
+            x = tl.load(x_ptr + i * W + tl.arange(0, W), mask=mask).to(tl.float32)
+            x *= smooth_scale
+            x /= scale
+            xq = tl.minimum(tl.maximum(x,-448),448)
+            tl.store(q_ptr + tail_ri * N + tail_si + i * W + tl.arange(0, W), xq.to(q_ptr.dtype.element_ty), mask=mask)
+            # NOTE: do not need overwrite now
+            # overwrite master weight, to keep weight consistent in training and evaluation
+            # xdq = xq*scale/smooth_scale
+            # tl.store(x_ptr + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
 
-    T = (N-tail_si)//W
-    for i in range(T):
-        mask = tail_si + i*W + tl.arange(0, W)<N
-        if REVERSE:
-            smooth_scale = tl.load(ss_ptr + tail_si + i*W + tl.arange(0, W), mask=mask)
-        else:
-            smooth_scale = tl.load(ss_ptr + tail_si + i*W + tl.arange(0, W), other=1e30, mask=mask)
-            smooth_scale = 1.0 / smooth_scale
-        x = tl.load(x_ptr + i * W + tl.arange(0, W), mask=mask).to(tl.float32)
-        x *= smooth_scale
-        x /= scale
-        xq = tl.minimum(tl.maximum(x,-448),448)
-        tl.store(q_ptr + tail_ri * N + tail_si + i * W + tl.arange(0, W), xq.to(q_ptr.dtype.element_ty), mask=mask)
-        # overwrite master weight, to keep weight consistent in training and evaluation
-        xdq = xq*scale/smooth_scale
-        tl.store(x_ptr + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
+    if HEAD:
+        # scale is saved as 448/max
+        scale = 1/tl.load(subrow_scales_ptr+1)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        tl.store(qs_ptr + head_ri, scale)
 
-
-    T = head_ei//W
-    for i in range(T):
-        mask = i*W + tl.arange(0, W)<head_ei
-        if REVERSE:
-            smooth_scale = tl.load(ss_ptr + i*W + tl.arange(0, W), mask=mask)
-        else:
-            smooth_scale = tl.load(ss_ptr + i*W + tl.arange(0, W), other=1e30, mask=mask)
-            smooth_scale = 1.0 / smooth_scale
-        x = tl.load(x_ptr + size - head_ei + i * W + tl.arange(0, W), mask=mask).to(tl.float32)
-        x *= smooth_scale
-        x /= scale
-        xq = tl.minimum(tl.maximum(x,-448),448)
-        tl.store(q_ptr + head_ri * N + i * W + tl.arange(0, W), xq.to(q_ptr.dtype.element_ty), mask=mask)
-        # overwrite master weight, to keep weight consistent in training and evaluation
-        xdq = xq*scale/smooth_scale
-        tl.store(x_ptr + size - head_ei + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
+        T = tl.cdiv(head_ei, W)
+        for i in range(T):
+            mask = i*W + tl.arange(0, W)<head_ei
+            if REVERSE:
+                smooth_scale = tl.load(ss_ptr + i*W + tl.arange(0, W), mask=mask)
+            else:
+                smooth_scale = tl.load(ss_ptr + i*W + tl.arange(0, W), other=1e30, mask=mask)
+                smooth_scale = 1.0 / smooth_scale
+            x = tl.load(x_ptr + size - head_ei + i * W + tl.arange(0, W), mask=mask).to(tl.float32)
+            x *= smooth_scale
+            x /= scale
+            xq = tl.minimum(tl.maximum(x,-448),448)
+            tl.store(q_ptr + head_ri * N + i * W + tl.arange(0, W), xq.to(q_ptr.dtype.element_ty), mask=mask)
+            # NOTE: do not need overwrite now
+            # overwrite master weight, to keep weight consistent in training and evaluation
+            # xdq = xq/scale/smooth_scale
+            # tl.store(x_ptr + size - head_ei + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
 
 
 
 
-def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, offset, size,
-                                      reverse=False, round_scale=False, scale=1e-5):
+def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, subrow_scales, offset, size,
+                                      reverse=False, round_scale=False):
     M, N = x_q.shape
     W = 128
     if offset % N == 0:
         tail_ri = 0
-        tail_si = N  # must set N as tail_size = N-tail_si
+        tail_si = 0
+        TAIL = False
     else:
         tail_ri = offset // N 
         tail_si = offset % N
+        TAIL = True
 
     if (offset + size) % N == 0:
         head_ri = 0
         head_ei = 0  # head_size = head_ei
+        HEAD = False
     else:
         head_ri = (offset + size) // N
         head_ei = (offset + size) % N
+        HEAD = True
 
     grid = (1,) 
     subrow_reused_smooth_quant_kernel[grid](
@@ -243,7 +259,7 @@ def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, offset, siz
         x_q,
         smooth_scale,
         x_scale,
-        scale,
+        subrow_scales,
         tail_ri,
         tail_si,
         head_ri,
@@ -251,6 +267,8 @@ def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, offset, siz
         size,
         N,
         W,
+        TAIL,
+        HEAD,
         reverse,
         round_scale,
         num_stages=3,
