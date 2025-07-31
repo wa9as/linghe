@@ -576,11 +576,6 @@ def triton_silu_and_quant_backward(g, x, smooth_scale, reverse=True,
             num_stages=3,
             num_warps=16
         )
-        # import math 
-        # if math.isnan(dx.float().max().item()):
-        #     print(f'dx is nan, device:{g.device.index} dy:{g.max().item()=} {smooth_scale.max().item()=} {smooth_scale.min().item()=}')
-        #     # torch.save({'g':g,'x':x,'smooth_scale':smooth_scale}, "/ossfs/workspace/tmp/vis/silu.bin")
-        #     exit()
     return dx, dx_scale
 
 

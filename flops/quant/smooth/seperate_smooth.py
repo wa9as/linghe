@@ -7,8 +7,9 @@ from flops.utils.transpose import triton_transpose_and_pad
 """
 megatron fp8 training steps:
 step 0: init w smooth scale w_smooth
-step 1: smooth and quant w when w is updated
-step 2: in forward step, columnwise smooth x and rowwise quant x, calc y=x@w; meanwhile, record the columnwise max of x, it is used to update w_smooth
+step 1: smooth and quant w after w is updated by optimizer
+step 2: in forward step, columnwise smooth x and rowwise quant x, calc y=x@w; 
+            meanwhile, record the columnwise max of x, it is used to update w_smooth
 step 3: in dgrad step, columnwise smooth y and rowwise quant y, transpose x, calc dx=y@wT 
 step 4: in wgrad step, dequant then smooth an then quant y_q to get yt_q, calc dw=yT@x
 
@@ -32,7 +33,6 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # dwT = yT @ x
 def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None,
                           transpose=True, pad=True, round_scale=False):
-    # assert x.size(1) == smooth_scale.size(0)
     x_q, x_scale = triton_reused_smooth_quant(x, smooth_scale, x_q=x_q,
                                               x_scale=x_scale, reverse=False,
                                               round_scale=round_scale)
@@ -53,11 +53,9 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
                           transpose=True, pad=True, round_scale=False):
     assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     N = y.size(1)
-    # assert N == smooth_scale.size(0)
     y_q, y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True,
                                               round_scale=round_scale)
     if transpose:
-        # assert pad or y.size(0) == transpose_smooth_scale.size(0)
         yt_q, yt_scale = triton_reused_transpose_smooth_quant(y,
                                                               transpose_smooth_scale,
                                                               reverse=reverse,
@@ -68,7 +66,19 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
 
     return y_q, yt_q, y_scale, yt_scale
 
+"""
+we stat the max/mean of rowwise maximums 
+gate: 1.15/0.14
+up: 0.34/0.14
+down 1.12/0.15
+large value may cause underflow in w, but leading to overflow in dy
+however, underflow in w only influences a row of w, but will influences
+all the rows in dy, therefore we use a very small value to avoid overflow in dy
 
+furthermore, we clip the values of the subrow within the master weight, to avoid 
+inconsistant values between training and evaluation.
+
+"""
 def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0,
                           round_scale=False, default_scale=1e-5):
     assert w.ndim == 1
@@ -90,7 +100,6 @@ def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0,
                                                 x_scale=quant_scale_slice,
                                                 round_scale=round_scale)
     else:
-        # import pdb; pdb.set_trace()
         row_si = (offset - 1)//N + 1
         row_ei = (offset + size) // N
         col_si = offset % N 
@@ -99,14 +108,22 @@ def triton_smooth_quant_w(w, smooth_scale, w_q, quant_scale, offset=0,
         mw_offset = 0 if col_si == 0 else N - col_si 
         w_q_slice = w_q[row_si:row_ei]
         quant_scale_slice = quant_scale[row_si:row_ei]
-        triton_reused_smooth_quant(w[mw_offset:mw_offset+n_row*N].view(n_row,N), smooth_scale, x_q=w_q_slice,
-                                                x_scale=quant_scale_slice,
-                                                round_scale=round_scale)
+        w_slice = w[mw_offset:mw_offset+n_row*N].view(n_row,N)
+        triton_reused_smooth_quant(w_slice, 
+                                   smooth_scale, 
+                                   x_q=w_q_slice,
+                                   x_scale=quant_scale_slice,
+                                   round_scale=round_scale)
 
-        # subrow scale is writed by the row with leading master weight
+        # subrow scale is writed by the row with leading master weights
         if col_ei != 0:
-            weight_offset = row_ei*N
-            master_weight_offset = mw_offset + n_row * N 
-            triton_subrow_reused_smooth_quant(w, smooth_scale, w_q, quant_scale, weight_offset, master_weight_offset, col_ei,
-                                      reverse=False, round_scale=round_scale, scale=default_scale)
+            triton_subrow_reused_smooth_quant(w, 
+                                              smooth_scale, 
+                                              w_q, 
+                                              quant_scale, 
+                                              offset, 
+                                              size,
+                                              reverse=False, 
+                                              round_scale=round_scale, 
+                                              scale=default_scale)
 
