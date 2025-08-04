@@ -423,9 +423,9 @@ def fp16_f_and_b(x, w, y):
 
 
 def output_check(org_out, opt_out, mode='', rtol=0.02):
-    assert org_out.shape == opt_out.shape
+    assert org_out.shape == opt_out.shape, f"ref:{org_out.shape} != out:{opt_out.shape}"
     dtype = org_out.dtype
-    assert opt_out.dtype == dtype
+    assert opt_out.dtype == dtype, f"ref:{dtype} != out:{opt_out.dtype}"
     if dtype != torch.float32:
         org_out = org_out.float()
         opt_out = opt_out.float()
@@ -436,7 +436,7 @@ def output_check(org_out, opt_out, mode='', rtol=0.02):
     print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \
           f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
           f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ')
-    # torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=0.001)
+    # torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=0.01)
 
 
 def quant_check(org_out, xq, wq, opt_out, mode):

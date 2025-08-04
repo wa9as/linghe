@@ -1,35 +1,18 @@
 import torch
 
-from flops.facade.hadamard_quant_linear import \
-    QuantLinear as HadamardQuantLinear
-
-device = 'cuda:0'
-dtype = torch.bfloat16
-M, N, K = 8192, 4096, 13312
-
-layer = HadamardQuantLinear(in_features=K,
-                            out_features=N,
-                            bias=False,
-                            device=device,
-                            dtype=dtype,
-                            impl='bit')
-
-# layer = SmoothQuantLinear(in_features=K,
-#         out_features=N,
-#         bias = False,
-#         device = device,
-#         dtype = dtype,
-#         impl='reused')
 
 
-x = torch.randn((M, K), dtype=dtype, device=device)
-x = torch.nn.parameter.Parameter(x,
-                                 requires_grad=True)  # to mock input in training
+def test_backward_with_stride(M=4096, N=4096):
+    device = 'cuda:0'
+    dtype = torch.bfloat16
+    x = torch.randn(M, N, dtype=dtype, device=device, requires_grad=True)
+    y = x[:16,:16]
+    grad = torch.randn(16,16,dtype=dtype, device=device)
+    y.backward(grad)
+    print(x.grad.shape)
 
-y = layer(x)
-loss = (y ** 2).sum()
-loss.backward()
 
-print("x", x)
-print("y", y)
-print("grad", layer.weight.grad)
+
+
+if __name__ == '__main__':
+    test_backward_with_stride(M=4096, N=4096)

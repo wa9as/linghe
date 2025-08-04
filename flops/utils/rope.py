@@ -1,0 +1,396 @@
+import torch 
+import triton
+import triton.language as tl
+
+
+
+
+@triton.jit
+def half_rope_forward_kernel(q_ptr, k_ptr, freqs_ptr, qo_ptr, ko_ptr, B,
+                            q_stride,
+                            k_stride,
+                            H: tl.constexpr,
+                            h: tl.constexpr,
+                            D: tl.constexpr,
+                            d: tl.constexpr,
+                            ):
+    pid = tl.program_id(0)
+
+    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    cos = tl.cos(freqs)
+    sin = tl.sin(freqs)
+    signs = tl.arange(0,2).to(tl.float32)*2-1
+
+    # [len, bs, q_head, head_dim]
+    for i in range(B):
+        q = tl.load(q_ptr + pid * B * q_stride + i * q_stride + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+        qr = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(q, (H, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (H, D))
+        q = q*cos + qr*sin
+        tl.store(qo_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], q)
+        
+        q = tl.load(q_ptr + pid * B * q_stride + i * q_stride + D + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+        tl.store(qo_ptr + pid * B * H * D * 2 + i * H * D * 2 + D + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], q)
+
+    for i in range(B):
+        k = tl.load(k_ptr + pid * B * k_stride + i * k_stride + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        kr = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(k, (h, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (h, D))
+        k = k*cos + kr*sin
+        tl.store(ko_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], k)
+        
+        k = tl.load(k_ptr + pid * B * k_stride + i * k_stride + D + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        tl.store(ko_ptr + pid * B * h * D * 2 + i * h * D * 2 + D + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], k)
+
+"""
+apply norm to qk, then apply rope to qk, then transpose qkv
+q: [len, bs, q_head, head_dim]
+k: [len, bs, kv_head, head_dim]
+v: [len, bs, kv_head, head_dim]
+"""
+def triton_half_rope_forward(q, k, freqs):
+    L, B, H, D = q.shape 
+    h = k.shape[2]
+    assert freqs.shape[1] == D//4
+    num_stages = 3
+    num_warps = 2
+
+    q_stride = q.stride(1)
+    k_stride = k.stride(1)
+    qo = torch.empty((L,B,H,D),dtype=q.dtype,device=q.device)
+    ko = torch.empty((L,B,h,D),dtype=q.dtype,device=q.device)
+    grid = (L, )
+    half_rope_forward_kernel[grid](
+        q, k, 
+        freqs, 
+        qo, ko,
+        B, 
+        q_stride,
+        k_stride,
+        H, 
+        h,
+        D//2,
+        D//4,
+        num_stages=num_stages,
+        num_warps=num_warps
+    )
+    return qo, ko
+
+
+
+
+@triton.jit
+def half_rope_backward_kernel(q_ptr, k_ptr, freqs_ptr, 
+                            B,
+                            H: tl.constexpr,
+                            h: tl.constexpr,
+                            D: tl.constexpr,
+                            d: tl.constexpr,
+                            ):
+    pid = tl.program_id(0)
+
+    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    cos = tl.cos(freqs)
+    sin = tl.sin(freqs)
+    signs = -tl.arange(0,2).to(tl.float32)*2+1
+
+    # [len, bs, q_head, head_dim]
+    for i in range(B):
+        q = tl.load(q_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+        qr = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(q, (H, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (H, D))
+        q = q*cos + qr*sin
+        tl.store(q_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], q)
+        
+
+    for i in range(B):
+        k = tl.load(k_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        kr = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(k, (h, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (h, D))
+        k = k*cos + kr*sin
+        tl.store(k_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], k)
+        
+"""
+apply norm to qk, then apply rope to qk, then transpose qkv
+q: [len, bs, q_head, head_dim]
+k: [len, bs, kv_head, head_dim]
+v: [len, bs, kv_head, head_dim]
+"""
+def triton_half_rope_backward(q_grad, k_grad, freqs, inplace=False):
+    assert inplace
+    L, B, H, D = q_grad.shape 
+    h = k_grad.shape[2]
+    assert freqs.shape[1] == D//4
+    num_stages = 3
+    num_warps = 2
+
+    grid = (L, )
+    half_rope_backward_kernel[grid](
+        q_grad, k_grad, 
+        freqs, 
+        B, 
+        H, 
+        h,
+        D//2,
+        D//4,
+        num_stages=num_stages,
+        num_warps=num_warps
+    )
+    return q_grad, k_grad
+
+
+
+@triton.jit
+def qk_norm_and_half_rope_forward_kernel(q_ptr, k_ptr, v_ptr, 
+                                         q_norm_weight_ptr, k_norm_weight_ptr, 
+                                         freqs_ptr, 
+                                         qo_ptr, ko_ptr, vo_ptr,
+                                         B, 
+                                         q_stride,
+                                         k_stride,
+                                         v_stride,
+                                         eps,
+                                         H: tl.constexpr,
+                                         h: tl.constexpr,
+                                         D: tl.constexpr,
+                                         d: tl.constexpr):
+    pid = tl.program_id(0)
+    L = tl.num_programs(0)
+
+    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    cos = tl.cos(freqs)
+    sin = tl.sin(freqs)
+    signs = tl.arange(0,2).to(tl.float32)*2-1
+
+    q_weight_0 = tl.load(q_norm_weight_ptr + tl.arange(0, D))
+    q_weight_1 = tl.load(q_norm_weight_ptr + D + tl.arange(0, D))
+
+    # [len, bs, q_head, head_dim] -> [bs, len, q_head, head_dim]
+    for i in range(B):
+        q0 = tl.load(q_ptr + pid * B * q_stride + i * q_stride + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+        q1 = tl.load(q_ptr + pid * B * q_stride + i * q_stride + D + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+
+        rms = 1/tl.sqrt( (tl.sum(q0*q0, 1) + tl.sum(q1*q1, 1)) / (2*D) + eps)
+        q1 *= rms [:,None] 
+        q1 *= q_weight_1
+        tl.store(qo_ptr + pid * H * D * 2 + i * L * H * D * 2 + D + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], q1)
+
+        q0 *= rms[:,None]
+        q0 *= q_weight_0 
+        qr = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(q0, (H, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (H, D))
+        q0 = q0*cos + qr*sin
+        tl.store(qo_ptr + pid * H * D * 2 + i * L * H * D * 2 + 2 * D * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], q0)
+
+    k_weight_0 = tl.load(k_norm_weight_ptr + tl.arange(0, D))
+    k_weight_1 = tl.load(k_norm_weight_ptr + D + tl.arange(0, D))
+    for i in range(B):
+        k0 = tl.load(k_ptr + pid * B * k_stride + i * k_stride + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        k1 = tl.load(k_ptr + pid * B * k_stride + i * k_stride + D + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+
+        rms = 1/tl.sqrt( (tl.sum(k0*k0, 1) + tl.sum(k1*k1, 1)) / (2*D) + eps)
+        k1 *= rms [:,None] 
+        k1 *= k_weight_1
+        tl.store(ko_ptr + pid * h * D * 2 + i * L * h * D * 2 + D + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], k1)
+
+        k0 *= rms[:,None]
+        k0 *= k_weight_0 
+        kr = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(k0, (h, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (h, D))
+        k0 = k0*cos + kr*sin
+        tl.store(ko_ptr + pid * h * D * 2 + i * L * h * D * 2 + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], k0)
+        
+    for i in range(B):
+        v0 = tl.load(v_ptr + pid * B * v_stride + i * v_stride + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        tl.store(vo_ptr + pid * h * D * 2 + i * L * h * D * 2 + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], v0)
+
+        v1 = tl.load(v_ptr + pid * B * v_stride + i * v_stride + D + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        tl.store(vo_ptr + pid * h * D * 2 + i * L * h * D * 2 + D + 2 * D * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], v1)
+        
+
+
+"""
+apply norm to qk, then apply rope to qk
+q: [len, bs, q_head, head_dim]
+k: [len, bs, kv_head, head_dim]
+v: [len, bs, kv_head, head_dim]
+"""
+def triton_qk_norm_and_half_rope_forward(q, k, v, q_norm_weight, k_norm_weight, freqs, eps=1e-6, transpose=False):
+    assert transpose
+    L, B, H, D = q.shape 
+    h = k.shape[2]
+    num_stages = 5
+    num_warps = 2
+
+    q_stride = q.stride(1)
+    k_stride = k.stride(1)
+    v_stride = v.stride(1)
+    
+    qo = torch.empty((B,L,H,D),dtype=q.dtype,device=q.device)
+    ko = torch.empty((B,L,h,D),dtype=q.dtype,device=q.device)
+    vo = torch.empty((B,L,h,D),dtype=q.dtype,device=q.device)
+
+    grid = (L, )
+    qk_norm_and_half_rope_forward_kernel[grid](
+        q, k , v, 
+        q_norm_weight, k_norm_weight,
+        freqs,
+        qo, ko, vo,
+        B, 
+        q_stride,
+        k_stride,
+        v_stride,
+        eps,
+        H, 
+        h,
+        D//2,
+        D//4,
+        num_stages=num_stages,
+        num_warps=num_warps
+    )
+    return qo, ko, vo
+
+
+
+
+@triton.jit
+def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr, 
+                                          q_ptr, k_ptr,
+                                         q_norm_weight_ptr, k_norm_weight_ptr, 
+                                         freqs_ptr, 
+                                         dq_ptr, dk_ptr, dv_ptr,
+                                         dqw_ptr, dkw_ptr,
+                                         B, 
+                                         q_stride,
+                                         k_stride,
+                                         eps,
+                                         H: tl.constexpr,
+                                         h: tl.constexpr,
+                                         D: tl.constexpr,
+                                         d: tl.constexpr):
+    pid = tl.program_id(0)
+    L = tl.num_programs(0)
+    DD = 2 * D
+
+    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    cos = tl.cos(freqs)
+    sin = tl.sin(freqs)
+    signs = -tl.arange(0,2).to(tl.float32)*2+1
+
+    q_w0 = tl.load(q_norm_weight_ptr + tl.arange(0, D))
+    q_w1 = tl.load(q_norm_weight_ptr + D + tl.arange(0, D))
+
+    dqw_0 = tl.zeros((D,), dtype=tl.float32)
+    dqw_1 = tl.zeros((D,), dtype=tl.float32)
+    # [bs, len, q_head, head_dim] -> [len, bs, q_head, head_dim]
+    for i in range(B):
+        gq_0 = tl.load(gq_ptr + i * L * H * DD + pid * H * DD + DD * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+        gq_1 = tl.load(gq_ptr + i * L * H * DD + pid * H * DD + D + DD * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+
+        gq_r = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(gq_0, (H, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (H, D))
+        gq_0 = gq_0*cos + gq_r*sin
+        
+        q0 = tl.load(q_ptr + pid * B * q_stride + i * q_stride + DD * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+        q1 = tl.load(q_ptr + pid * B * q_stride + i * q_stride + D + DD * tl.arange(0, H)[:,None] + tl.arange(0, D)[None,:])
+
+        rms = tl.sqrt( (tl.sum(q0*q0, 1) + tl.sum(q1*q1, 1)) / DD + eps)
+        r = (1/rms)[:, None]
+
+        dqw_0 += tl.sum(q0 * gq_0 * r, 0)
+        dqw_1 += tl.sum(q1 * gq_1 * r, 0)
+
+        s = tl.sum(q0 * gq_0 * q_w0, 1) + tl.sum(q1 * gq_1 * q_w1, 1)
+
+        dq_0 = r * gq_0 * q_w0 - r * r * r / DD * q0 * s[:, None]
+        dq_1 = r * gq_1 * q_w1 - r * r * r / DD * q1 * s[:, None]
+
+        tl.store(dq_ptr + pid * B * H * DD + i * H * DD + DD * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], dq_0)
+        tl.store(dq_ptr + pid * B * H * DD + i * H * DD + D + DD * tl.arange(0, H)[:,None] + tl.arange(0, D)[None, :], dq_1)
+    tl.store(dqw_ptr+pid*D*2 + tl.arange(0,D), dqw_0)
+    tl.store(dqw_ptr+pid*D*2 + D + tl.arange(0,D), dqw_1)
+
+
+    k_w0 = tl.load(k_norm_weight_ptr + tl.arange(0, D))
+    k_w1 = tl.load(k_norm_weight_ptr + D + tl.arange(0, D))
+
+    dkw_0 = tl.zeros((D,), dtype=tl.float32)
+    dkw_1 = tl.zeros((D,), dtype=tl.float32)
+    # [bs, len, k_head, head_dim] -> [len, bs, k_head, head_dim]
+    for i in range(B):
+        gk_0 = tl.load(gk_ptr + i * L * h * DD + pid * h * DD + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        gk_1 = tl.load(gk_ptr + i * L * h * DD + pid * h * DD + D + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+
+        gk_r = tl.reshape(tl.permute(tl.flip(tl.permute(tl.reshape(gk_0, (h, 2, d)), (0,2,1)), dim=2) * signs, (0,2,1)), (h, D))
+        gk_0 = gk_0*cos + gk_r*sin
+        
+        k0 = tl.load(k_ptr + pid * B * k_stride + i * k_stride + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        k1 = tl.load(k_ptr + pid * B * k_stride + i * k_stride + D + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+
+        rms = tl.sqrt( (tl.sum(k0*k0, 1) + tl.sum(k1*k1, 1)) / DD + eps)
+        r = (1/rms)[:, None]
+
+        dkw_0 += tl.sum(k0 * gk_0 * r, 0)
+        dkw_1 += tl.sum(k1 * gk_1 * r, 0)
+
+        s = tl.sum(k0 * gk_0 * k_w0, 1) + tl.sum(k1 * gk_1 * k_w1, 1)
+
+        dk_0 = r * gk_0 * k_w0 - r * r * r / DD * k0 * s[:, None]
+        dk_1 = r * gk_1 * k_w1 - r * r * r / DD * k1 * s[:, None]
+
+        tl.store(dk_ptr + pid * B * h * DD + i * h * DD + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], dk_0)
+        tl.store(dk_ptr + pid * B * h * DD + i * h * DD + D + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], dk_1)
+    tl.store(dkw_ptr+pid*D*2 + tl.arange(0,D), dkw_0)
+    tl.store(dkw_ptr+pid*D*2 + D + tl.arange(0,D), dkw_1)
+
+
+    # [bs, len, k_head, head_dim] -> [len, bs, k_head, head_dim]
+    for i in range(B):
+        v0 = tl.load(gv_ptr +  i * L * h * DD + pid * h * DD + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        tl.store(dv_ptr + pid * B * h * DD + i * h * DD + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], v0)
+
+        v1 = tl.load(gv_ptr + i * L * h * DD + pid * h * DD + D + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None,:])
+        tl.store(dv_ptr + pid * B * h * DD + i * h * DD + D + DD * tl.arange(0, h)[:,None] + tl.arange(0, D)[None, :], v1)
+        
+
+
+
+"""
+apply norm to qk, then apply rope to qk
+q: [len, bs, q_head, head_dim]
+k: [len, bs, kv_head, head_dim]
+v: [len, bs, kv_head, head_dim]
+"""
+def triton_qk_norm_and_half_rope_backward(gq, gk, gv, q, k, q_norm_weight, k_norm_weight, freqs, eps=1e-6, transpose=False):
+    assert transpose
+    L, B, H, D = q.shape 
+    h = k.shape[2]
+    num_stages = 5
+    num_warps = 1
+
+    q_stride = q.stride(1)
+    k_stride = k.stride(1)
+    
+    dtype = q.dtype 
+    device = q.device
+    dq = torch.empty((L,B,H,D),dtype=dtype,device=device)
+    dk = torch.empty((L,B,h,D),dtype=dtype,device=device)
+    dv = torch.empty((L,B,h,D),dtype=dtype,device=device)
+    tmp_dqw = torch.empty((L,D),dtype=torch.float32,device=device)
+    tmp_dkw = torch.empty((L,D),dtype=torch.float32,device=device)
+
+    grid = (L, )
+    qk_norm_and_half_rope_backward_kernel[grid](
+        gq, gk, gv,
+        q, k, 
+        q_norm_weight, k_norm_weight,
+        freqs,
+        dq, dk, dv,
+        tmp_dqw, tmp_dkw,
+        B, 
+        q_stride,
+        k_stride,
+        eps,
+        H, 
+        h,
+        D//2,
+        D//4,
+        num_stages=num_stages,
+        num_warps=num_warps
+    )
+    dqw = tmp_dqw.sum(0).to(dtype)
+    dkw = tmp_dkw.sum(0).to(dtype)
+    return dq, dk, dv, dqw, dkw

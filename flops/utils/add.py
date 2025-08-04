@@ -3,7 +3,7 @@ import triton.language as tl
 
 
 @triton.jit
-def add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr,
+def inplace_add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr,
                EVEN: tl.constexpr, ACCUM: tl.constexpr):
     rid = tl.program_id(axis=0)
     cid = tl.program_id(axis=1)
@@ -38,9 +38,8 @@ def add_kernel(x_ptr, y_ptr, M, N, H: tl.constexpr, W: tl.constexpr,
                                  rid * H + tl.arange(0, H)[None, :] < M))
 
 
-def triton_add(x, y, accum=True):
-    shape = x.shape[-1]
-    N = shape
+def triton_inplace_add(x, y, accum=True):
+    N = x.shape[-1]
     M = x.numel() // N
     # M, N = x.shape
     H = 128
@@ -50,7 +49,7 @@ def triton_add(x, y, accum=True):
     num_warps = 8
 
     grid = (triton.cdiv(M, H), triton.cdiv(N, W))
-    add_kernel[grid](
+    inplace_add_kernel[grid](
         x, y,
         M, N,
         H, W,

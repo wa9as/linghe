@@ -83,26 +83,70 @@ def transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr, W: tl.constexpr,
                          rid * H + tl.arange(0, H)[None, :] < M))
 
 
-def triton_transpose(x):
-    M, N = x.shape
-    device = x.device
-    t = torch.empty((N, M), device=device, dtype=x.dtype)
-    H = 64
-    W = 32 if x.dtype.itemsize == 1 else 16
-    EVEN = M % H == 0 and N % W == 0
-    num_stages = 5
-    num_warps = 2
 
-    grid = (triton.cdiv(M, H), triton.cdiv(N, W))
-    transpose_kernel[grid](
-        x, t,
-        M, N,
-        H, W,
-        EVEN,
-        num_stages=num_stages,
-        num_warps=num_warps
-    )
+@triton.jit
+def transpose_dim_0_1_kernel(x_ptr, t_ptr, B, M, b_stride, m_stride, N: tl.constexpr):
+    rid = tl.program_id(axis=0)
+    cid = tl.program_id(axis=1)
+    offs = rid * b_stride + cid * m_stride + tl.arange(0, N)
+    toffs = cid * B * N + rid * N + tl.arange(0, N)
+    y = tl.load(x_ptr + offs)
+    tl.store(t_ptr + toffs, y)
+
+
+def triton_transpose(x, dim0=None, dim1=None):
+    shape = x.shape 
+    rank = len(shape)
+    assert rank <= 4
+    if rank == 2: 
+        M, N = shape
+        device = x.device
+        t = torch.empty((N, M), device=device, dtype=x.dtype)
+        H = 64
+        W = 32 if x.dtype.itemsize == 1 else 16
+        EVEN = M % H == 0 and N % W == 0
+        num_stages = 5
+        num_warps = 2
+
+        grid = (triton.cdiv(M, H), triton.cdiv(N, W))
+        transpose_kernel[grid](
+            x, t,
+            M, N,
+            H, W,
+            EVEN,
+            num_stages=num_stages,
+            num_warps=num_warps
+        )
+    elif dim0 == 0 and dim1 == 1:
+        stride = x.stride()
+        if rank == 4:
+            B, M, N = shape[0], shape[1], shape[2]*shape[3]
+            assert stride[2] == shape[3], 'must be contiguous in last two dims'
+            t = torch.empty((M, B, shape[2], shape[3]), device=x.device, dtype=x.dtype)
+        else:
+            B, M, N = shape
+            t = torch.empty((M, B, N), device=x.device, dtype=x.dtype)
+        b_stride = stride[0]
+        m_stride = stride[1]
+        num_stages = 5
+        num_warps = 2
+        grid = (B, M)
+        transpose_dim_0_1_kernel[grid](x, 
+                                       t, 
+                                       B, 
+                                       M, 
+                                       b_stride, 
+                                       m_stride, 
+                                       N,
+                                       num_stages=num_stages,
+                                       num_warps=num_warps
+                                       )
+    else:
+        raise NotImplementedError()
     return t
+
+
+
 
 
 @triton.jit
