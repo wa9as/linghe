@@ -26,7 +26,7 @@ def rope_freqs(length, dim, rope_theta=10000.0):
     freqs = torch.outer(t, inv_freq)
     return freqs 
 
-def torch_half_rope(q,k,rope_theta):
+def torch_half_rope(q,k,rope_theta=10000.0):
     L, B, H, D = q.shape 
     d = D//2
     h = k.shape[2]
@@ -36,8 +36,8 @@ def torch_half_rope(q,k,rope_theta):
     sin = freqs.sin().to(q.dtype)
     position_ids = torch.arange(L, device='cuda:0')[:,None].expand(-1,B)
     qr, kr = apply_rotary_pos_emb(q[:,:,:,:d], k[:,:,:,:d], cos, sin, position_ids)
-    qo = torch.cat([qr,q[:,:,:,d:]],axis=-1)
-    ko = torch.cat([kr,k[:,:,:,d:]],axis=-1)
+    qo = torch.cat([qr,q[:,:,:,d:]],dim=-1)
+    ko = torch.cat([kr,k[:,:,:,d:]],dim=-1)
     return qo,ko
 
 def torch_qk_norm(q,k, qw, kw, eps=1e-6):
@@ -51,9 +51,10 @@ def torch_qk_norm(q,k, qw, kw, eps=1e-6):
     k = k*kw
     return q.to(dtype),k.to(dtype)
 
-def torch_qk_norm_and_half_rope(q,k,v,qw,kw,rope_theta, eps=1e-6):
+def torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta=10000.0,H=32,h=4, eps=1e-6):
+    q,k,v = torch.split(qkv, [H,h,h], dim=2)
     q, k = torch_qk_norm(q, k, qw, kw, eps=eps)
-    q, k = torch_half_rope(q,k, rope_theta)
+    q, k = torch_half_rope(q, k, rope_theta=rope_theta)
     q = q.transpose(0,1)
     k = k.transpose(0,1)
     v = v.transpose(0,1)
@@ -65,7 +66,7 @@ def test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
     q = torch.randn(L,B,H,D,dtype=dtype,device=device)
     k = torch.randn(L,B,h,D,dtype=dtype,device=device)
 
-    q_ref,k_ref = torch_half_rope(q,k,rope_theta)
+    q_ref,k_ref = torch_half_rope(q,k,rope_theta=rope_theta)
     freqs = rope_freqs(L, D//2, rope_theta=rope_theta)
     qo,ko = triton_half_rope_forward(q,k,freqs)
     output_check(q_ref,qo, mode='q')
@@ -75,7 +76,7 @@ def test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
     k_grad = torch.randn(L,B,h,D,dtype=dtype,device=device)
     q_ref = q.detach().clone().requires_grad_()
     k_ref = k.detach().clone().requires_grad_()
-    qo_ref, ko_ref = torch_half_rope(q_ref,k_ref,rope_theta)
+    qo_ref, ko_ref = torch_half_rope(q_ref,k_ref,rope_theta=rope_theta)
     qo_ref.backward(gradient=q_grad)
     ko_ref.backward(gradient=k_grad)
     dq_ref = q_ref.grad 
@@ -94,51 +95,41 @@ def test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
 def test_qk_norm_and_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
-    q = torch.randn(L,B,H,D,dtype=dtype,device=device)
-    k = torch.randn(L,B,h,D,dtype=dtype,device=device)
-    v = torch.randn(L,B,h,D,dtype=dtype,device=device)
+    qkv = torch.randn(L,B,H+2*h,D,dtype=dtype,device=device)
     qw = torch.randn(D,dtype=dtype,device=device)
     kw = torch.randn(D,dtype=dtype,device=device)
     freqs = rope_freqs(L, D//2, rope_theta=rope_theta)
 
-    # q_ref,k_ref,v_ref = torch_qk_norm_and_half_rope(q,k,v,qw,kw,rope_theta, eps=1e-6)
-    # qo,ko,vo = triton_qk_norm_and_half_rope_forward(q,k,v,qw,kw,freqs,eps=1e-6,transpose=True)
-    # output_check(q_ref,qo, mode='q')
-    # output_check(k_ref,ko, mode='k')
-    # output_check(v_ref,vo, mode='k')
-
-
+    q_ref,k_ref,v_ref = torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta, H=H,h=h, eps=1e-6)
+    qo,ko,vo = triton_qk_norm_and_half_rope_forward(qkv,qw,kw,freqs,H=H,h=h,eps=1e-6,transpose=True)
+    output_check(q_ref,qo, mode='q')
+    output_check(k_ref,ko, mode='k')
+    output_check(v_ref,vo, mode='k')
 
     q_grad = torch.randn(B,L,H,D,dtype=dtype,device=device)
     k_grad = torch.randn(B,L,h,D,dtype=dtype,device=device)
     v_grad = torch.randn(B,L,h,D,dtype=dtype,device=device)
-    q_ref = q.detach().clone().requires_grad_()
-    k_ref = k.detach().clone().requires_grad_()
-    v_ref = v.detach().clone().requires_grad_()
+    qkv_ref = qkv.detach().clone().requires_grad_()
     qw_ref = qw.detach().clone().requires_grad_()
     kw_ref = kw.detach().clone().requires_grad_()
-    qo_ref, ko_ref, vo_ref = torch_qk_norm_and_half_rope(q_ref,k_ref,v_ref,qw_ref,kw_ref,rope_theta)
+    qo_ref, ko_ref, vo_ref = torch_qk_norm_and_half_rope(qkv_ref,qw_ref,kw_ref,rope_theta=rope_theta, H=H, h=h, eps=1e-6)
     qo_ref.backward(gradient=q_grad)
     ko_ref.backward(gradient=k_grad)
     vo_ref.backward(gradient=v_grad)
 
-    dq_ref = q_ref.grad 
+    dqkv_ref = qkv_ref.grad 
     dqw_ref = qw_ref.grad
-    dk_ref = k_ref.grad 
     dkw_ref = kw_ref.grad
-    dv_ref = v_ref.grad 
 
-    dq, dk, dv, dqw, dkw = triton_qk_norm_and_half_rope_backward(q_grad, k_grad, v_grad, q, k, qw, kw, freqs, eps=1e-6, transpose=True)
-    output_check(dq_ref,dq, mode='dq')
-    output_check(dk_ref,dk, mode='dk')
-    output_check(dv_ref,dv, mode='dv')
+    dqkv, dqw, dkw = triton_qk_norm_and_half_rope_backward(q_grad, k_grad, v_grad, qkv, qw, kw, freqs, eps=1e-6, transpose=True)
+    output_check(dqkv_ref,dqkv, mode='dqkv')
     output_check(dqw_ref,dqw, mode='dqw')
     output_check(dkw_ref,dkw, mode='dkw')
 
     if bench:
-        benchmark_func(triton_qk_norm_and_half_rope_forward, q,k,v,qw,kw,freqs,eps=1e-6,transpose=True, ref_bytes=L*B*(H+2*h)*D*4, 
+        benchmark_func(triton_qk_norm_and_half_rope_forward, qkv,qw,kw,freqs,H=H,h=h,eps=1e-6,transpose=True, ref_bytes=L*B*(H+2*h)*D*4, 
                        n_profile=0)
-        benchmark_func(triton_qk_norm_and_half_rope_backward, q_grad, k_grad, v_grad, q, k, qw, kw, freqs,eps=1e-6, transpose=True, ref_bytes=L*B*(H+2*h)*D*6, 
+        benchmark_func(triton_qk_norm_and_half_rope_backward, q_grad, k_grad, v_grad, qkv, qw, kw, freqs,eps=1e-6, transpose=True, ref_bytes=L*B*(H+2*h)*D*6, 
                        n_profile=0)
 
 if __name__ == '__main__':
