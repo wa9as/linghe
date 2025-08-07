@@ -6,14 +6,12 @@ from flops.utils.loss import triton_softmax_cross_entropy_forward, \
 
 class SoftmaxCrossEntropyFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, logits, labels, est_max_logit=0.0, inplace=False):
+    def forward(ctx, logits, labels, inplace=False):
         shape = logits.shape
         if len(shape) == 3:
             logits = logits.view(-1, shape[-1])
-        loss, sum_exp = triton_softmax_cross_entropy_forward(logits, labels,
-                                                             est_max_logit=est_max_logit)
-        ctx.save_for_backward(logits, labels, sum_exp)
-        ctx.est_max_logit = est_max_logit
+        loss, sum_exp, max_logit = triton_softmax_cross_entropy_forward(logits, labels)
+        ctx.save_for_backward(logits, labels, sum_exp, max_logit)
         ctx.inplace = inplace
         ctx.shape = shape
         if len(shape) == 3:
@@ -22,13 +20,12 @@ class SoftmaxCrossEntropyFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        logits, labels, sum_exp = ctx.saved_tensors
+        logits, labels, sum_exp, max_logit = ctx.saved_tensors
         shape = ctx.shape
         grad = logits if ctx.inplace else None
-        grad = triton_softmax_cross_entropy_backward(logits, labels, sum_exp,
+        grad = triton_softmax_cross_entropy_backward(logits, labels, sum_exp, max_logit,
                                                      grad_output,
-                                                     output_grad=grad,
-                                                     est_max_logit=ctx.est_max_logit)
+                                                     output_grad=grad)
         if len(shape) == 3:
             grad = grad.view(shape)
         return grad, None, None, None

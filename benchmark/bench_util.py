@@ -32,7 +32,11 @@ if False:
     def d2h(x, device):
         return x.to(device)
 
-
     counts = torch.tensor([0] * 32, dtype=torch.int64)
     benchmark_func(d2h, counts, device=device, n_repeat=n_repeat,
                    ref_bytes=M * K * 2)
+
+if True:
+    xc = torch.tensor([1],dtype=torch.float32)
+    benchmark_func(lambda x: x.to('cuda:0'), xc, n_repeat=n_repeat)
+    benchmark_func(lambda : torch.ones([1],dtype=torch.float32,device='cuda:0'), n_repeat=n_repeat)
