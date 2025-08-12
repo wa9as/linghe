@@ -69,7 +69,7 @@ def weighted_silu_backward_kernel(g_ptr, x_ptr, weight_ptr, dx_ptr, dw_ptr, M,
         sigmoid = 1 / (1 + tl.exp(-x1))
         dw = tl.sum(x1 * sigmoid * x2 * g, 1)
         tl.store(dw_ptr + mask, dw, mask=mask < M)
-        dx1 = g * x2 * w * sigmoid * (1 + x1 * tl.exp(-x1) * sigmoid)
+        dx1 = g * x2 * w * sigmoid * (1 + x1 * (1 - sigmoid))
         tl.store(dx_ptr + offs, dx1, mask=mask[:, None] < M)
 
         dx2 = g * x1 * sigmoid * w
@@ -362,7 +362,7 @@ def weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
         dw = tl.sum(x1 * sigmoid * x2 * g, 1)
         tl.store(dw_ptr + mask, dw, mask=mask < M)
         dx1 = g * x2 * w * sigmoid * (
-                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * (1 - sigmoid)) * smooth_scale_1
         dx2 = g * x1 * sigmoid * w * smooth_scale_2
 
         scale = tl.maximum(
@@ -439,7 +439,7 @@ def silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr, dx_ptr,
         g = tl.load(g_ptr + hoffs, mask=mask[:, None] < M).to(tl.float32)
         sigmoid = 1 / (1 + tl.exp(-x1))
         dx1 = g * x2 * sigmoid * (
-                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * (1 - sigmoid)) * smooth_scale_1
         dx2 = g * x1 * sigmoid * smooth_scale_2
 
         scale = tl.maximum(
@@ -484,7 +484,7 @@ def compatible_silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr,
         g = tl.load(g_ptr + hoffs).to(tl.float32)
         sigmoid = 1 / (1 + tl.exp(-x1))
         dx1 = g * x2 * sigmoid * (
-                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * (1 - sigmoid)) * smooth_scale_1
         dx2 = g * x1 * sigmoid * smooth_scale_2
 
         maxs = tl.maximum(
@@ -515,7 +515,7 @@ def compatible_silu_and_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_ptr,
         g = tl.load(g_ptr + hoffs).to(tl.float32)
         sigmoid = 1 / (1 + tl.exp(-x1))
         dx1 = g * x2 * sigmoid * (
-                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * (1 - sigmoid)) * smooth_scale_1
         dx2 = g * x1 * sigmoid * smooth_scale_2
 
         dx1 = (dx1 * s).to(dx_ptr.dtype.element_ty)
@@ -766,7 +766,7 @@ def batch_weighted_silu_and_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
         tl.store(dw_ptr + si + indices, dw, mask=indices < count)
 
         dx1 = g * x2 * w * sigmoid * (
-                1 + x1 * tl.exp(-x1) * sigmoid) * smooth_scale_1
+                1 + x1 * (1 - sigmoid)) * smooth_scale_1
         dx2 = g * x1 * sigmoid * w * smooth_scale_2
 
         dx1_max = tl.max(dx1.abs(), 1)
