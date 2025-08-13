@@ -18,15 +18,12 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N,
     x_max = tl.zeros((W,), dtype=tl.float32)
     n = tl.cdiv(N, H)
     for i in range(n):
+        smooth_scale = tl.load(ss_ptr + soffs)
         if EVEN:
             x = tl.load(x_ptr + offs)
-            smooth_scale = tl.load(ss_ptr + soffs)
         else:
-            # x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
             x = tl.load(x_ptr + offs,
                         mask=pid * W + tl.arange(0, W)[:, None] < M)
-            other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < N, other=other)
         if REVERSE:
             x = x.to(tl.float32) * smooth_scale
         else:
@@ -47,15 +44,12 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N,
     offs = pid * W * N + tl.arange(0, W)[:, None] * N + tl.arange(0, H)[None, :]
     soffs = tl.arange(0, H)
     for i in range(n):
+        smooth_scale = tl.load(ss_ptr + soffs)
         if EVEN:
             x = tl.load(x_ptr + offs)
-            smooth_scale = tl.load(ss_ptr + soffs)
         else:
-            # x = tl.load(x_ptr+offs, mask=(i*H+tl.arange(0, H)[None,:]<N)&(pid*W+tl.arange(0, W)[:,None]<M))
             x = tl.load(x_ptr + offs,
                         mask=pid * W + tl.arange(0, W)[:, None] < M)
-            other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < N, other=other)
 
         if REVERSE:
             xq = (x.to(tl.float32) * smooth_scale * s).to(
@@ -92,9 +86,8 @@ def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, T,
                     mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M).to(
             tl.float32)
         x *= smooth_scale
-        x_max = tl.maximum(tl.max(tl.abs(x), axis=1), 1e-30)
-
-        scale = x_max / 448.0
+        x_max = tl.max(tl.abs(x), axis=1)
+        scale = tl.maximum(x_max / 448.0, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(qs_ptr + pid * W * T + i * W + tl.arange(0, W), scale,
@@ -139,8 +132,8 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
         )
     else:
         W = 8 if M <= sm * 8 else 16
-        H = 1024 if W == 8 else 512
-        assert N % H == 0
+        H = 1024 if W == 8 and N%1024 == 0 else 512
+        assert N % H == 0, f'N:{N} is not divided by H:{H}'
         EVEN = M % W == 0
         grid = (triton.cdiv(M, W),)
         blockwise_reused_smooth_quant_kernel[grid](
@@ -179,8 +172,8 @@ def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
                                          ROUND: tl.constexpr):
     
     if TAIL:
-        # scale is saved as 448/max
-        scale = 1/tl.load(subrow_scales_ptr)
+        # scale is saved as max/448
+        scale = tl.maximum(tl.load(subrow_scales_ptr), 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         # scale only stores in subrow with leading values
@@ -204,8 +197,8 @@ def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
             # tl.store(x_ptr + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
 
     if HEAD:
-        # scale is saved as 448/max
-        scale = 1/tl.load(subrow_scales_ptr+1)
+        # scale is saved as max/448
+        scale = tl.maximum(tl.load(subrow_scales_ptr+1), 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(qs_ptr + head_ri, scale)
@@ -479,9 +472,7 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
             smooth_scale = tl.load(ss_ptr + soffs)
         else:
             x = tl.trans(tl.load(x_ptr + offs,
-                                 mask=(i * H + tl.arange(0, H)[:, None] < M) & (
-                                         pid * W + tl.arange(0, W)[None,
-                                                   :] < N)))
+                                 mask=(i * H + tl.arange(0, H)[:, None] < M)))
             other = 0.0 if REVERSE else 1e30
             smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < M, other=other)
 
@@ -494,8 +485,7 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
         else:
             # mask with P instead of M
             tl.store(q_ptr + toffs, x,
-                     mask=(i * H + tl.arange(0, H)[None, :] < P) & (
-                             pid * W + tl.arange(0, W)[:, None] < N))
+                     mask=(i * H + tl.arange(0, H)[None, :] < P))
         offs += H * N
         toffs += H
         soffs += H
@@ -514,7 +504,7 @@ def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False,
     H = 256
     W = 32
     assert N % W == 0
-    EVEN = M % H == 0
+    EVEN = P % H == 0 and M == P
 
     grid = (triton.cdiv(N, W),)
     reused_transpose_smooth_quant_kernel[grid](

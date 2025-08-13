@@ -13,10 +13,10 @@ def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
     label = tl.load(label_ptr + pid)
     sum_exp = 0.0
     T = tl.cdiv(N, B)
-    max_logit = -1000.0
+    max_logit = -1e30
     for i in range(T):
         logit = tl.load(logit_ptr + pid * N + i * B + tl.arange(0, B),
-                        mask=i * B + tl.arange(0, B) < N, other=-1000).to(
+                        mask=i * B + tl.arange(0, B) < N, other=-1e30).to(
             tl.float32)
         max_logit = tl.maximum(max_logit, tl.max(logit))
         sum_exp += tl.sum(tl.exp(logit))
@@ -27,7 +27,7 @@ def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
     if retry:
         for i in range(T):
             logit = tl.load(logit_ptr + pid * N + i * B + tl.arange(0, B),
-                            mask=i * B + tl.arange(0, B) < N, other=-1000).to(
+                            mask=i * B + tl.arange(0, B) < N, other=-1e30).to(
                 tl.float32)
             retry_sum_exp += tl.sum(tl.exp(logit - max_logit))
     sum_exp = tl.where(retry, retry_sum_exp, sum_exp)
@@ -76,7 +76,7 @@ def softmax_cross_entropy_backward_kernel(logit_ptr, label_ptr, sum_exp_ptr, max
     T = tl.cdiv(N, B)
     for i in range(T):
         logit = tl.load(logit_ptr + pid * N + i * B + tl.arange(0, B),
-                        mask=i * B + tl.arange(0, B) < N, other=-1e38).to(
+                        mask=i * B + tl.arange(0, B) < N, other=-1e30).to(
             tl.float32)
         grad = tl.exp(logit - max_logit) * coef
         tl.store(output_grad_ptr + pid * N + i * B + tl.arange(0, B), grad,

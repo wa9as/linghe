@@ -28,12 +28,11 @@ def torch_split_smooth_quant(x_split, smooth_scales, round_scale=False):
     x_maxs = torch.stack(x_maxs, 0)
     return x_qs, x_scales, x_maxs
 
-def torch_subrow_smooth_quant(x, smooth_scale, x_q, x_scale, offset, size,
-                                      reverse=False, round_scale=False, scale=1e-5):
-    scale = torch.tensor([scale], dtype=torch.float32, device=x.device)
-    if round_scale:
-        scale = torch.exp2(torch.ceil(torch.log2(scale)))
+def torch_subrow_smooth_quant(x, smooth_scale, x_q, x_scale, subrow_scales, offset, size,
+                                      reverse=False, round_scale=False):
+
     limit = 448*torch.ones((1,),dtype=smooth_scale.dtype, device=smooth_scale.device)
+    # subrow_scales is saved as 448/max
 
     M, N = x_q.shape 
     if offset % N > 0:
@@ -45,9 +44,12 @@ def torch_subrow_smooth_quant(x, smooth_scale, x_q, x_scale, offset, size,
             smooth_scale_slice = 1/smooth_scale_slice
         x_smooth = x_slice*smooth_scale_slice
 
+        scale = subrow_scales[0:1]
+        if round_scale:
+            scale = torch.exp2(torch.floor(torch.log2(scale)))
+
         x_q_slice = torch.minimum(torch.maximum(x_smooth/scale,-limit),limit).to(torch.float8_e4m3fn)
         x_q.view(-1)[offset:offset+k] = x_q_slice
-        x.view(-1)[0:k] = x_q_slice.float()*scale/smooth_scale_slice
 
     if (offset+size) % N > 0:
         k = (offset + size) % N
@@ -56,10 +58,12 @@ def torch_subrow_smooth_quant(x, smooth_scale, x_q, x_scale, offset, size,
         if not reverse:
             smooth_scale_slice = 1/smooth_scale_slice
         x_smooth = x_slice*smooth_scale_slice
+        scale = subrow_scales[1:2]
+        if round_scale:
+            scale = torch.exp2(torch.floor(torch.log2(scale)))
         x_q_slice = torch.minimum(torch.maximum(x_smooth/scale,-limit),limit).to(torch.float8_e4m3fn)
         x_q.view(-1)[(offset+size-k):(offset+size)] = x_q_slice
         x_scale[(offset + size)//N] = scale
-        x.view(-1)[-k:] = x_q_slice.float()*scale/smooth_scale_slice
 
 
 
@@ -102,29 +106,26 @@ def test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=163
     x_q = torch.zeros((M, N), dtype=torch.bfloat16, device=device).to(torch.float8_e4m3fn)
     x_scale = torch.zeros((M,), dtype=torch.float32, device=device).abs()
     smooth_scale = torch.randn((N,), device=device, dtype=torch.float32).abs()+1
+    subrow_scales = torch.randn((2,), device=device, dtype=torch.float32).abs()+1
     
     x_ref = x.clone()
     x_q_ref = x_q.clone()
     x_scale_ref = x_scale.clone()
-    torch_subrow_smooth_quant(x_ref, smooth_scale, x_q_ref, x_scale_ref, offset, size,
-                                      reverse=False, round_scale=False, scale=1e-5)
+    subrow_scales_ref = subrow_scales.clone()
+    torch_subrow_smooth_quant(x_ref, smooth_scale, x_q_ref, x_scale_ref, subrow_scales_ref, offset, size,
+                                      reverse=False, round_scale=False)
 
-    triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, offset, size,
-                                      reverse=False, round_scale=False, scale=1e-5)
+    triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale, subrow_scales,  offset, size,
+                                      reverse=False, round_scale=False)
 
     output_check(x_q_ref.float(), x_q.float(), 'subrow.data')
     output_check(x_scale_ref, x_scale, 'subrow.scale')
-    output_check(x_ref, x, 'subrow.master')
 
     if offset%N > 0:
         k = N - offset%N
         output_check(x_q_ref.float().view(-1)[offset:offset+k], 
                     x_q.float().view(-1)[offset:offset+k],
                     'subrow.data.tail')
-
-        output_check(x_ref.float().view(-1)[:k], 
-                    x.float().view(-1)[:k],
-                    'subrow.master.tail')
 
     if (offset+size)%N > 0:
         k = (offset+size)%N
@@ -134,17 +135,15 @@ def test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=163
         row_id = (offset+size)//N
         output_check(x_scale_ref[row_id], x_scale[row_id], 'subrow.scale.slice')
 
-        output_check(x_ref.float().view(-1)[-k:], 
-                    x.float().view(-1)[-k:],
-                    'subrow.master.head')
+
 
 
 def test_triton_reused_transpose_smooth_quant(M=4096, N=4096):
     device = 'cuda:0'
     P = round_up(M, b=32)
-    y = torch.randn((M, N), dtype=torch.bfloat16, device=device) ** 3
+    y = torch.randn((M, N), dtype=torch.bfloat16, device=device) ** 3*1e-10
     transpose_smooth_scale = torch.randn((M,), device=device,
-                                         dtype=torch.float32).abs() + 1
+                                         dtype=torch.float32).abs()*10 + 1
     yt_q, yt_scale = triton_reused_transpose_smooth_quant(y,
                                                           transpose_smooth_scale,
                                                           reverse=True,
@@ -262,14 +261,20 @@ def test_triton_batch_smooth_quant(M=4096, N=4096, n_experts=32, topk=8,
 
 if __name__ == '__main__':
     test_triton_reused_smooth_quant(M=4096, N=4096)
+    test_triton_reused_smooth_quant(M=4096, N=3072)
+    test_triton_reused_smooth_quant(M=8192, N=512)
+
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=5120, size=2048)
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=5120)
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=5120, size=5120*10-1024)
 
     test_triton_reused_transpose_smooth_quant(M=4096,N=4096)
     test_triton_reused_transpose_smooth_quant(M=4045,N=4096)
+    test_triton_reused_transpose_smooth_quant(M=4096,N=3072)
+
     test_triton_reused_transpose_rescale_smooth_quant(M=4096,N=4096, round_scale=True)
-    test_triton_reused_transpose_rescale_smooth_quant(M=3895, N=4096,
-                                                      round_scale=True)
+    test_triton_reused_transpose_rescale_smooth_quant(M=3895, N=4096, round_scale=True)
+    test_triton_reused_transpose_rescale_smooth_quant(M=4096, N=3072, round_scale=True)
     test_triton_reused_transpose_rescale_smooth_quant(M=395,N=2048, round_scale=True)
+
     test_triton_batch_smooth_quant(M=4096,N=4096, n_experts=32, topk=8, round_scale=False)

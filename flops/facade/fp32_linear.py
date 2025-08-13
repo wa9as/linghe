@@ -26,7 +26,6 @@ class FusedFp32GEMM(torch.autograd.Function):
         grad_output = grad_output.view(shape[0]*shape[1], shape[2])
         input, weight = ctx.saved_tensors
 
-        # import pdb; pdb.set_trace();
         dx = triton_fp32_gemm_for_backward(grad_output, weight, accum=False)
         dx = dx.view(*ctx.shape)
 

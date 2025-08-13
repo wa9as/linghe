@@ -15,7 +15,6 @@ def group_quant_kernel(x_ptr, y_ptr, s_ptr, N, BLOCK_SIZE: tl.constexpr,
         x = tl.reshape(x, (K, BLOCK_SIZE), can_reorder=False)
         s = tl.maximum(tl.max(tl.abs(x), 1) / 448.0, 1e-30)
         if ROUND:
-            # s = tl.exp2(tl.floor(tl.log2(s) + 0.5))
             s = tl.exp2(tl.ceil(tl.log2(s)))
         y = x / s[:, None]
         y = y.to(y_ptr.dtype.element_ty)
