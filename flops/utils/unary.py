@@ -24,7 +24,6 @@ def calculate_smooth_scale_kernel(x_ptr, y_ptr, min_value, N,
 input_smooth_scales = torch.sqrt(torch.maximum(input_smooth_scales, torch.ones([1], dtype=torch.float32, device=input_smooth_scales.device)))
 weight_smooth_scales = 1/input_smooth_scales
 weight_smooth_scales = torch.exp2(torch.ceil(torch.log2(weight_smooth_scales)))
-first `offset` values are ignored 
 """
 def triton_calculate_smooth_scale(x, min_value=1.0, inplace=False):
     N = x.shape[0]

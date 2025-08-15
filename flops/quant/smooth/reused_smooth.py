@@ -191,10 +191,6 @@ def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
             x /= scale
             xq = tl.minimum(tl.maximum(x,-448),448)
             tl.store(q_ptr + tail_ri * N + tail_si + i * W + tl.arange(0, W), xq.to(q_ptr.dtype.element_ty), mask=mask)
-            # NOTE: do not need overwrite now
-            # overwrite master weight, to keep weight consistent in training and evaluation
-            # xdq = xq*scale/smooth_scale
-            # tl.store(x_ptr + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
 
     if HEAD:
         # scale is saved as max/448
@@ -216,11 +212,6 @@ def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
             x /= scale
             xq = tl.minimum(tl.maximum(x,-448),448)
             tl.store(q_ptr + head_ri * N + i * W + tl.arange(0, W), xq.to(q_ptr.dtype.element_ty), mask=mask)
-            # NOTE: do not need overwrite now
-            # overwrite master weight, to keep weight consistent in training and evaluation
-            # xdq = xq/scale/smooth_scale
-            # tl.store(x_ptr + size - head_ei + i * W + tl.arange(0, W), xdq.to(x_ptr.dtype.element_ty), mask=mask)
-
 
 
 

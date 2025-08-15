@@ -3,7 +3,6 @@ import triton
 import triton.language as tl
 
 
-# os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
 
 @triton.jit
 def rms_norm_forward_kernel(x_ptr, weight_ptr, out_ptr, eps, M, T,

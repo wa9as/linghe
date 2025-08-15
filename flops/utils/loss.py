@@ -3,8 +3,6 @@ import triton
 import triton.language as tl
 
 
-# os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
-
 @triton.jit
 def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
                                          sum_exp_ptr, max_logit_ptr, N,
@@ -87,7 +85,6 @@ def softmax_cross_entropy_backward_kernel(logit_ptr, label_ptr, sum_exp_ptr, max
     tl.store(output_grad_ptr + pid * N + label, target_grad)
 
 
-# denominator: loss.mean() = loss/denominator
 def triton_softmax_cross_entropy_backward(logits, labels, sum_exp, max_logit, input_grad,
                                           output_grad=None):
     M, N = logits.shape

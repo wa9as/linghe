@@ -51,8 +51,16 @@ def torch_qk_norm(q,k, qw, kw, eps=1e-6):
     k = k*kw
     return q.to(dtype),k.to(dtype)
 
-def torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta=10000.0,H=32,h=4, eps=1e-6):
-    q,k,v = torch.split(qkv, [H,h,h], dim=2)
+def torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta=10000.0,H=32,h=4, eps=1e-6,interleave=True):
+    length, bs, dim = qkv.shape
+    D = dim//(H+2*h)
+    if interleave:
+        qkv = qkv.view(length, bs, h, (2+H//h)*D)
+        q,k,v = torch.split(qkv, [H//h*D, D, D], 3) 
+        q = torch.reshape(q, (length, bs, H, D))
+    else:
+        qkv = qkv.view(length, bs, H+2*h, D)
+        q,k,v = torch.split(qkv, [H,h,h], dim=2)
     q, k = torch_qk_norm(q, k, qw, kw, eps=eps)
     q, k = torch_half_rope(q, k, rope_theta=rope_theta)
     q = q.transpose(0,1)
@@ -92,19 +100,19 @@ def test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
 
 
 
-def test_qk_norm_and_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
+def test_qk_norm_and_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0,interleave=False, bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
-    qkv = torch.randn(L,B,H+2*h,D,dtype=dtype,device=device)
+    qkv = torch.randn(L,B,(H+2*h)*D,dtype=dtype,device=device)
     qw = torch.randn(D,dtype=dtype,device=device)
     kw = torch.randn(D,dtype=dtype,device=device)
     freqs = rope_freqs(L, D//2, rope_theta=rope_theta)
 
-    q_ref,k_ref,v_ref = torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta, H=H,h=h, eps=1e-6)
-    qo,ko,vo = triton_qk_norm_and_half_rope_forward(qkv,qw,kw,freqs,H=H,h=h,eps=1e-6,transpose=True)
+    q_ref,k_ref,v_ref = torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta, H=H,h=h, eps=1e-6,interleave=interleave)
+    qo,ko,vo = triton_qk_norm_and_half_rope_forward(qkv,qw,kw,freqs,H=H,h=h,eps=1e-6,transpose=True,interleave=interleave)
     output_check(q_ref,qo, mode='q')
     output_check(k_ref,ko, mode='k')
-    output_check(v_ref,vo, mode='k')
+    output_check(v_ref,vo, mode='v')
 
     q_grad = torch.randn(B,L,H,D,dtype=dtype,device=device)
     k_grad = torch.randn(B,L,h,D,dtype=dtype,device=device)
@@ -134,4 +142,5 @@ def test_qk_norm_and_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, ben
 
 if __name__ == '__main__':
     # test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False)
-    test_qk_norm_and_half_rope(B=4,L=4096,H=32,h=8,D=128,bench=True)
+    # test_qk_norm_and_half_rope(B=4,L=4096,H=32,h=8,D=128,bench=False,interleave=True)
+    test_qk_norm_and_half_rope(B=4,L=4096,H=32,h=8,D=128,bench=False,interleave=False)
