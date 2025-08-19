@@ -9,7 +9,7 @@ with pathlib.Path("requirements.txt").open() as f:
 
 setup(
     name="tflops",
-    version="0.0.1",
+    version="0.0.2",
     license="MIT",
     license_files=("LICENSE",),
     description="flood ops",
