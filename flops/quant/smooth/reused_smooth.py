@@ -369,8 +369,6 @@ token_count_per_expert: [n_experts]
 x_q: [bs, dim]
 x_scale: [bs]
 """
-
-
 def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert,
                               x_q=None, x_scale=None, x_maxs=None,
                               reverse=False, round_scale=False,
