@@ -33,7 +33,7 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # dwT = yT @ x
 def triton_smooth_quant_x(x, smooth_scale, x_q=None, x_scale=None, xt_q=None,
                           transpose=True, pad=True, round_scale=False):
-    x_q, x_scale = triton_reused_smooth_quant(x, smooth_scale, x_q=x_q,
+    x_q, x_scale, x_maxs = triton_reused_smooth_quant(x, smooth_scale, x_q=x_q,
                                               x_scale=x_scale, reverse=False,
                                               round_scale=round_scale)
 
@@ -53,7 +53,7 @@ def triton_smooth_quant_y(y, smooth_scale, transpose_smooth_scale, reverse=True,
                           transpose=True, pad=True, round_scale=False):
     assert reverse, "args `smooth_scale` and/or `transpose_smooth_scale` must be in reciprocal format in triton_smooth_quant_y"
     N = y.size(1)
-    y_q, y_scale = triton_reused_smooth_quant(y, smooth_scale, reverse=True,
+    y_q, y_scale, _ = triton_reused_smooth_quant(y, smooth_scale, reverse=True,
                                               round_scale=round_scale)
     if transpose:
         yt_q, yt_scale = triton_reused_transpose_smooth_quant(y,

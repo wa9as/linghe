@@ -270,7 +270,8 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
             num_stages=3,
             num_warps=16
         )
-        maxs = maxs.amax(0)
+        if calibrate:
+            maxs = maxs.amax(0)
     else:
         if scale is None:
             scale = torch.empty((M, N//128), device=device, dtype=torch.float32)
