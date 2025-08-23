@@ -3,7 +3,6 @@ import torch
 from flops.utils.benchmark import benchmark_func
 from flops.utils.scatter import (triton_make_row_id_map,
                                  triton_scatter_add,
-                                 triton_scatter_add_with_count,
                                  triton_unpermute_with_mask_map)
 from flops.utils.util import (output_check,
                               torch_make_indices)
@@ -37,13 +36,9 @@ def test_scatter(M=4098, N=4096, n_experts=32, topk=2, bias=0.0, bench=False):
 
     sums_ref = torch_fp16_scatter_add(x, outputs.clone(), indices, None)
     counts = mask_map.sum(1)
-    sums_split = triton_scatter_add_with_count(x, outputs.clone(), indices,
-                                               counts)
     unpermuted_prob = probs.T.contiguous().masked_select(
         mask_map.T.contiguous())
 
-    # output_check(sums_ref,sums,'scatter_add')
-    output_check(sums_ref, sums_split, 'split_scatter_add')
 
     sums_unpermute, output_prob = triton_unpermute_with_mask_map(x, row_id_map,
                                                                  unpermuted_prob)
@@ -59,8 +54,6 @@ def test_scatter(M=4098, N=4096, n_experts=32, topk=2, bias=0.0, bench=False):
         # benchmark_func(triton_aligned_scatter_add,x, outputs, indices, weights=weights, n_repeat=n_repeat,ref_time=ref_time)
         ref_time = benchmark_func(triton_scatter_add, x, outputs, indices,
                                   n_repeat=n_repeat)
-        benchmark_func(triton_scatter_add_with_count, x, outputs, indices,
-                       counts, n_repeat=n_repeat, ref_time=ref_time)
         benchmark_func(triton_unpermute_with_mask_map, x, row_id_map, probs,
                        n_repeat=n_repeat, ref_time=ref_time)
 

@@ -38,17 +38,23 @@ def torch_column_quant(x, dtype=torch.float8_e4m3fn, round_scale=False):
 
 
 def torch_group_quant(x, B=128, dtype=torch.float8_e4m3fn, round_scale=False):
-    fmax = torch.finfo(dtype).max
+    # fmax = torch.finfo(dtype).max
+    fmax = 448
     x = x.clone()
     M, K = x.shape
-
-    xp = torch.reshape(x.contiguous(), (M, K // B, B))
-    scale = torch.amax(torch.abs(xp).float(), dim=2) / fmax
+    P = K
+    if K % B != 0:
+        x = torch.nn.functional.pad(x, (0, B - K % B))
+        P = x.shape[1]
+    
+    xp = torch.reshape(x.contiguous(), (M, P // B, B))
+    scale = torch.amax(torch.abs(xp).float(), dim=2) / fmax 
+    scaoe = torch.maximum(scale, 1e-30*torch.ones((1,),dtype=torch.float32,device=x.device))
     if round_scale:
         scale = torch.exp2(torch.ceil(torch.log2(scale)))
     xq = (xp / scale[:, :, None]).to(dtype)
-    xq = torch.reshape(xq, (M, K)).contiguous()
-
+    xq = torch.reshape(xq, (M, P)).contiguous()
+    xq = xq[:, :K].contiguous()
     return xq, scale
 
 
@@ -71,16 +77,16 @@ def torch_block_quant(w, B=128, dtype=torch.float8_e4m3fn, round_scale=False):
 
 def torch_smooth_quant(x, smooth_scale, reverse=False, round_scale=False):
     x = x.float()
+    x_maxs = x.abs().amax(0)
     if reverse:
         x_smooth = x * smooth_scale
     else:
         x_smooth = x / smooth_scale
-    x_max = x_smooth.abs().amax(1)
-    scale = x_max / 448
+    scale = x_smooth.abs().amax(1)  / 448
     if round_scale:
         scale = torch.exp2(torch.ceil(torch.log2(scale)))
     x_q = (x_smooth / scale[:, None]).to(torch.float8_e4m3fn)
-    return x_q, scale
+    return x_q, scale, x_maxs
 
 
 def torch_batch_smooth_quant(xs, smooth_scales, indices, token_count_per_expert,
@@ -433,7 +439,7 @@ def output_check(org_out, opt_out, mode='', rtol=0.02):
         rtol = 0.1
     abs_error = (opt_out - org_out).abs().mean().item()
     rel_error = abs_error / org_out.abs().mean().item()
-    print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \
+    print(f'\n{mode:<16}  rel:{rel_error:.3f}  abs:{abs_error:.3f}  ' \
           f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
           f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ')
     # torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=0.01)
@@ -446,7 +452,7 @@ def quant_check(org_out, xq, wq, opt_out, mode):
     w_underflow = (wq == 0.0).sum().item() / wq.numel()
     x_overflow = (torch.isnan(xq)).sum().item()
     w_overflow = (torch.isnan(wq)).sum().item()
-    print(f'\nmode:{mode} abs_error:{abs_error:.3f} rel_error:{rel_error:.3f} ' \
+    print(f'\n{mode}  rel:{rel_error:.3f}  abs:{abs_error:.3f}  ' \
           f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
           f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ' \
           f'x_underflow:{x_underflow:.5f} w_underflow:{w_underflow:.5f} ' \

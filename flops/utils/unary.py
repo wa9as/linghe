@@ -33,6 +33,8 @@ def triton_calculate_smooth_scale(x, min_value=1.0, inplace=False):
     else:
         output = torch.empty((N,), dtype=x.dtype, device=x.device)
 
+    min_value = max(min_value, 1e-30)
+
     EVEN = N % B == 0
     num_stages = 3
     num_warps = 4
