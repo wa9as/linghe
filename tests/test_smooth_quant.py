@@ -71,7 +71,7 @@ def torch_rescale_quant(y_q, org_smooth_scale, y_scale, transpose_smooth_scale,
                         reverse=True, round_scale=True):
     assert reverse
     y = y_q.float() / org_smooth_scale * y_scale[:, None]
-    y_q, y_scale = torch_smooth_quant(y.t(), transpose_smooth_scale,
+    y_q, y_scale,_ = torch_smooth_quant(y.t(), transpose_smooth_scale,
                                       reverse=True, round_scale=round_scale)
     return y_q, y_scale
 
@@ -80,7 +80,7 @@ def triton_split_smooth_quant(x_split, smooth_scales):
     x_qs = []
     x_scales = []
     for i, x_ in enumerate(x_split):
-        x_q_, x_scale_ = triton_reused_smooth_quant(x_, smooth_scales[i])
+        x_q_, x_scale_,_ = triton_reused_smooth_quant(x_, smooth_scales[i])
         x_qs.append(x_q_)
         x_scales.append(x_scale_)
     return x_qs, x_scales
@@ -90,14 +90,15 @@ def test_triton_reused_smooth_quant(M=4096, N=4096):
     device = 'cuda:0'
     x = torch.randn((M, N), dtype=torch.bfloat16, device=device)
     smooth_scale = torch.randn((N,), device=device, dtype=torch.float32).abs()
-    x_q_ref, scales_ref = torch_smooth_quant(x, smooth_scale, reverse=False,
+    x_q_ref, scales_ref, x_maxs_ref = torch_smooth_quant(x, smooth_scale, reverse=False,
                                              round_scale=True)
 
-    x_q, x_scale = triton_reused_smooth_quant(x, smooth_scale, reverse=False,
-                                              round_scale=True)
+    x_q, x_scale, x_maxs = triton_reused_smooth_quant(x, smooth_scale, reverse=False,
+                                              round_scale=True, calibrate=True)
     output_check(x_q_ref.float(), x_q.float(),
                  'triton_reused_smooth_quant.data')
     output_check(scales_ref, x_scale, 'triton_reused_smooth_quant.scale')
+    output_check(x_maxs_ref, x_maxs, 'triton_reused_smooth_quant.x_maxs')
 
 
 def test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=16384):
@@ -149,7 +150,7 @@ def test_triton_reused_transpose_smooth_quant(M=4096, N=4096):
                                                           reverse=True,
                                                           pad=True,
                                                           round_scale=True)
-    q_ref, scale_ref = torch_smooth_quant(y.T.contiguous(),
+    q_ref, scale_ref, maxs_ref = torch_smooth_quant(y.T.contiguous(),
                                           transpose_smooth_scale, reverse=True,
                                           round_scale=True)
 
@@ -177,10 +178,10 @@ def test_triton_reused_transpose_rescale_smooth_quant(M=4096, N=4096,
         transpose_smooth_scale = torch.exp2(
             torch.ceil(torch.log2(transpose_smooth_scale)))
 
-    y_q, y_scale = triton_reused_smooth_quant(y, org_smooth_scale, reverse=True,
+    y_q, y_scale, y_maxs = triton_reused_smooth_quant(y, org_smooth_scale, reverse=True,
                                               round_scale=round_scale)
 
-    yt_gt, yt_scale_gt = torch_smooth_quant(y.t(), transpose_smooth_scale,
+    yt_gt, yt_scale_gt, yt_maxs_gt = torch_smooth_quant(y.t(), transpose_smooth_scale,
                                             reverse=True,
                                             round_scale=round_scale)
 

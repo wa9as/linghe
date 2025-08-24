@@ -434,11 +434,11 @@ def test_triton_batch_weighted_silu_and_quant(M=1024, N=4096, n_experts=32,
 
 
 if __name__ == '__main__':
-    # test_silu_and_quant(M=8191, N=256, bench=False)
-    # test_silu_and_quant(M=4096, N=10240)
-    # test_silu_and_quant(M=4096, N=5120)
-    # test_silu_and_quant(M=3575, N=2048)
-    # test_weighted_silu(M=4096, N=4096)
-    # test_weighted_silu_and_quant(M=4096, N=4096)
+    test_silu_and_quant(M=8191, N=256, bench=False)
+    test_silu_and_quant(M=4096, N=10240)
+    test_silu_and_quant(M=4096, N=5120)
+    test_silu_and_quant(M=3575, N=2048)
+    test_weighted_silu(M=4096, N=4096)
+    test_weighted_silu_and_quant(M=4096, N=4096)
     test_triton_batch_weighted_silu_and_quant(M=1024, N=4096, n_experts=32)
-    # test_triton_batch_weighted_silu_and_quant(M=800, N=2048, n_experts=32)
+    test_triton_batch_weighted_silu_and_quant(M=800, N=2048, n_experts=32)

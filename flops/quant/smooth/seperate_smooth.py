@@ -1,7 +1,7 @@
 import torch
 
 from flops.quant.smooth.reused_smooth import triton_reused_smooth_quant, \
-    triton_reused_transpose_smooth_quant, round_up, triton_subrow_reused_smooth_quant
+    triton_reused_transpose_smooth_quant, triton_subrow_reused_smooth_quant
 from flops.utils.transpose import triton_transpose_and_pad
 
 """

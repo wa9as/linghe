@@ -146,8 +146,8 @@ def test_rmsnorm_and_quant(M=4096, N=4096):
 
 
 if __name__ == '__main__':
-    # test_rmsnorm(M=4096, N=4096)
-    # test_rmsnorm(M=4096, N=8192)
-    # test_rmsnorm(M=8192, N=2048)
+    test_rmsnorm(M=4096, N=4096)
+    test_rmsnorm(M=4096, N=8192)
+    test_rmsnorm(M=8192, N=2048)
     test_rmsnorm_and_quant(M=8192, N=2048)
 

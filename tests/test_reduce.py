@@ -26,7 +26,7 @@ def test_triton_abs_max(M=4096, N=4096, bench=False):
     maxs_ref = x.abs().amax(0).float().view(N)
 
     maxs = triton_abs_max(x)
-    output_check(maxs_ref, maxs)
+    output_check(maxs_ref, maxs, 'abs_max')
     if bench:
         benchmark_func(triton_abs_max, x, n_repeat=100, ref_bytes=M * N * 2)
 
@@ -39,12 +39,12 @@ def test_count_zero(M=4096, N=8192, k=32, bench=False):
 
     count_ref = torch_count_zero(xs)
     count = triton_batch_count_zero(xs)
-    print(f'{count_ref=} {count=}')
+    # print(f'{count_ref=} {count=}')
     assert count_ref.item() - count.item() == 0
 
     sum_ref = torch_sum(xs)
     sums = triton_batch_sum_with_ord(xs)
-    output_check(sum_ref, sums)
+    output_check(sum_ref, sums, 'count_zero')
 
     if bench:
         n_repeat = 100
@@ -62,7 +62,7 @@ def test_ord_sum(M=4096, N=8192, k=32, bench=False):
 
     sum_ref = torch_sum(xs)
     sums = triton_batch_sum_with_ord(xs)
-    output_check(sum_ref, sums)
+    output_check(sum_ref, sums, 'norm')
 
     if bench:
         n_repeat = 100

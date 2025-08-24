@@ -150,8 +150,11 @@ def triton_transpose(x, dim0=None, dim1=None):
 
 
 @triton.jit
-def transpose_and_pad_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr,
-                             W: tl.constexpr, EVEN: tl.constexpr):
+def transpose_and_pad_kernel(x_ptr, t_ptr, 
+                             M, N, P, 
+                             H: tl.constexpr,
+                             W: tl.constexpr, 
+                             EVEN: tl.constexpr):
     rid = tl.program_id(axis=0)
     cid = tl.program_id(axis=1)
     offs = rid * H * N + cid * W + tl.arange(0, H)[:, None] * N + tl.arange(0,
@@ -161,10 +164,11 @@ def transpose_and_pad_kernel(x_ptr, t_ptr, M, N, P, H: tl.constexpr,
                                                                              H)[
                                                                    None, :]
     if EVEN:
-        y = tl.trans(tl.load(x_ptr + offs))
+        y = tl.load(x_ptr + offs)
     else:
-        y = tl.trans(tl.load(x_ptr + offs,
-                             mask=(rid * H + tl.arange(0, H)[:, None] < M)))
+        y = tl.load(x_ptr + offs,
+                             mask=(rid * H + tl.arange(0, H)[:, None] < M))
+    y = tl.trans(y)
     if EVEN:
         tl.store(t_ptr + toffs, y)
     else:

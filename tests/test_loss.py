@@ -37,5 +37,5 @@ def test_triton_softmax_cross_entropy(M=4096, N=157184, coef=1.0, bench=False):
         benchmark_func(triton_softmax_cross_entropy_backward, logits, targets,
                        sum_exp, max_logit, input_grad, ref_bytes=M * N * 4)
 if __name__ == '__main__':
-    test_triton_softmax_cross_entropy(M=8192, N=157184, coef=1.0, bench=True)
-    test_triton_softmax_cross_entropy(M=8192, N=157184, coef=100.0, bench=True)
+    test_triton_softmax_cross_entropy(M=8192, N=157184, coef=1.0, bench=False)
+    test_triton_softmax_cross_entropy(M=8192, N=157184, coef=100.0, bench=False)

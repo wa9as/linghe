@@ -133,7 +133,7 @@ def triton_permute_with_mask_map(
         output = torch.zeros((num_out_tokens, hidden_size), dtype=inp.dtype,
                             device="cuda")
     if SCALE > 0:
-        shape = (num_out_tokens, hs) if hs > 0 else (num_out_tokens, )
+        shape = (num_out_tokens, hs) if hs > 1 else (num_out_tokens, )
         if contiguous:
             permuted_scale = torch.empty(
                     shape, 
@@ -151,11 +151,11 @@ def triton_permute_with_mask_map(
     if PROB:
         if contiguous:
             permuted_probs = torch.empty(
-                (num_out_tokens,1), dtype=probs.dtype, device="cuda"
+                (num_out_tokens,), dtype=probs.dtype, device="cuda"
             )
         else:
             permuted_probs = torch.zeros(
-                (num_out_tokens,1), dtype=probs.dtype, device="cuda"
+                (num_out_tokens,), dtype=probs.dtype, device="cuda"
             ) 
     else:
         permuted_probs = None 

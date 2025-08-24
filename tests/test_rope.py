@@ -141,6 +141,6 @@ def test_qk_norm_and_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0,inte
                        n_profile=0)
 
 if __name__ == '__main__':
-    # test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False)
-    # test_qk_norm_and_half_rope(B=4,L=4096,H=32,h=8,D=128,bench=False,interleave=True)
+    test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False)
+    test_qk_norm_and_half_rope(B=4,L=4096,H=32,h=8,D=128,bench=False,interleave=True)
     test_qk_norm_and_half_rope(B=4,L=4096,H=32,h=8,D=128,bench=False,interleave=False)

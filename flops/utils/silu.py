@@ -155,16 +155,15 @@ def triton_silu_and_quant_forward(x, smooth_scale=None, out=None, scale=None,
         transpose_output = torch.empty((N // 2, M), device=device, dtype=torch.float8_e4m3fn) 
         transpose_scale = torch.empty((triton.cdiv(M, 128), N // 2), device=device, dtype=torch.float32)
 
-    if maxs is None and calibrate:
-        maxs = torch.empty((sm, N // 2), device=device, dtype=torch.float32)
-    else:
-        maxs = None
+
 
 
     if smooth:
         if triton.next_power_of_2(N) == N and N <= 8192:
             W = 8192 // N
             T = triton.cdiv(M, sm * W)
+            if maxs is None and calibrate:
+                maxs = torch.empty((sm, N // 2), device=device, dtype=torch.float32)
             grid = (sm,)
             silu_and_smooth_quant_forward_kernel[grid](
                 x,
@@ -186,24 +185,23 @@ def triton_silu_and_quant_forward(x, smooth_scale=None, out=None, scale=None,
             T = 16
             assert N // 2 % B == 0 and M % T == 0
             grid = (M // T,)
-            if smooth:
-                if maxs is None and calibrate:
-                    maxs = torch.empty((M // T, N // 2), device=device, dtype=torch.float32)
-                compatible_silu_and_smooth_quant_forward_kernel[grid](
-                    x,
-                    smooth_scale,
-                    out,
-                    scale,
-                    maxs,
-                    M,
-                    T,
-                    N // 2,
-                    B,
-                    round_scale,
-                    calibrate,
-                    num_stages=2,
-                    num_warps=16
-                )
+            if maxs is None and calibrate:
+                maxs = torch.empty((M // T, N // 2), device=device, dtype=torch.float32)
+            compatible_silu_and_smooth_quant_forward_kernel[grid](
+                x,
+                smooth_scale,
+                out,
+                scale,
+                maxs,
+                M,
+                T,
+                N // 2,
+                B,
+                round_scale,
+                calibrate,
+                num_stages=2,
+                num_warps=16
+            )
 
         if calibrate:
             maxs = maxs.amax(0)

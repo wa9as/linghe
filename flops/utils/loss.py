@@ -44,7 +44,6 @@ def triton_softmax_cross_entropy_forward(logits, labels):
     loss = torch.empty((M,), device=device, dtype=torch.float32)
     sum_exp = torch.empty((M,), device=device, dtype=torch.float32)
     max_logit = torch.empty((M,), device=device, dtype=torch.float32)
-
     B = 4096
     grid = (M,)
     softmax_cross_entropy_forward_kernel[grid](

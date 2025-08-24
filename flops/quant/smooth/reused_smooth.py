@@ -5,10 +5,57 @@ import triton.language as tl
 from flops.utils.util import round_up
 
 
+
+@triton.jit
+def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr, 
+                                         M, T,
+                                         N: tl.constexpr, 
+                                         W: tl.constexpr,
+                                         REVERSE: tl.constexpr,
+                                         ROUND: tl.constexpr,
+                                         CALIBRATE: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    # row-wise read, row-wise write
+    smooth_scale = tl.load(ss_ptr + tl.arange(0, N))[None, :]
+    if not REVERSE:
+        smooth_scale = 1.0 / smooth_scale
+
+    if CALIBRATE:
+        output_maxs = tl.zeros((W, N), dtype=tl.float32)
+    for i in range(T):
+        x = tl.load(x_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
+                                                          None] * N + tl.arange(
+            0, N)[None, :],
+                    mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M).to(
+            tl.float32)
+        if CALIBRATE:
+            output_maxs = tl.maximum(tl.abs(x), output_maxs)
+        x *= smooth_scale
+        x_max = tl.max(tl.abs(x), axis=1)
+        scale = tl.maximum(x_max / 448.0, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        tl.store(qs_ptr + pid * W * T + i * W + tl.arange(0, W), scale,
+                 mask=pid * W * T + i * W + tl.arange(0, W) < M)
+
+        x /= scale[:, None]
+        xq = x.to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
+                                                       None] * N + tl.arange(0,
+                                                                             N)[
+                                                                   None, :], xq,
+                 mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M)
+    if CALIBRATE:
+        output_maxs = tl.max(output_maxs, 0)
+        tl.store(max_ptr + pid * N + tl.arange(0, N), output_maxs)
+
+
 @triton.jit
 def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr, 
-                                         M, N,
-                                         H: tl.constexpr, W: tl.constexpr,
+                                         M, 
+                                         N,
+                                         H: tl.constexpr, 
+                                         W: tl.constexpr,
                                          EVEN: tl.constexpr,
                                          REVERSE: tl.constexpr,
                                          ROUND: tl.constexpr,
@@ -27,7 +74,7 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
             x = tl.load(x_ptr + offs,
                         mask=pid * W + tl.arange(0, W)[:, None] < M).to(tl.float32)
         if CALIBRATE:
-            output_maxs = tl.maximum(output_maxs, tl.max(x.abs(), 0))
+            output_maxs = tl.max(x.abs(), 0)
             tl.store(max_ptr + pid * N + i * H + tl.arange(0, H), output_maxs)
         if REVERSE:
             x = x * smooth_scale
@@ -73,47 +120,6 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
         soffs += H
 
 
-@triton.jit
-def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr, M, T,
-                                         N: tl.constexpr, W: tl.constexpr,
-                                         REVERSE: tl.constexpr,
-                                         ROUND: tl.constexpr,
-                                         CALIBRATE: tl.constexpr):
-    pid = tl.program_id(axis=0)
-    # row-wise read, row-wise write
-    smooth_scale = tl.load(ss_ptr + tl.arange(0, N))[None, :]
-    if not REVERSE:
-        smooth_scale = 1.0 / smooth_scale
-
-    if CALIBRATE:
-        output_maxs = tl.zeros((W, N), dtype=tl.float32)
-    for i in range(T):
-        x = tl.load(x_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
-                                                          None] * N + tl.arange(
-            0, N)[None, :],
-                    mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M).to(
-            tl.float32)
-        if CALIBRATE:
-            output_maxs = tl.maximum(tl.abs(x), output_maxs)
-        x *= smooth_scale
-        x_max = tl.max(tl.abs(x), axis=1)
-        scale = tl.maximum(x_max / 448.0, 1e-30)
-        if ROUND:
-            scale = tl.exp2(tl.ceil(tl.log2(scale)))
-        tl.store(qs_ptr + pid * W * T + i * W + tl.arange(0, W), scale,
-                 mask=pid * W * T + i * W + tl.arange(0, W) < M)
-
-        x /= scale[:, None]
-        xq = x.to(q_ptr.dtype.element_ty)
-        tl.store(q_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
-                                                       None] * N + tl.arange(0,
-                                                                             N)[
-                                                                   None, :], xq,
-                 mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M)
-    if CALIBRATE:
-        output_maxs = tl.max(output_maxs, 0)
-        tl.store(max_ptr + pid * N + tl.arange(0, N), output_maxs)
-
 def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
                                reverse=False, round_scale=False,
                                calibrate=False):
@@ -155,7 +161,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
         W = 8 if M <= sm * 8 else 16
         H = 1024 if W == 8 and N%1024 == 0 else 512
         assert N % H == 0, f'N:{N} is not divided by H:{H}'
-        EVEN = M % W == 0 
+        EVEN = M % W == 0
         T = triton.cdiv(M, W)
         if calibrate:
             x_maxs = torch.empty((T, N), device=device, dtype=torch.bfloat16)
