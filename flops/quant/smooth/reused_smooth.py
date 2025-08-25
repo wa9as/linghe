@@ -5,7 +5,7 @@ import triton.language as tl
 from flops.utils.util import round_up
 
 
-
+# TODO(nanxiao): use max instead of sum
 @triton.jit
 def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr, 
                                          M, T,

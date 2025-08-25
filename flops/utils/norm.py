@@ -128,7 +128,7 @@ def rms_norm_and_smooth_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr
     smooth_scale = tl.load(smooth_scale_ptr + tl.arange(0, N))[None, :]
     smooth_scale = 1.0 / smooth_scale
     if CALIBRATE:
-        maxs = tl.zeros((N, ), dtype=tl.float32)
+        maxs = tl.zeros((W, N), dtype=tl.float32)
     offs = pid * W * T * N + tl.arange(0, W)[:, None] * N + tl.arange(0, N)[
                                                             None, :]
     for i in range(T):
@@ -139,7 +139,7 @@ def rms_norm_and_smooth_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr
             tl.store(rms_ptr + indices, rms, mask=indices < M)
         x = x * rms[:, None] * weight
         if CALIBRATE:
-            maxs = tl.maximum(maxs, tl.max(tl.abs(x), 0))
+            maxs = tl.maximum(maxs, tl.abs(x))
         x = x * smooth_scale
         scale = tl.maximum(tl.max(tl.abs(x), 1) / 448.0, 1e-30)
         if ROUND:
@@ -150,7 +150,7 @@ def rms_norm_and_smooth_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr
         offs += N * W
 
     if CALIBRATE:
-        # maxs = tl.max(maxs, 0)
+        maxs = tl.max(maxs, 0)
         tl.store(max_ptr + pid * N + tl.arange(0, N), maxs)
 
 

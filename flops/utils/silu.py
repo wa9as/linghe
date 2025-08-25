@@ -1154,7 +1154,7 @@ def triton_batch_weighted_silu_and_quant_backward(g, x, weight,
         s = sum([((x-1)//128+1) for x in splits])
         transpose_dx_scale = torch.empty((s * N), device=device, dtype=torch.float32) 
 
-    dw = torch.empty((M, 1), device=device, dtype=weight.dtype)
+    dw = torch.empty((M, ), device=device, dtype=weight.dtype)
     accums = torch.cumsum(counts, 0)
 
     if smooth:

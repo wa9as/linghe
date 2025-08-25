@@ -203,7 +203,7 @@ def block_count_kernel(map_ptr, count_ptr, M, B, T: tl.constexpr,
 
 
 @triton.jit
-def accumulate_count_kernel(map_ptr, count_ptr, output_ptr, M, B, P,
+def make_row_id_map_kernel(map_ptr, count_ptr, output_ptr, M, B, P,
                             T: tl.constexpr, b: tl.constexpr, E: tl.constexpr):
     pid = tl.program_id(axis=0)
 
@@ -258,7 +258,7 @@ def triton_make_row_id_map(
         num_warps=8
     )
 
-    accumulate_count_kernel[grid](
+    make_row_id_map_kernel[grid](
         routing_map,
         block_counts,
         output,
@@ -273,3 +273,84 @@ def triton_make_row_id_map(
     )
 
     return output
+
+
+@triton.jit
+def make_row_id_map_and_indices_kernel(map_ptr, count_ptr, row_map_ptr, row_indices_ptr, M, B, P,
+                            T: tl.constexpr, b: tl.constexpr, E: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    indices = tl.arange(0, T)[:, None] * E + tl.arange(0, E)[None, :]
+    counts = tl.load(count_ptr + indices)
+    sum_counts = tl.sum(counts, 0)
+    sum_counts = tl.cdiv(sum_counts, P) * P
+    accum_sum_counts = tl.cumsum(sum_counts, 0)
+
+    partial_counts = tl.sum(tl.where(indices < pid * E, counts, 0), 0)
+
+    count_offset = accum_sum_counts - sum_counts + partial_counts - 1
+    offs = pid * B * E + tl.arange(0, b)[:, None] * E + tl.arange(0, E)[None, :]
+    t = tl.cdiv(B, b)
+    for i in range(t):
+        mask = pid * B + i * b + tl.arange(0, b)[:, None] < tl.minimum(M,
+                                                                       pid * B + B)
+        values = tl.load(map_ptr + offs, mask=mask).to(tl.int32)
+        acc = count_offset + tl.cumsum(values, 0)
+        count_offset = tl.max(acc, 0)
+        output_acc = tl.where(values == 0, -1, acc)
+        tl.store(row_map_ptr + offs, output_acc, mask=mask)
+
+        tl.store(row_indices_ptr + acc, pid * B + i * b +  tl.arange(0, b)[:,None] + (0*tl.arange(0, E))[None, :], mask = mask & values != 0)
+
+        offs += b * E
+
+
+# """
+# row id map, shape:[n_tokens, n_experts]
+# row id indices, shape: [sum(n_tokens_per_experts)]
+# """
+def triton_make_row_id_map_and_indices(
+        routing_map: torch.Tensor, 
+        num_out_tokens: int,
+        multiple_of: int = 1,
+):
+    n_tokens, n_experts = routing_map.shape
+    T = 128
+    block_counts = torch.empty((T, n_experts), dtype=torch.int32,
+                               device=routing_map.device)
+    row_id_map = torch.empty((n_tokens, n_experts), dtype=torch.int32,
+                         device=routing_map.device)
+    row_id_indices = torch.empty((num_out_tokens, ), dtype=torch.int32,
+                         device=routing_map.device)
+    
+    B = triton.cdiv(n_tokens, T)
+    b = 16
+    grid = (T,)
+    block_count_kernel[grid](
+        routing_map,
+        block_counts,
+        n_tokens,
+        B,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+
+    make_row_id_map_and_indices_kernel[grid](
+        routing_map,
+        block_counts,
+        row_id_map,
+        row_id_indices,
+        n_tokens,
+        B,
+        multiple_of,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+
+    return row_id_map, row_id_indices

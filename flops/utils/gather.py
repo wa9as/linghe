@@ -252,6 +252,83 @@ def triton_smooth_permute_with_indices(x, smooth_scales, token_count_per_expert,
     return x_q, x_scale
 
 
+
+
+
+# @triton.jit
+# def batch_smooth_rescale_with_indices_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr,
+#                                        accum_ptr, index_ptr, M, N: tl.constexpr,
+#                                        REVERSE: tl.constexpr,
+#                                        ROUND: tl.constexpr):
+#     pid = tl.program_id(axis=0)
+#     # row-wise read, row-wise write
+#     smooth_scale = tl.load(ss_ptr + pid * N + tl.arange(0, N))
+#     if not REVERSE:
+#         smooth_scale = 1.0 / smooth_scale
+#     count = tl.load(count_ptr + pid)
+#     ei = tl.load(accum_ptr + pid)
+#     si = ei - count
+#     for i in range(count):
+#         index = tl.load(index_ptr + si + i)
+#         x = tl.load(x_ptr + index * N + tl.arange(0, N)).to(tl.float32)
+#         x *= smooth_scale
+#         x_max = tl.max(tl.abs(x))
+#         scale = tl.maximum(x_max / 448.0, 1e-30)
+#         if ROUND:
+#             scale = tl.exp2(tl.ceil(tl.log2(scale)))
+
+#         tl.store(qs_ptr + si + i, scale)
+
+#         s = 1.0 / scale
+#         x *= s
+#         xq = x.to(q_ptr.dtype.element_ty)
+#         tl.store(q_ptr + si * N + i * N + tl.arange(0, N), xq)
+
+
+# """
+# used for smooth backward in 0.12
+# `x` is smooth quantized dy, it should be requantized and padded and tranposed
+# x: [bs, dim]
+# org_smooth_scale: [dim]
+# smooth_scales: [n_experts, dim]
+# indices: [sum(tokens_per_experts)]
+# x_q: [sum(roundup(tokens_per_experts)) * dim]
+# x_scale: [sum(roundup(tokens_per_experts))]
+# """
+# def triton_batch_smooth_rescale_with_indices(x, org_smooth_scale, smooth_scales, 
+#                                        token_count_per_expert, indices, 
+#                                        x_q=None, x_scale=None,
+#                                        reverse=False, round_scale=False):
+#     # row-wise read, row-wise write
+#     M, N = x.shape
+#     n_expert = smooth_scales.shape[0]
+#     E = indices.shape[0]
+#     device = x.device
+#     if x_q is None:
+#         x_q = torch.empty((E, N), device=device, dtype=torch.float8_e4m3fn)
+#     if x_scale is None:
+#         x_scale = torch.empty((E,), device=device, dtype=torch.float32)
+#     accum_token_count = torch.cumsum(token_count_per_expert, 0)
+#     # TODO: adapt for n_expert <= 64
+#     grid = (n_expert,)
+#     batch_smooth_rescale_with_indices_kernel[grid](
+#         x,
+#         x_q,
+#         smooth_scales,
+#         x_scale,
+#         token_count_per_expert,
+#         accum_token_count,
+#         indices,
+#         M, N,
+#         reverse,
+#         round_scale,
+#         num_stages=3,
+#         num_warps=8
+#     )
+#     return x_q, x_scale
+
+
+
 @triton.jit
 def smooth_weighted_unpermute_with_indices_backward_kernel(grads_ptr,
                                                            tokens_ptr, q_ptr,
