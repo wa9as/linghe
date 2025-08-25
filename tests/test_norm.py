@@ -138,16 +138,35 @@ def test_rmsnorm_and_quant(M=4096, N=4096):
                                                             smooth_scale=None,
                                                             round_scale=True,
                                                             output_rms=True,
-                                                            calibrate=True)
+                                                            calibrate=True,
+                                                            output_mode=2)
     output_check(q_ref, q, mode="block.data")
     output_check(scale_ref.t(), scale, mode='block.scale')
     output_check(qt_ref, q_t, mode='block.t_data')
     output_check(scale_t_ref.t(), scale_t, mode="block.t_scale")
 
+    q, scale, _, _, _, _  = triton_rms_norm_and_quant_forward(x, weight,
+                                                            smooth_scale=None,
+                                                            round_scale=True,
+                                                            output_rms=True,
+                                                            calibrate=True,
+                                                            output_mode=0)
+    output_check(q_ref, q, mode="block.data")
+    output_check(scale_ref.t(), scale, mode='block.scale')
+
+    _, _, _, _, q_t, scale_t  = triton_rms_norm_and_quant_forward(x, weight,
+                                                            smooth_scale=None,
+                                                            round_scale=True,
+                                                            rms=rms,
+                                                            output_rms=True,
+                                                            calibrate=True,
+                                                            output_mode=1)
+    output_check(qt_ref, q_t, mode='block.t_data')
+    output_check(scale_t_ref.t(), scale_t, mode="block.t_scale")
 
 if __name__ == '__main__':
-    test_rmsnorm(M=4096, N=4096)
-    test_rmsnorm(M=4096, N=8192)
-    test_rmsnorm(M=8192, N=2048)
+    # test_rmsnorm(M=4096, N=4096)
+    # test_rmsnorm(M=4096, N=8192)
+    # test_rmsnorm(M=8192, N=2048)
     test_rmsnorm_and_quant(M=8192, N=2048)
 

@@ -445,6 +445,113 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert,
     return x_q, x_scale, x_maxs
 
 
+
+@triton.jit
+def batch_pad_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
+                              count_ptr,
+                              accum_ptr, 
+                              N, 
+                              H: tl.constexpr,
+                              W: tl.constexpr,
+                              E: tl.constexpr,
+                              REVERSE: tl.constexpr, 
+                              ROUND: tl.constexpr):
+    eid = tl.program_id(axis=0)
+    bid = tl.program_id(axis=1)
+
+    count = tl.load(count_ptr + eid)
+    ei = tl.load(accum_ptr + eid)
+    si = ei - count
+    round_count = tl.cdiv(count, 32)*32
+
+    counts = tl.load(count_ptr + tl.arange(0, E))
+    n_blocks = tl.cdiv(counts, 128)
+    bias = tl.sum(tl.where(tl.arange(0, E)< eid, n_blocks, 0))
+
+    n = tl.cdiv(count, H) 
+    maxs = tl.zeros((H, W), dtype=tl.float32)
+    for i in range(n):
+        # col-wise read, row-wise write
+        indices = i * H + tl.arange(0, H)
+        smooth_scale = tl.load(ss_ptr + indices, mask=indices < count)
+        if not REVERSE:
+            smooth_scale = 1.0 / smooth_scale
+
+        x = tl.load(x_ptr + si * N + i * H * N + bid * W + tl.arange(0, H)[:, None] + tl.arange(0, W)[None, :], mask=indices[:, None]<count).to(tl.float32)
+        x *= smooth_scale[:, None]
+        maxs = tl.maximum(maxs, tl.abs(x))
+
+    maxs = tl.max(maxs, 0)
+    scale = tl.maximum(tl.max(maxs, 0) / 448.0, 1e-30)
+    if ROUND:
+        scale = tl.exp2(tl.ceil(tl.log2(scale)))
+    tl.store(qs_ptr + eid * N + bid * W + tl.arange(0, W), scale)
+    s = 1.0/scale
+
+    for i in range(n):
+        # col-wise read, row-wise write
+        indices = i * H + tl.arange(0, H)
+        smooth_scale = tl.load(ss_ptr + indices, mask=indices < count)
+        if not REVERSE:
+            smooth_scale = 1.0 / smooth_scale
+
+        x = tl.load(x_ptr + si * N + i * H * N + bid * W + tl.arange(0, H)[:, None] + tl.arange(0, W)[None, :], mask=indices[:, None]<count ).to(tl.float32)
+        x *= smooth_scale[:, None]
+        x *= s
+        xq = tl.trans(x.to(q_ptr.dtype.element_ty))
+        tl.store(q_ptr + bias * N + bid * W * round_count + i * H + tl.arange(0, W)[:, None] + tl.arange(0, H)[None, :], xq, mask=indices[None, :] < round_count)
+
+"""
+used in silu backward
+pad to multiple of 32 and transpose and smooth quant
+x: [sum(token_per_expert), dim]
+smooth_scales: [sum(token_per_expert)]
+token_count_per_expert: [n_experts]
+splits: list of token_count_per_expert
+x_q: [sum(roundup(token_per_expert)) * dim]
+x_scale: [n_experts, dim]
+"""
+def triton_batch_pad_transpose_smooth_quant(x, 
+                              smooth_scales, 
+                              token_count_per_expert,
+                              splits,
+                              x_q=None, x_scale=None, x_maxs=None,
+                              reverse=False, round_scale=False):
+    # col-wise read, row-wise write
+
+    M, N = x.shape
+    device = x.device
+    n_expert = token_count_per_expert.shape[0]
+    round_splits = [(x+31)//32*32 for x in splits]
+    round_size = sum(round_splits)
+    if x_q is None:
+        x_q = torch.empty((round_size, N), device=device, dtype=torch.float8_e4m3fn)
+    if x_scale is None:
+        x_scale = torch.empty((n_expert, N), device=device, dtype=torch.float32)
+    accum_token_count = torch.cumsum(token_count_per_expert, 0)
+    H = 128
+    W = 32
+    grid = (n_expert, N//W)
+    batch_pad_transpose_smooth_quant_kernel[grid](
+        x,
+        x_q,
+        smooth_scales,
+        x_scale,
+        token_count_per_expert,
+        accum_token_count,
+        N,
+        H, 
+        W,
+        n_expert,
+        reverse,
+        round_scale,
+        num_stages=3,
+        num_warps=8
+    )
+    return x_q, x_scale
+
+
+
 @triton.jit
 def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
                                          H: tl.constexpr, W: tl.constexpr,

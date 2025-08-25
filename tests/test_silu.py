@@ -222,11 +222,29 @@ def test_silu_and_quant(M=4096, N=4096, bench=False):
     y_q, y_scale, y_maxs, yt_q, yt_scale = triton_silu_and_quant_forward(x, 
                                                     smooth_scale=None,
                                                     round_scale=True,
-                                                    calibrate=False)
+                                                    calibrate=False,
+                                                    output_mode=2)
     output_check(y_q_ref.float(), y_q.float(), 'block.y_q')
     output_check(y_scale_ref, y_scale.t(), 'block.y_scale')
     output_check(yt_q_ref.float(), yt_q.float(), 'block.yt_q')
     output_check(yt_scale_ref, yt_scale.t(), 'block.yt_scale')
+
+    y_q, y_scale, y_maxs, yt_q, yt_scale = triton_silu_and_quant_forward(x, 
+                                                    smooth_scale=None,
+                                                    round_scale=True,
+                                                    calibrate=False,
+                                                    output_mode=0)
+    output_check(y_q_ref.float(), y_q.float(), 'block.y_q')
+    output_check(y_scale_ref, y_scale.t(), 'block.y_scale')
+
+    y_q, y_scale, y_maxs, yt_q, yt_scale = triton_silu_and_quant_forward(x, 
+                                                    smooth_scale=None,
+                                                    round_scale=True,
+                                                    calibrate=False,
+                                                    output_mode=1)
+    output_check(yt_q_ref.float(), yt_q.float(), 'block.yt_q')
+    output_check(yt_scale_ref, yt_scale.t(), 'block.yt_scale')
+
 
     dx_q_ref, dx_scale_ref, _, _ = torch_silu_and_quant_backward(grad_output, x,
                                                            smooth_scale=grad_smooth_scale,
@@ -311,7 +329,7 @@ def test_weighted_silu_and_quant(M=4096, N=4096, bench=False):
                                                                   calibrate=True)
     # y = weighted_swiglu(x,weight)
     y_ref = torch_weighted_silu(x, weight)
-    x_q_ref, x_scale_ref = triton_reused_smooth_quant(y_ref, smooth_scale,
+    x_q_ref, x_scale_ref, x_max_ref = triton_reused_smooth_quant(y_ref, smooth_scale,
                                                       reverse=False,
                                                       round_scale=True)
 

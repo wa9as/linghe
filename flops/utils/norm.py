@@ -128,7 +128,7 @@ def rms_norm_and_smooth_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr
     smooth_scale = tl.load(smooth_scale_ptr + tl.arange(0, N))[None, :]
     smooth_scale = 1.0 / smooth_scale
     if CALIBRATE:
-        maxs = tl.zeros((W, N), dtype=tl.float32)
+        x_maxs = tl.zeros((N,), dtype=tl.float32)
     offs = pid * W * T * N + tl.arange(0, W)[:, None] * N + tl.arange(0, N)[
                                                             None, :]
     for i in range(T):
@@ -139,7 +139,7 @@ def rms_norm_and_smooth_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr
             tl.store(rms_ptr + indices, rms, mask=indices < M)
         x = x * rms[:, None] * weight
         if CALIBRATE:
-            maxs = tl.maximum(maxs, tl.abs(x))
+            x_maxs = tl.maximum(x_maxs, tl.max(tl.abs(x),0))
         x = x * smooth_scale
         scale = tl.maximum(tl.max(tl.abs(x), 1) / 448.0, 1e-30)
         if ROUND:
@@ -150,16 +150,17 @@ def rms_norm_and_smooth_quant_forward_kernel(x_ptr, weight_ptr, smooth_scale_ptr
         offs += N * W
 
     if CALIBRATE:
-        maxs = tl.max(maxs, 0)
-        tl.store(max_ptr + pid * N + tl.arange(0, N), maxs)
+        tl.store(max_ptr + pid * N + tl.arange(0, N), x_maxs)
 
-
-
-
+# output non-transposed and transposed together
+# should used with batchsize >= 16384
 @triton.jit
-def rms_norm_and_block_quant_forward_kernel(x_ptr, weight_ptr,
-                                      out_ptr, scale_ptr, 
-                                      transpose_output_ptr, transpose_scale_ptr,
+def rms_norm_and_block_quant_forward_kernel(x_ptr, 
+                                      weight_ptr,
+                                      out_ptr, 
+                                      scale_ptr, 
+                                      transpose_output_ptr, 
+                                      transpose_scale_ptr,
                                       rms_ptr, 
                                       eps,
                                       M, 
@@ -171,6 +172,7 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr, weight_ptr,
                                       OUTPUT_RMS: tl.constexpr,
                                       ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
+
     # row-wise read, row-wise write
     weight = tl.load(weight_ptr + tl.arange(0, N)).to(tl.float32)[None, :]
     offs = pid * W * T * N + tl.arange(0, W)[:, None] * N + tl.arange(0, N)[
@@ -182,7 +184,6 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr, weight_ptr,
         if OUTPUT_RMS:
             tl.store(rms_ptr + indices, rms, mask=indices < M)
         x = (x * rms[:, None]) * weight
-        # maxs = tl.maximum(maxs, tl.abs(x))
         x = tl.reshape(x, [W, nb, 128])
         scale = tl.maximum(tl.max(tl.abs(x), 2) / 448.0, 1e-30)
         if ROUND:
@@ -202,7 +203,6 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr, weight_ptr,
     indices = pid * W * T + tl.arange(0, 128)
     rms = tl.load(rms_ptr + indices, mask=indices < M)[:, None]
     for i in range(N//H):
-        indices = pid * W * T + tl.arange(0, 128)
         x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32) 
         wgt = tl.load(weight_ptr + i * H +  tl.arange(0, H)).to(tl.float32)
         x = x * rms * wgt
@@ -216,27 +216,103 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr, weight_ptr,
         toffs += M * H
 
 
+
+# output non-transposed tensor only
+@triton.jit
+def rms_norm_and_block_quant_forward_n_kernel(x_ptr, 
+                                      weight_ptr,
+                                      out_ptr, 
+                                      scale_ptr, 
+                                      rms_ptr, 
+                                      eps,
+                                      M, 
+                                      T: tl.constexpr,
+                                      N: tl.constexpr,
+                                      nb: tl.constexpr,
+                                      W: tl.constexpr, 
+                                      OUTPUT_RMS: tl.constexpr,
+                                      ROUND: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    # row-wise read, row-wise write
+    weight = tl.load(weight_ptr + tl.arange(0, N)).to(tl.float32)[None, :]
+    offs = pid * W * T * N + tl.arange(0, W)[:, None] * N + tl.arange(0, N)[
+                                                            None, :]
+    for i in range(T):
+        indices = pid * W * T + i * W + tl.arange(0, W)
+        x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32)
+        rms = tl.rsqrt(tl.sum(x * x, axis=1) / N + eps)
+        if OUTPUT_RMS:
+            tl.store(rms_ptr + indices, rms, mask=indices < M)
+        x = (x * rms[:, None]) * weight
+        x = tl.reshape(x, [W, nb, 128])
+        scale = tl.maximum(tl.max(tl.abs(x), 2) / 448.0, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        x = (x / scale[:,:, None]).to(out_ptr.dtype.element_ty)
+        x = tl.reshape(x, [W, N])
+        tl.store(scale_ptr + indices[:, None] * nb + tl.arange(0, nb)[None, :], scale, mask=indices[:, None] < M)
+        tl.store(out_ptr + offs, x, mask=indices[:, None] < M)
+        offs += N * W
+
+
+
+
+# output transposed tensor only
+@triton.jit
+def rms_norm_and_block_quant_forward_t_kernel(x_ptr, 
+                                      weight_ptr,
+                                      transpose_output_ptr, 
+                                      transpose_scale_ptr,
+                                      rms_ptr, 
+                                      M, 
+                                      N,
+                                      W: tl.constexpr, 
+                                      ROUND: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    offs = pid * W + tl.arange(0, 128)[:, None] * N + tl.arange(0, W)[
+                                                            None, :]
+    toffs = pid * M * W + tl.arange(0, W)[:, None] * M + tl.arange(0, 128)[
+                                                            None, :]
+
+    weight = tl.load(weight_ptr + pid * W +  tl.arange(0, W)).to(tl.float32)
+    for i in range(tl.cdiv(M, 128)):
+        indices = i * 128 + tl.arange(0, 128)
+        rms = tl.load(rms_ptr + indices, mask=indices < M)[:, None]
+        x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32) 
+        x = x * rms * weight
+        scale = tl.maximum(tl.max(x.abs(), 0) / 448.0, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        tl.store(transpose_scale_ptr + i * N + pid * W + tl.arange(0, W), scale)
+
+        x = (x/scale).to(transpose_output_ptr.dtype.element_ty)
+        tl.store(transpose_output_ptr + toffs, tl.trans(x), mask=indices[None, :] < M)
+        offs += 128 * N
+        toffs += 128
+
+
+
+
 # rms is used for moe routing, it is stored as 1/rms
 def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
-                                      out=None, scale=None, calibrate=False,
+                                      out=None, scale=None, rms=None, calibrate=False,
                                       output_rms=False, round_scale=False,
-                                      transpose=False):
+                                      output_mode=2):
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192
     device = x.device
     smooth = smooth_scale is not None
-    if out is None:
+
+    if out is None and (smooth or output_mode in (0, 2)):
         out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
 
     # blockwise must write rms
-    if output_rms:
+    if output_rms and rms is None:
         rms = torch.empty((M,), dtype=torch.float32, device=device)
-    else:
-        rms = None
 
-    sm = torch.cuda.get_device_properties(
-        x.device).multi_processor_count
 
     if smooth:
         if scale is None:
@@ -273,37 +349,72 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
         if calibrate:
             maxs = maxs.amax(0)
     else:
-        if scale is None:
+        if scale is None and output_mode in (0, 2):
             scale = torch.empty((M, N//128), device=device, dtype=torch.float32)
-        # recomputation must be used with this kernel
-        # transpose = False: forward, output rms, only output non-transposed tensor
-        # transpose = True: backward, input rms, only output transposed tensor
+        maxs = None 
+        # transpose_output should be initialized, or else can not make splitted tensors
         transpose_output = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
         transpose_scale = torch.empty(((M+127)//128, N), device=device, dtype=torch.float32)
-        maxs = None 
-        W = 8192 // N
-        T = 128 // W  # BLOCK SIZE
-        H = 64
-        grid = (triton.cdiv(M, 128),)
-        rms_norm_and_block_quant_forward_kernel[grid](
-            x,
-            weight,
-            out,
-            scale,
-            transpose_output,
-            transpose_scale,
-            rms,
-            eps,
-            M,
-            T,
-            N,
-            N//128,
-            W,
-            H,
-            output_rms,
-            round_scale,
-            num_stages=3,
-            num_warps=16
-        )
-        scale = scale.t().contiguous()
+        if output_mode == 2:  # output non-transposed and transposed tensor together
+            W = 8192 // N
+            T = 128 // W  # BLOCK SIZE
+            H = 64
+            grid = (triton.cdiv(M, 128),)
+            rms_norm_and_block_quant_forward_kernel[grid](
+                x,
+                weight,
+                out,
+                scale,
+                transpose_output,
+                transpose_scale,
+                rms,
+                eps,
+                M,
+                T,
+                N,
+                N//128,
+                W,
+                H,
+                output_rms,
+                round_scale,
+                num_stages=3,
+                num_warps=16
+            )
+            scale = scale.t().contiguous()
+
+        elif output_mode == 1:  # only output transposed tensor
+            W = N//128
+            grid = (128,)
+            rms_norm_and_block_quant_forward_t_kernel[grid](x, 
+                                      weight,
+                                      transpose_output, 
+                                      transpose_scale,
+                                      rms, 
+                                      M, 
+                                      N,
+                                      W, 
+                                      round_scale)
+        elif output_mode == 0: # only output non-transpose tensor
+            W = 8192 // N
+            T = 32 // W  
+            grid = (triton.cdiv(M, 32),)
+            rms_norm_and_block_quant_forward_n_kernel[grid](
+                x,
+                weight,
+                out,
+                scale,
+                rms,
+                eps,
+                M,
+                T,
+                N,
+                N//128,
+                W,
+                output_rms,
+                round_scale,
+                num_stages=3,
+                num_warps=16
+            )
+            scale = scale.t().contiguous()
+
     return out, scale, maxs, rms, transpose_output, transpose_scale
