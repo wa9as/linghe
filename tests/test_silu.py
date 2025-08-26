@@ -438,7 +438,15 @@ def test_triton_batch_weighted_silu_and_quant(M=1024, N=4096, n_experts=32,
                                   n_repeat=100,
                                   ref_bytes=n_experts * M * N * 4.5)
         benchmark_func(triton_batch_weighted_silu_and_quant_forward, x, weight,
-                       smooth_scales, counts, round_scale=True, n_repeat=100,
+                    counts, smooth_scale=smooth_scales, round_scale=True, n_repeat=100,
+                       ref_bytes=n_experts * M * N * 2.5, ref_time=ref_time)
+        benchmark_func(triton_batch_weighted_silu_and_quant_forward, x, weight,
+                    counts, smooth_scale=None, round_scale=True, splits=count_list, 
+                    output_mode=0, n_repeat=100,
+                       ref_bytes=n_experts * M * N * 2.5, ref_time=ref_time)
+        benchmark_func(triton_batch_weighted_silu_and_quant_forward, x, weight,
+                    counts, smooth_scale=None, round_scale=True, splits=count_list, 
+                    output_mode=1, n_repeat=100,
                        ref_bytes=n_experts * M * N * 2.5, ref_time=ref_time)
 
         ref_time = benchmark_func(split_batch_weighted_silu_and_quant_backward,
@@ -446,17 +454,20 @@ def test_triton_batch_weighted_silu_and_quant(M=1024, N=4096, n_experts=32,
                                   counts, n_repeat=100,
                                   ref_bytes=n_experts * M * N * 8)
         benchmark_func(triton_batch_weighted_silu_and_quant_backward,
-                       grad_output, x, weight, smooth_scales, counts,
+                       grad_output, x, weight, counts, smooth_scale=smooth_scales,
                        round_scale=True, n_repeat=100,
                        ref_bytes=n_experts * M * N * 4, ref_time=ref_time)
-
+        benchmark_func(triton_batch_weighted_silu_and_quant_backward,
+                       grad_output, x, weight, counts, smooth_scale=None,
+                       round_scale=True, splits=count_list, n_repeat=100,
+                       ref_bytes=n_experts * M * N * 4, ref_time=ref_time)
 
 if __name__ == '__main__':
-    test_silu_and_quant(M=8191, N=256, bench=False)
-    test_silu_and_quant(M=4096, N=10240)
-    test_silu_and_quant(M=4096, N=5120)
-    test_silu_and_quant(M=3575, N=2048)
-    test_weighted_silu(M=4096, N=4096)
-    test_weighted_silu_and_quant(M=4096, N=4096)
-    test_triton_batch_weighted_silu_and_quant(M=1024, N=4096, n_experts=32)
-    test_triton_batch_weighted_silu_and_quant(M=800, N=2048, n_experts=32)
+    # test_silu_and_quant(M=8192, N=1024, bench=True)
+    # test_silu_and_quant(M=4096, N=10240)
+    # test_silu_and_quant(M=4096, N=5120)
+    # test_silu_and_quant(M=3575, N=2048)
+    # test_weighted_silu(M=4096, N=4096)
+    # test_weighted_silu_and_quant(M=4096, N=4096)
+    test_triton_batch_weighted_silu_and_quant(M=2048, N=2048, n_experts=32, bench=True)
+    # test_triton_batch_weighted_silu_and_quant(M=800, N=2048, n_experts=32)

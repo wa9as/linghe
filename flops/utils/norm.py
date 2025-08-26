@@ -283,8 +283,8 @@ def rms_norm_and_block_quant_forward_t_kernel(x_ptr,
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
         tl.store(transpose_scale_ptr + i * N + pid * W + tl.arange(0, W), scale)
 
-        x = (x/scale).to(transpose_output_ptr.dtype.element_ty)
-        tl.store(transpose_output_ptr + toffs, tl.trans(x), mask=indices[None, :] < M)
+        x = (tl.trans(x/scale)).to(transpose_output_ptr.dtype.element_ty)
+        tl.store(transpose_output_ptr + toffs, x, mask=indices[None, :] < M)
         offs += 128 * N
         toffs += 128
 
@@ -309,6 +309,8 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
     if rms is None:
         rms = torch.empty((M,), dtype=torch.float32, device=device)
 
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+
 
     if smooth:
         if scale is None:
@@ -316,7 +318,6 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
         transpose_output = None 
         transpose_scale = None
         W = 8192 // N
-        sm = torch.cuda.get_device_properties(device).multi_processor_count
         T = triton.cdiv(M, sm * W)
         if calibrate:
             maxs = torch.empty((sm, N), dtype=torch.float32, device=device)
@@ -378,8 +379,8 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
             scale = scale.t().contiguous()
 
         elif output_mode == 1:  # only output transposed tensor
-            W = N//128
-            grid = (128,)
+            W = N//256
+            grid = (256,)
             rms_norm_and_block_quant_forward_t_kernel[grid](x, 
                                       weight,
                                       transpose_output, 
@@ -388,11 +389,13 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
                                       M, 
                                       N,
                                       W, 
-                                      round_scale)
+                                      round_scale,
+                                      num_stages=3,
+                                      num_warps=4)
         elif output_mode == 0: # only output non-transpose tensor
             W = 8192 // N
-            T = 32 // W  
-            grid = (triton.cdiv(M, 32),)
+            T = triton.cdiv(M, W*sm)
+            grid = (sm,)
             rms_norm_and_block_quant_forward_n_kernel[grid](
                 x,
                 weight,
@@ -407,7 +410,7 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
                 W,
                 round_scale,
                 num_stages=3,
-                num_warps=16
+                num_warps=8
             )
             scale = scale.t().contiguous()
 

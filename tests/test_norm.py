@@ -6,6 +6,7 @@ from flops.utils.norm import (triton_rms_norm_and_quant_forward,
 from flops.utils.util import (output_check,
                               torch_smooth_quant,
                               torch_group_quant)
+from flops.utils.benchmark import benchmark_func
 
 
 def torch_rms_forward(x, weight):
@@ -108,7 +109,7 @@ def test_rmsnorm(M=4096, N=4096):
     output_check(dw_ref, dw, mode='dw')
 
 
-def test_rmsnorm_and_quant(M=4096, N=4096):
+def test_rmsnorm_and_quant(M=4096, N=4096, bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
 
@@ -154,6 +155,8 @@ def test_rmsnorm_and_quant(M=4096, N=4096):
     output_check(q_ref, q, mode="block.data")
     output_check(scale_ref.t(), scale, mode='block.scale')
 
+
+
     _, _, _, _, q_t, scale_t  = triton_rms_norm_and_quant_forward(x, weight,
                                                             smooth_scale=None,
                                                             round_scale=True,
@@ -164,9 +167,25 @@ def test_rmsnorm_and_quant(M=4096, N=4096):
     output_check(qt_ref, q_t, mode='block.t_data')
     output_check(scale_t_ref.t(), scale_t, mode="block.t_scale")
 
+
+    if bench:
+        benchmark_func(triton_rms_norm_and_quant_forward, x, weight,
+                                                                smooth_scale=None,
+                                                                round_scale=True,
+                                                                output_rms=True,
+                                                                output_mode=0,
+                                                                ref_bytes=M*N*3)
+
+        benchmark_func(triton_rms_norm_and_quant_forward, x, weight,
+                                                            smooth_scale=None,
+                                                            round_scale=True,
+                                                            output_rms=True,
+                                                            output_mode=1,
+                                                            ref_bytes=M*N*3)
+
 if __name__ == '__main__':
     # test_rmsnorm(M=4096, N=4096)
     # test_rmsnorm(M=4096, N=8192)
     # test_rmsnorm(M=8192, N=2048)
-    test_rmsnorm_and_quant(M=8192, N=2048)
+    test_rmsnorm_and_quant(M=8192, N=2048, bench=True)
 
