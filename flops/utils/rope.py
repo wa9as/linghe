@@ -16,7 +16,7 @@ def half_rope_forward_kernel(q_ptr, k_ptr, freqs_ptr, qo_ptr, ko_ptr, B,
                             ):
     pid = tl.program_id(0)
 
-    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    freqs = tl.load(freqs_ptr + pid * D + tl.arange(0, D))
     cos = tl.cos(freqs)
     sin = tl.sin(freqs)
     signs = tl.arange(0,2).to(tl.float32)*2-1
@@ -49,7 +49,7 @@ v: [len, bs, kv_head, head_dim]
 def triton_half_rope_forward(q, k, freqs):
     L, B, H, D = q.shape 
     h = k.shape[2]
-    assert freqs.shape[1] == D//4
+    assert freqs.shape[1] == D//2
     num_stages = 3
     num_warps = 2
 
@@ -87,7 +87,7 @@ def half_rope_backward_kernel(q_ptr, k_ptr, freqs_ptr,
                             ):
     pid = tl.program_id(0)
 
-    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    freqs = tl.load(freqs_ptr + pid * D + tl.arange(0, D))
     cos = tl.cos(freqs)
     sin = tl.sin(freqs)
     signs = -tl.arange(0,2).to(tl.float32)*2+1
@@ -116,7 +116,7 @@ def triton_half_rope_backward(q_grad, k_grad, freqs, inplace=False):
     assert inplace
     L, B, H, D = q_grad.shape 
     h = k_grad.shape[2]
-    assert freqs.shape[1] == D//4
+    assert freqs.shape[1] == D//2
     num_stages = 3
     num_warps = 2
 
@@ -153,7 +153,7 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
     L = tl.num_programs(0)
     DD = D * 2
 
-    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    freqs = tl.load(freqs_ptr + pid * D + tl.arange(0, D))
     cos = tl.cos(freqs)
     sin = tl.sin(freqs)
     signs = tl.arange(0,2).to(tl.float32)*2-1
@@ -281,7 +281,7 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
     DD = 2 * D
     w = H//h
 
-    freqs = tl.load(freqs_ptr + pid * d + tl.arange(0, D)%d)
+    freqs = tl.load(freqs_ptr + pid * D + tl.arange(0, D))
     cos = tl.cos(freqs)
     sin = tl.sin(freqs)
     signs = -tl.arange(0,2).to(tl.float32)*2+1

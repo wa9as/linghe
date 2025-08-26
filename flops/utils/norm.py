@@ -169,7 +169,6 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr,
                                       nb: tl.constexpr,
                                       W: tl.constexpr, 
                                       H : tl.constexpr,
-                                      OUTPUT_RMS: tl.constexpr,
                                       ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
@@ -181,8 +180,7 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr,
         indices = pid * W * T + i * W + tl.arange(0, W)
         x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32)
         rms = tl.rsqrt(tl.sum(x * x, axis=1) / N + eps)
-        if OUTPUT_RMS:
-            tl.store(rms_ptr + indices, rms, mask=indices < M)
+        tl.store(rms_ptr + indices, rms, mask=indices < M)
         x = (x * rms[:, None]) * weight
         x = tl.reshape(x, [W, nb, 128])
         scale = tl.maximum(tl.max(tl.abs(x), 2) / 448.0, 1e-30)
@@ -230,7 +228,6 @@ def rms_norm_and_block_quant_forward_n_kernel(x_ptr,
                                       N: tl.constexpr,
                                       nb: tl.constexpr,
                                       W: tl.constexpr, 
-                                      OUTPUT_RMS: tl.constexpr,
                                       ROUND: tl.constexpr):
     pid = tl.program_id(axis=0)
 
@@ -242,8 +239,7 @@ def rms_norm_and_block_quant_forward_n_kernel(x_ptr,
         indices = pid * W * T + i * W + tl.arange(0, W)
         x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32)
         rms = tl.rsqrt(tl.sum(x * x, axis=1) / N + eps)
-        if OUTPUT_RMS:
-            tl.store(rms_ptr + indices, rms, mask=indices < M)
+        tl.store(rms_ptr + indices, rms, mask=indices < M)
         x = (x * rms[:, None]) * weight
         x = tl.reshape(x, [W, nb, 128])
         scale = tl.maximum(tl.max(tl.abs(x), 2) / 448.0, 1e-30)
@@ -310,7 +306,7 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
         out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
 
     # blockwise must write rms
-    if output_rms and rms is None:
+    if rms is None:
         rms = torch.empty((M,), dtype=torch.float32, device=device)
 
 
@@ -375,7 +371,6 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
                 N//128,
                 W,
                 H,
-                output_rms,
                 round_scale,
                 num_stages=3,
                 num_warps=16
@@ -410,7 +405,6 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
                 N,
                 N//128,
                 W,
-                output_rms,
                 round_scale,
                 num_stages=3,
                 num_warps=16

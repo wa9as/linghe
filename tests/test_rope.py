@@ -76,6 +76,7 @@ def test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
 
     q_ref,k_ref = torch_half_rope(q,k,rope_theta=rope_theta)
     freqs = rope_freqs(L, D//2, rope_theta=rope_theta)
+    freqs = torch.cat([freqs,freqs], -1)
     qo,ko = triton_half_rope_forward(q,k,freqs)
     output_check(q_ref,qo, mode='q')
     output_check(k_ref,ko, mode='k')
@@ -107,7 +108,7 @@ def test_qk_norm_and_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0,inte
     qw = torch.randn(D,dtype=dtype,device=device)
     kw = torch.randn(D,dtype=dtype,device=device)
     freqs = rope_freqs(L, D//2, rope_theta=rope_theta)
-
+    freqs = torch.cat([freqs,freqs], -1)
     q_ref,k_ref,v_ref = torch_qk_norm_and_half_rope(qkv,qw,kw,rope_theta, H=H,h=h, eps=1e-6,interleave=interleave)
     qo,ko,vo = triton_qk_norm_and_half_rope_forward(qkv,qw,kw,freqs,H=H,h=h,eps=1e-6,transpose=True,interleave=interleave)
     output_check(q_ref,qo, mode='q')

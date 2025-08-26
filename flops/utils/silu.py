@@ -921,13 +921,14 @@ def triton_batch_weighted_silu_and_quant_forward(x,
 
     accums = torch.cumsum(counts, 0)
     if smooth:
-
         if calibrate:
             if maxs is None:
                 maxs = torch.empty((n_experts, n), device=device,
                                 dtype=torch.float32)
             tmp_maxs = torch.empty((n_experts, sm, n), device=device,
                                 dtype=torch.float32)
+        else:
+            tmp_maxs = None
         W = 8192 // N
         grid = (n_experts, sm)
         batch_weighted_silu_and_smooth_quant_forward_kernel[grid](
