@@ -255,77 +255,108 @@ def triton_smooth_permute_with_indices(x, smooth_scales, token_count_per_expert,
 
 
 
-# @triton.jit
-# def batch_smooth_rescale_with_indices_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, count_ptr,
-#                                        accum_ptr, index_ptr, M, N: tl.constexpr,
-#                                        REVERSE: tl.constexpr,
-#                                        ROUND: tl.constexpr):
-#     pid = tl.program_id(axis=0)
-#     # row-wise read, row-wise write
-#     smooth_scale = tl.load(ss_ptr + pid * N + tl.arange(0, N))
-#     if not REVERSE:
-#         smooth_scale = 1.0 / smooth_scale
-#     count = tl.load(count_ptr + pid)
-#     ei = tl.load(accum_ptr + pid)
-#     si = ei - count
-#     for i in range(count):
-#         index = tl.load(index_ptr + si + i)
-#         x = tl.load(x_ptr + index * N + tl.arange(0, N)).to(tl.float32)
-#         x *= smooth_scale
-#         x_max = tl.max(tl.abs(x))
-#         scale = tl.maximum(x_max / 448.0, 1e-30)
-#         if ROUND:
-#             scale = tl.exp2(tl.ceil(tl.log2(scale)))
+@triton.jit
+def batch_smooth_rescale_with_indices_kernel(x_ptr, scale_ptr, oss_ptr, ss_ptr, index_ptr, count_ptr,
+                                       accum_ptr, q_ptr, qs_ptr,  
+                                       N: tl.constexpr,
+                                       E: tl.constexpr,
+                                       H: tl.constexpr,
+                                       W: tl.constexpr,
+                                       ROUND: tl.constexpr):
+    eid = tl.program_id(axis=0)
+    cid = tl.program_id(axis=1)
 
-#         tl.store(qs_ptr + si + i, scale)
+    count = tl.load(count_ptr + eid)
+    ei = tl.load(accum_ptr + eid)
+    si = ei - count
 
-#         s = 1.0 / scale
-#         x *= s
-#         xq = x.to(q_ptr.dtype.element_ty)
-#         tl.store(q_ptr + si * N + i * N + tl.arange(0, N), xq)
+    # n = tl.cdiv(count, H)
+    pad = tl.cdiv(count, 32) * 32
+    loop = tl.cdiv(pad, H)
+
+    counts = tl.load(count_ptr + tl.arange(0, E))
+    bias = tl.sum(tl.where(tl.arange(0, E)< eid, tl.cdiv(counts, 32), 0)) * 32 * N
+
+    # col-wise read, row-wise write
+    org_smooth_scale = tl.load(oss_ptr + cid * W + tl.arange(0, W))
+    x_max = tl.zeros((H, W), dtype=tl.float32)
+    for i in range(loop):
+        idx = i * H + tl.arange(0, H)
+        indices = tl.load(index_ptr + si + i * H + tl.arange(0, H), mask=idx<count)[:,None]
+        x = tl.load(x_ptr + cid * W + indices * N + tl.arange(0, W)[None,:], mask=idx[:,None]<count).to(tl.float32)
+        s = tl.load(scale_ptr + indices, mask=idx[:,None]<count)
+        smooth_scale = tl.load(ss_ptr + si + i * H + tl.arange(0, H), mask=idx<count)
+        x = x * s * org_smooth_scale * smooth_scale[:, None]
+        x_max = tl.maximum(tl.abs(x), x_max)
+
+    scale = tl.maximum(tl.max(x_max, 0) / 448.0, 1e-30)
+    if ROUND:
+        scale = tl.exp2(tl.ceil(tl.log2(scale)))
+
+    tl.store(qs_ptr + eid * N + cid * W + tl.arange(0, W), scale)
+
+    scale = 1.0 / scale
+    for i in range(loop):
+        idx = i * H + tl.arange(0, H)
+        indices = tl.load(index_ptr + si + i * H + tl.arange(0, H), mask=idx<count)[:,None]
+        x = tl.load(x_ptr + cid * W + indices * N + tl.arange(0, W)[None,:], mask=idx[:,None]<count).to(tl.float32)
+        s = tl.load(scale_ptr + indices, mask=idx[:,None]<count)
+        smooth_scale = tl.load(ss_ptr + si +  i * H + tl.arange(0, H), mask=idx<count)
+        x = x * s * org_smooth_scale * scale * smooth_scale[:, None]
+        xq = x.to(q_ptr.dtype.element_ty)
+        tl.store(q_ptr + bias + i * H + cid * pad * W + tl.arange(0, W)[:, None] * pad + tl.arange(0, H), tl.trans(xq), mask=idx[None, :] < pad)
 
 
-# """
-# used for smooth backward in 0.12
-# `x` is smooth quantized dy, it should be requantized and padded and tranposed
-# x: [bs, dim]
-# org_smooth_scale: [dim]
-# smooth_scales: [n_experts, dim]
-# indices: [sum(tokens_per_experts)]
-# x_q: [sum(roundup(tokens_per_experts)) * dim]
-# x_scale: [sum(roundup(tokens_per_experts))]
-# """
-# def triton_batch_smooth_rescale_with_indices(x, org_smooth_scale, smooth_scales, 
-#                                        token_count_per_expert, indices, 
-#                                        x_q=None, x_scale=None,
-#                                        reverse=False, round_scale=False):
-#     # row-wise read, row-wise write
-#     M, N = x.shape
-#     n_expert = smooth_scales.shape[0]
-#     E = indices.shape[0]
-#     device = x.device
-#     if x_q is None:
-#         x_q = torch.empty((E, N), device=device, dtype=torch.float8_e4m3fn)
-#     if x_scale is None:
-#         x_scale = torch.empty((E,), device=device, dtype=torch.float32)
-#     accum_token_count = torch.cumsum(token_count_per_expert, 0)
-#     # TODO: adapt for n_expert <= 64
-#     grid = (n_expert,)
-#     batch_smooth_rescale_with_indices_kernel[grid](
-#         x,
-#         x_q,
-#         smooth_scales,
-#         x_scale,
-#         token_count_per_expert,
-#         accum_token_count,
-#         indices,
-#         M, N,
-#         reverse,
-#         round_scale,
-#         num_stages=3,
-#         num_warps=8
-#     )
-#     return x_q, x_scale
+"""
+used for smooth backward in 0.12
+`x` is smooth quantized dy, it should be gather, requantized, padded to multiple of 32 and tranposed
+x: [bs, dim]
+x: [bs]
+org_smooth_scale: [dim]
+smooth_scales: [n_experts, dim], reversed
+token_count_per_expert: [n_experts], tensor of token count per expert
+splits: [n_experts], list of token_count_per_expert
+indices: [sum(tokens_per_experts)]
+x_q: [sum(roundup(tokens_per_experts)) * dim]
+x_scale: [sum(roundup(tokens_per_experts))]
+"""
+def triton_batch_smooth_rescale_with_indices(x, scale, org_smooth_scale, smooth_scales, 
+                                       indices, 
+                                       token_count_per_expert, splits, 
+                                       x_q=None, x_scale=None,
+                                       round_scale=False):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    n_expert = len(splits)
+    out_tokens = sum([(x+31)//32*32 for x in splits])
+    H = 128
+    W = 32
+    device = x.device
+    accum_token_count = torch.cumsum(token_count_per_expert, 0)
+    if x_q is None:
+        x_q = torch.empty((out_tokens * N), device=device, dtype=torch.float8_e4m3fn)
+    if x_scale is None:
+        x_scale = torch.empty((n_expert, N), device=device, dtype=torch.float32)
+    grid = (n_expert, N//W)
+    batch_smooth_rescale_with_indices_kernel[grid](
+        x,
+        scale,
+        org_smooth_scale,
+        smooth_scales,
+        indices,
+        token_count_per_expert,
+        accum_token_count,
+        x_q,
+        x_scale,
+        N,
+        n_expert,
+        H, 
+        W,
+        round_scale,
+        num_stages=3,
+        num_warps=8
+    )
+    return x_q, x_scale
 
 
 
