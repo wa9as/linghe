@@ -91,50 +91,44 @@ def compatible_silu_and_smooth_quant_forward_kernel(x_ptr, smooth_scale_ptr, out
         col_offs += B
 
 
-
-
 @triton.jit
 def silu_and_block_quant_forward_kernel(x_ptr, 
                                         out_ptr, scale_ptr,
-                                        transpose_output_ptr, transpose_scale_ptr,
+                                        transpose_output_ptr, 
+                                        transpose_scale_ptr,
                                         M, 
                                         n: tl.constexpr, 
                                         ROUND: tl.constexpr,
                                         OUTPUT_MODE: tl.constexpr):
-    pid = tl.program_id(axis=0)
+    rid = tl.program_id(axis=0)
+    cid = tl.program_id(axis=1)
 
-    offs = pid * 128 * n * 2 + tl.arange(0, 128)[:, None] * n * 2 + tl.arange(0, 128)[None, :]
-    hoffs = pid * 128 * n + tl.arange(0, 128)[:, None] * n + tl.arange(0, 128)[None, :]
-    toffs = pid * 128 + tl.arange(0, 128)[:, None] * M + tl.arange(0, 128)[
-                                                            None, :]
-    indices = pid * 128 + tl.arange(0, 128)
+    offs = rid * 128 * n * 2 + cid * 128 + tl.arange(0, 128)[:, None] * n * 2 + tl.arange(0, 128)[None, :]
+    indices = rid * 128 + tl.arange(0, 128)
     mask = indices[:, None] < M
-    for i in range(n//128):
-        x1 = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
-        x2 = tl.load(x_ptr + n + offs, mask=mask).to(
-            tl.float32)
-        # x = x1 / (1 + tl.exp(-x1)) * x2
-        x = x1 * tl.sigmoid(x1) * x2
 
-        if OUTPUT_MODE % 2 == 0:
-            scale = tl.maximum(tl.max(x.abs(), 1) / 448, 1e-30)
-            if ROUND:
-                scale = tl.exp2(tl.ceil(tl.log2(scale)))
-            
-            tl.store(scale_ptr + pid * 128 + i * M + tl.arange(0, 128), scale, mask=indices < M)
-            xq = (x / scale[:, None]).to(out_ptr.dtype.element_ty)
-            tl.store(out_ptr + hoffs, xq, mask=mask)
+    x1 = tl.load(x_ptr + offs, mask=mask) #.to(tl.float32)
+    x2 = tl.load(x_ptr + n + offs, mask=mask) #.to(tl.float32)
+    x = x1 * tl.sigmoid(x1.to(tl.float32)) * x2
 
-        if OUTPUT_MODE > 0:
-            scale = tl.maximum(tl.max(x.abs(), 0) / 448, 1e-30)
-            if ROUND:
-                scale = tl.exp2(tl.ceil(tl.log2(scale)))
-            tl.store(transpose_scale_ptr + pid * n + i * 128 + tl.arange(0, 128), scale)
-            xq = (x / scale).to(out_ptr.dtype.element_ty)
-            tl.store(transpose_output_ptr + toffs, tl.trans(xq), mask=indices[None, :] < M)
-        offs += 128
-        hoffs += 128
-        toffs += M * 128
+    if OUTPUT_MODE % 2 == 0:
+        scale = tl.maximum(tl.max(x.abs(), 1) / 448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        
+        tl.store(scale_ptr + rid * 128 + cid * M + tl.arange(0, 128), scale, mask=indices < M)
+        xq = (x / scale[:, None]).to(out_ptr.dtype.element_ty)
+        tl.store(out_ptr + rid * 128 * n + cid * 128 + tl.arange(0, 128)[:, None] * n + tl.arange(0, 128)[None, :], xq, mask=mask)
+
+    if OUTPUT_MODE > 0:
+        scale = tl.maximum(tl.max(x.abs(), 0) / 448, 1e-30)
+        if ROUND:
+            scale = tl.exp2(tl.ceil(tl.log2(scale)))
+        tl.store(transpose_scale_ptr + rid * n + cid * 128 + tl.arange(0, 128), scale)
+        xq = (x / scale).to(out_ptr.dtype.element_ty)
+        tl.store(transpose_output_ptr + rid * 128 + cid * 128 * M + tl.arange(0, 128)[:, None] * M + tl.arange(0, 128)[
+                                                            None, :], tl.trans(xq), mask=indices[None, :] < M)
+
 
 
 # used in shared expert
@@ -210,7 +204,7 @@ def triton_silu_and_quant_forward(x, smooth_scale=None, out=None, scale=None,
             maxs = maxs.amax(0)
 
     else:
-        grid = (triton.cdiv(M, 128), )
+        grid = (triton.cdiv(M, 128), N // 256)
         silu_and_block_quant_forward_kernel[grid](
             x,
             out,
@@ -221,7 +215,7 @@ def triton_silu_and_quant_forward(x, smooth_scale=None, out=None, scale=None,
             N // 2,
             round_scale,
             output_mode,
-            num_stages=3,
+            num_stages=2,
             num_warps=8
         )
 
@@ -343,8 +337,6 @@ def compatible_silu_and_smooth_quant_backward_kernel(g_ptr, x_ptr, smooth_scale_
         hoffs += B
 
 
-
-
 @triton.jit
 def silu_and_block_quant_backward_kernel(g_ptr, x_ptr,  
                                         dx_ptr,
@@ -354,64 +346,59 @@ def silu_and_block_quant_backward_kernel(g_ptr, x_ptr,
                                         M, 
                                         n: tl.constexpr,
                                         ROUND: tl.constexpr):
-    pid = tl.program_id(axis=0)
+    rid = tl.program_id(axis=0)
+    cid = tl.program_id(axis=1)
     nb = n // 128
-    offs = pid * 128 * n * 2 + tl.arange(0, 128)[:, None] * n * 2 + tl.arange(0, 128)[None, :]
-    hoffs = pid * 128 * n + tl.arange(0, 128)[:, None] * n + tl.arange(0, 128)[None, :]
-    toffs = pid * 128 + tl.arange(0, 128)[:, None] * M + tl.arange(0, 128)[
+    offs = rid * 128 * n * 2 + cid * 128 + tl.arange(0, 128)[:, None] * n * 2 + tl.arange(0, 128)[None, :]
+    toffs = rid * 128 + cid * M * 128 + tl.arange(0, 128)[:, None] * M + tl.arange(0, 128)[
                                                             None, :]
-    idx = pid * 128 + tl.arange(0, 128)
+    idx = rid * 128 + tl.arange(0, 128)
     mask = idx[:, None] < M
-    for i in range(n//128):
-        x1 = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
-        x2 = tl.load(x_ptr + n + offs, mask=mask).to(
-            tl.float32)
-        g = tl.load(g_ptr + hoffs, mask=mask).to(tl.float32)
-        sigmoid = 1 / (1 + tl.exp(-x1))
-        dx1 = g * x2 * sigmoid * (
-                1 + x1 * (1 - sigmoid))
-        scale1 = tl.maximum(
-            tl.max(dx1.abs(), 1) / 448, 1e-30)
-        if ROUND:
-            scale1 = tl.exp2(tl.ceil(tl.log2(scale1)))
-        tl.store(dx_scale_ptr + i * M + pid * 128 + tl.arange(0, 128), scale1, mask=idx < M)
-    
-        qdx1 = (dx1 / scale1[:, None]).to(dx_ptr.dtype.element_ty)
-        tl.store(dx_ptr + offs, qdx1, mask=mask)
+    x1 = tl.load(x_ptr + offs, mask=mask) #.to(tl.float32)
+    x2 = tl.load(x_ptr + n + offs, mask=mask) #.to(tl.float32)
+    g = tl.load(g_ptr + rid * 128 * n + cid * 128 + tl.arange(0, 128)[:, None] * n + tl.arange(0, 128)[None, :], mask=mask) #.to(tl.float32)
+    sigmoid = 1 / (1 + tl.exp(-x1.to(tl.float32)))
+    dx1 = g * x2 * sigmoid * (
+            1 + x1 * (1 - sigmoid))
+    scale1 = tl.maximum(
+        tl.max(dx1.abs(), 1) / 448, 1e-30)
+    if ROUND:
+        scale1 = tl.exp2(tl.ceil(tl.log2(scale1)))
+    tl.store(dx_scale_ptr + cid * M + rid * 128 + tl.arange(0, 128), scale1, mask=idx < M)
 
-        scale1 = tl.maximum(
-            tl.max(dx1.abs(), 0) / 448, 1e-30)
-        if ROUND:
-            scale1 = tl.exp2(tl.ceil(tl.log2(scale1)))
-        tl.store(transpose_dx_scale_ptr + pid * n * 2 + i * 128 + tl.arange(0, 128), scale1)
+    qdx1 = (dx1 / scale1[:, None]).to(dx_ptr.dtype.element_ty)
+    tl.store(dx_ptr + offs, qdx1, mask=mask)
 
-        qdx1 = (dx1 / scale1[None, :]).to(dx_ptr.dtype.element_ty)
-        tl.store(transpose_dx_ptr + toffs, tl.trans(qdx1), mask=idx[None, :] < M)
+    scale1 = tl.maximum(
+        tl.max(dx1.abs(), 0) / 448, 1e-30)
+    if ROUND:
+        scale1 = tl.exp2(tl.ceil(tl.log2(scale1)))
+    tl.store(transpose_dx_scale_ptr + rid * n * 2 + cid * 128 + tl.arange(0, 128), scale1)
 
-        # may save memory?
-        # sigmoid = 1 / (1 + tl.exp(-x1))
-        dx2 = g * x1 * sigmoid
-        scale2 = tl.maximum(
-            tl.max(dx2.abs(), 1) / 448, 1e-30)
-        if ROUND:
-            scale2 = tl.exp2(tl.ceil(tl.log2(scale2)))
-        tl.store(dx_scale_ptr + i * M + pid * 128 + M * nb + tl.arange(0, 128), scale2, mask=idx < M)
+    qdx1 = (dx1 / scale1[None, :]).to(dx_ptr.dtype.element_ty)
+    tl.store(transpose_dx_ptr + toffs, tl.trans(qdx1), mask=idx[None, :] < M)
 
-        qdx2 = (dx2 / scale2[:, None]).to(dx_ptr.dtype.element_ty)
-        tl.store(dx_ptr + offs + n, qdx2, mask=idx[:, None] < M)
+    # may save memory?
+    # sigmoid = 1 / (1 + tl.exp(-x1))
+    dx2 = g * x1 * sigmoid
+    scale2 = tl.maximum(
+        tl.max(dx2.abs(), 1) / 448, 1e-30)
+    if ROUND:
+        scale2 = tl.exp2(tl.ceil(tl.log2(scale2)))
+    tl.store(dx_scale_ptr + cid * M + rid * 128 + M * nb + tl.arange(0, 128), scale2, mask=idx < M)
 
-        scale2 = tl.maximum(
-            tl.max(dx2.abs(), 0) / 448, 1e-30)
-        if ROUND:
-            scale2 = tl.exp2(tl.ceil(tl.log2(scale2)))
-        tl.store(transpose_dx_scale_ptr + pid * n * 2 + n + i * 128 + tl.arange(0, 128), scale2)
+    qdx2 = (dx2 / scale2[:, None]).to(dx_ptr.dtype.element_ty)
+    tl.store(dx_ptr + offs + n, qdx2, mask=idx[:, None] < M)
 
-        qdx2 = (dx2 / scale2[None, :]).to(dx_ptr.dtype.element_ty)
-        tl.store(transpose_dx_ptr + M * n + toffs, tl.trans(qdx2), mask=idx[None,:] < M)
+    scale2 = tl.maximum(
+        tl.max(dx2.abs(), 0) / 448, 1e-30)
+    if ROUND:
+        scale2 = tl.exp2(tl.ceil(tl.log2(scale2)))
+    tl.store(transpose_dx_scale_ptr + rid * n * 2 + n + cid * 128 + tl.arange(0, 128), scale2)
 
-        offs += 128
-        hoffs += 128
-        toffs += 128 * M
+    qdx2 = (dx2 / scale2[None, :]).to(dx_ptr.dtype.element_ty)
+    tl.store(transpose_dx_ptr + M * n + toffs, tl.trans(qdx2), mask=idx[None,:] < M)
+
 
 
 # used in shared expert
@@ -476,7 +463,7 @@ def triton_silu_and_quant_backward(g, x, smooth_scale=None, reverse=True,
                     num_warps=16
                 )
     else:
-        grid = (triton.cdiv(M ,128), )
+        grid = (triton.cdiv(M ,128), N // 256)
         silu_and_block_quant_backward_kernel[grid](
             g,
             x,
