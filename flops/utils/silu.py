@@ -745,8 +745,6 @@ def triton_weighted_silu_and_quant_backward(g, x, weight, smooth_scale,
     return dx, dx_scale, dw
 
 
-
-
 @triton.jit
 def batch_weighted_silu_and_smooth_quant_forward_kernel(x_ptr, weight_ptr,
                                                  smooth_scale_ptr, out_ptr,
