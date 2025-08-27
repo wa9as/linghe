@@ -354,10 +354,11 @@ if __name__ == '__main__':
     test_triton_permute_with_mask_map(M=8192, N=4096, n_experts=32, topk=8, bench=True)
     # test_triton_permute_with_mask_map(M=7628, N=2048, n_experts=32, topk=8, bench=True)
 
-    # test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
-    #                                          topk=8)
-    # test_triton_smooth_permute_with_mask_map(M=7628, N=2048, n_experts=32,
-    #                                          topk=8)
 
-    # test_triton_batch_smooth_rescale_with_indices(M=16384, N=2048, n_experts=32, topk=8, bench=False)
-    # test_triton_batch_smooth_rescale_with_indices(M=8192, N=4096, n_experts=32, topk=8, bench=False)
+    test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
+                                             topk=8)
+    test_triton_smooth_permute_with_mask_map(M=7628, N=2048, n_experts=32,
+                                             topk=8)
+
+    test_triton_batch_smooth_rescale_with_indices(M=16384, N=2048, n_experts=32, topk=8, bench=False)
+    test_triton_batch_smooth_rescale_with_indices(M=8192, N=4096, n_experts=32, topk=8, bench=False)
