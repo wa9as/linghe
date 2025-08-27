@@ -126,7 +126,8 @@ def test_rmsnorm_and_quant(M=4096, N=4096, bench=False):
                                                             smooth_scale=smooth_scale,
                                                             calibrate=True,
                                                             output_rms=True,
-                                                            round_scale=True)
+                                                            round_scale=True,
+                                                            output_mode=2)
     output_check(q_ref, q, mode="smooth.data")
     output_check(scale_ref, scale, mode='smooth.scale')
     output_check(maxs_ref, maxs, mode="smooth.maxs")
@@ -183,9 +184,19 @@ def test_rmsnorm_and_quant(M=4096, N=4096, bench=False):
                                                             output_mode=1,
                                                             ref_bytes=M*N*3)
 
+        benchmark_func(triton_rms_norm_and_quant_forward, x, weight,
+                                                            smooth_scale=None,
+                                                            round_scale=True,
+                                                            output_rms=True,
+                                                            output_mode=2,
+                                                            ref_bytes=M*N*4)
+
+
 if __name__ == '__main__':
-    # test_rmsnorm(M=4096, N=4096)
-    # test_rmsnorm(M=4096, N=8192)
-    # test_rmsnorm(M=8192, N=2048)
-    test_rmsnorm_and_quant(M=8192, N=2048, bench=True)
+    test_rmsnorm(M=4096, N=4096)
+    test_rmsnorm(M=4096, N=8192)
+    test_rmsnorm(M=8192, N=2048)
+    test_rmsnorm_and_quant(M=16384, N=2048, bench=False)
+    test_rmsnorm_and_quant(M=8192, N=4096, bench=False)
+
 
