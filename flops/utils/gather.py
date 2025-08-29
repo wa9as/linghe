@@ -192,6 +192,9 @@ def triton_permute_with_mask_map(
     else:
         permuted_probs = None 
 
+    if num_tokens == 0:
+        output, permuted_scale, permuted_probs
+
     grid = (num_tokens,)
     permute_with_mask_map_kernel[grid](
         inp,

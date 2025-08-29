@@ -168,6 +168,9 @@ def triton_unpermute_with_mask_map(
     else:
         restore_probs = None
 
+    if num_tokens == 0:
+        return output, restore_probs
+
     grid = (num_tokens,)
     unpermute_with_mask_map_kernel[grid](
         grad,
