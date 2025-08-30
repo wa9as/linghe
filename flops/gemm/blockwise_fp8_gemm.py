@@ -162,7 +162,7 @@ def fp8_gemm_tt_kernel(
     tl.store(c_ptrs, c, mask=mask)
 
 
-def fp8_gemm(a: torch.Tensor, b: torch.Tensor, a_s: torch.Tensor,
+def blockwise_fp8_gemm(a: torch.Tensor, b: torch.Tensor, a_s: torch.Tensor,
              b_s: torch.Tensor, out_dtype=torch.bfloat16):
     assert a.is_contiguous() and b.is_contiguous()
     assert a_s.is_contiguous() and b_s.is_contiguous()

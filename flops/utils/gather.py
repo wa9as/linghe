@@ -144,7 +144,7 @@ def triton_permute_with_mask_map(
         row_id_map: torch.Tensor,
         num_out_tokens: int, 
         contiguous: bool = True,
-        token_per_expert: Optional[torch.Tensor] = None
+        tokens_per_expert: Optional[torch.Tensor] = None
 ):
     num_tokens, hidden_size = inp.shape
     num_experts = row_id_map.size(1)  # not transposed
@@ -155,7 +155,7 @@ def triton_permute_with_mask_map(
         hs = scale.shape[1] if SCALE == 2 else 1
 
     # use zeros to initialize if row_id_map is padded and token_per_expert is empty
-    ZERO = not contiguous and token_per_expert is None
+    ZERO = not contiguous and tokens_per_expert is None
 
     if ZERO:
         output = torch.zeros((num_out_tokens, hidden_size), dtype=inp.dtype,
@@ -213,16 +213,15 @@ def triton_permute_with_mask_map(
         num_warps=8
     )
 
-    if not contiguous and token_per_expert is not None:
+    if not contiguous and tokens_per_expert is not None:
         max_indices = row_id_map.amax(0)
         fill_padded_token_with_zero_kernel[(num_experts,)](output, permuted_scale, permuted_probs,
                                  max_indices, 
-                                 token_per_expert,
+                                 tokens_per_expert,
                                  hidden_size, 
                                  hs,
                                  SCALE, 
                                  PROB)
-
 
     return output, permuted_scale, permuted_probs
 
