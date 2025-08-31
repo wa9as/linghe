@@ -13,13 +13,32 @@ from flops.utils.util import (output_check,
                               torch_make_indices, torch_smooth_quant)
 
 
-# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-
-
 def torch_index_select(y, indices):
     output = y.index_select(0, indices)
     return output
 
+def torch_select_with_padded_map_mask(y, mask_map, out_tokens):
+    E = mask_map.shape[1]
+    if y.ndim > 1:
+        output = torch.zeros((out_tokens, y.shape[1]), dtype=y.dtype, device=y.device)
+    else:
+        output = torch.zeros((out_tokens, ), dtype=y.dtype, device=y.device)
+    for i in range(E):
+        indices = mask_map[:,i]
+        src_idx = torch.nonzero(indices>-1)
+        dst_idx = indices[src_idx]
+        output[dst_idx] = y[src_idx]
+    return output
+
+def torch_ravel_with_padded_map_mask(y, mask_map, out_tokens):
+    E = mask_map.shape[1]
+    output = torch.zeros((out_tokens, ), dtype=y.dtype, device=y.device)
+    for i in range(E):
+        indices = mask_map[:,i]
+        src_idx = torch.nonzero(indices>-1)
+        dst_idx = indices[src_idx]
+        output[dst_idx] = y[src_idx,i]
+    return output
 
 def torch_fp16_index_select(x, scales, indices):
     return x.index_select(0, indices), scales.index_select(0, indices)
@@ -182,20 +201,45 @@ def test_triton_permute_with_mask_map(M=4096, N=4096, n_experts=256, topk=8,
         (probs > 0).T.contiguous())
     x_out, scale_out, probs_out = triton_permute_with_mask_map(x, scales, probs,
                                                                row_id_map,
-                                                               out_tokens)
+                                                               out_tokens,
+                                                               contiguous=True)
     output_check(x_out_ref, x_out, 'x_out')
     output_check(scale_out_ref, scale_out, 'scale_out')
     output_check(probs_out_ref, probs_out, 'prob_out')
 
+    nzs = torch.sum(row_id_map>=0, 0)
+    bias = torch.cumsum((nzs + 15)//16*16 - nzs, 0)
+    row_id_map_clone = row_id_map.clone().detach()
+    row_id_map_clone[:, 1:] += bias[:-1]
+    round_row_id_map = torch.where(row_id_map>=0, row_id_map_clone, -1)
+    padded_out_tokens = sum([(x+15)//16*16 for x in token_count_per_expert.tolist()])
+    x_out_ref = torch_select_with_padded_map_mask(x, round_row_id_map, padded_out_tokens)
+    scale_out_ref = torch_select_with_padded_map_mask(scales, round_row_id_map, padded_out_tokens)
+    prob_out_ref = torch_ravel_with_padded_map_mask(probs, round_row_id_map, padded_out_tokens)
+    x_out, scale_out, probs_out = triton_permute_with_mask_map(x, scales, probs,
+                                                               round_row_id_map,
+                                                               padded_out_tokens,
+                                                               contiguous=False, 
+                                                               token_per_expert=token_count_per_expert)
+    output_check(x_out_ref, x_out, 'noncontiguous.x_out')
+    output_check(scale_out_ref, scale_out, 'noncontiguous.scale_out')
+    output_check(prob_out_ref, probs_out, 'noncontiguous.prob')
+
     if bench:
         n_repeat = 100
+        ref_bytes = out_tokens * N * 2
         ref_time = benchmark_func(torch_fp16_index_select, x, scales, indices,
-                                  n_repeat=n_repeat)
+                                  n_repeat=n_repeat, ref_bytes=ref_bytes)
         benchmark_func(triton_index_select, x, indices, scale=scales,
-                       n_repeat=n_repeat, ref_time=ref_time)
+                       n_repeat=n_repeat, ref_time=ref_time, ref_bytes=ref_bytes)
         benchmark_func(triton_permute_with_mask_map, x, scales, probs,
-                       row_id_map, out_tokens, n_repeat=n_repeat,
-                       ref_time=ref_time)
+                       row_id_map, out_tokens, contiguous=True, n_repeat=n_repeat,
+                       ref_time=ref_time, ref_bytes=ref_bytes)
+        benchmark_func(triton_permute_with_mask_map, x, scales, probs,
+                       row_id_map, out_tokens, contiguous=False, 
+                       token_per_expert=token_count_per_expert, 
+                       n_repeat=n_repeat,
+                       ref_time=ref_time, ref_bytes=ref_bytes)
 
 
 def test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
@@ -300,19 +344,20 @@ def test_triton_batch_smooth_rescale_with_indices(M=1024, N=2048, n_experts=32, 
 
 
 if __name__ == '__main__':
-    test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=32,
-                                            topk=8)
-    test_triton_smooth_weighted_unpermute_with_indices_backward(M=4096, N=4096,
-                                                                n_experts=32,
-                                                                topk=8)
+    # test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=32,
+    #                                         topk=8)
+    # test_triton_smooth_weighted_unpermute_with_indices_backward(M=4096, N=4096,
+    #                                                             n_experts=32,
+    #                                                             topk=8)
 
-    test_triton_permute_with_mask_map(M=4096, N=4096, n_experts=32, topk=8)
-    test_triton_permute_with_mask_map(M=7628, N=2048, n_experts=32, topk=8)
+    test_triton_permute_with_mask_map(M=16384, N=2048, n_experts=32, topk=8, bench=True)
+    test_triton_permute_with_mask_map(M=8192, N=4096, n_experts=32, topk=8, bench=True)
+    # test_triton_permute_with_mask_map(M=7628, N=2048, n_experts=32, topk=8, bench=True)
 
-    test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
-                                             topk=8)
-    test_triton_smooth_permute_with_mask_map(M=7628, N=2048, n_experts=32,
-                                             topk=8)
+    # test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
+    #                                          topk=8)
+    # test_triton_smooth_permute_with_mask_map(M=7628, N=2048, n_experts=32,
+    #                                          topk=8)
 
-    test_triton_batch_smooth_rescale_with_indices(M=16384, N=2048, n_experts=32, topk=8, bench=False)
-    test_triton_batch_smooth_rescale_with_indices(M=8192, N=4096, n_experts=32, topk=8, bench=False)
+    # test_triton_batch_smooth_rescale_with_indices(M=16384, N=2048, n_experts=32, topk=8, bench=False)
+    # test_triton_batch_smooth_rescale_with_indices(M=8192, N=4096, n_experts=32, topk=8, bench=False)

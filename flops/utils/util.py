@@ -428,7 +428,7 @@ def fp16_f_and_b(x, w, y):
     return o, dx, dw
 
 
-def output_check(org_out, opt_out, mode='', rtol=0.02):
+def output_check(org_out, opt_out, mode='', rtol=None, atol=None):
     assert org_out.shape == opt_out.shape, f"ref:{org_out.shape} != out:{opt_out.shape}"
     dtype = org_out.dtype
     assert opt_out.dtype == dtype, f"ref:{dtype} != out:{opt_out.dtype}"
@@ -439,10 +439,15 @@ def output_check(org_out, opt_out, mode='', rtol=0.02):
         rtol = 0.1
     abs_error = (opt_out - org_out).abs().mean().item()
     rel_error = abs_error / org_out.abs().mean().item()
-    print(f'\n{mode:<16}  rel:{rel_error:.3f}  abs:{abs_error:.3f}  ' \
+    if rel_error >= 0.005:
+        rel_err_str = f"\033[91m {rel_error:.3f}\033[00m"
+    else:
+        rel_err_str = f"{rel_error:.3f}"
+    print(f'\n{mode:<16}  rel:{rel_err_str}  abs:{abs_error:.6f}  ' \
           f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
           f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ')
-    # torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=0.01)
+    if rtol is not None and atol is not None:
+        torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=atol)
 
 
 def quant_check(org_out, xq, wq, opt_out, mode):

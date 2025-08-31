@@ -1,3 +1,4 @@
+from typing import Optional, List
 import torch
 import triton
 import triton.language as tl
@@ -96,6 +97,32 @@ def permute_with_mask_map_kernel(data_ptr, scale_ptr, probs_ptr,
         index = tl.min(mask_indices)
 
 
+
+@triton.jit
+def fill_padded_token_with_zero_kernel(data_ptr, scale_ptr, probs_ptr,
+                                 max_indices_ptr, 
+                                 token_per_expert_ptr,
+                                 N: tl.constexpr, 
+                                 hs: tl.constexpr,
+                                 SCALE: tl.constexpr, 
+                                 PROB: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    x = tl.zeros((N,), dtype=data_ptr.dtype.element_ty)
+    si = tl.load(max_indices_ptr + pid)
+    count = tl.load(token_per_expert_ptr + pid)
+    c = tl.cdiv(count, 16) * 16 - count
+
+    for i in range(si+1, si +1 + c):
+        tl.store(data_ptr + i * N + tl.arange(0, N), x)
+
+        if SCALE == 1:
+            tl.store(scale_ptr + i, 1e-30)
+        elif SCALE == 2:
+            tl.store(scale_ptr + i * hs + tl.arange(0, hs), 1e-30)
+
+        if PROB:
+            tl.store(probs_ptr + i, 0.0)
+
 """
 gather with mask map
 inp: [num_tokens, hidden_size], rowwise_data
@@ -108,6 +135,7 @@ row_id_map: [n_experts, num_tokens]
 num_out_tokens: output token count, including padding tokens
 contiguous: whether indices in row_id_map is contiguous
     False means padded
+token_per_expert: [num_experts], token count per expert, non-blocking cuda tensor
 """
 def triton_permute_with_mask_map(
         inp: torch.Tensor,
@@ -115,7 +143,8 @@ def triton_permute_with_mask_map(
         probs: torch.Tensor,
         row_id_map: torch.Tensor,
         num_out_tokens: int, 
-        contiguous: bool = True
+        contiguous: bool = True,
+        token_per_expert: Optional[torch.Tensor] = None
 ):
     num_tokens, hidden_size = inp.shape
     num_experts = row_id_map.size(1)  # not transposed
@@ -125,22 +154,25 @@ def triton_permute_with_mask_map(
         SCALE = 2 if scale.ndim > 1 else 1
         hs = scale.shape[1] if SCALE == 2 else 1
 
-    # TODO(nanxiao): improve performance without torch.zeros 
-    if contiguous:
-        output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype,
-                            device="cuda")
-    else:        
+    # use zeros to initialize if row_id_map is padded and token_per_expert is empty
+    ZERO = not contiguous and token_per_expert is None
+
+    if ZERO:
         output = torch.zeros((num_out_tokens, hidden_size), dtype=inp.dtype,
                             device="cuda")
+    else:        
+        output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype,
+                            device="cuda")
+    
     if SCALE > 0:
-        shape = (num_out_tokens, hs) if hs > 1 else (num_out_tokens, )
-        if contiguous:
-            permuted_scale = torch.empty(
+        shape = (num_out_tokens, hs) if SCALE == 2 else (num_out_tokens, )
+        if ZERO:
+            permuted_scale = torch.zeros(
                     shape, 
                     dtype=scale.dtype, device="cuda"
                 )
         else:
-            permuted_scale = torch.zeros(
+            permuted_scale = torch.empty(
                     shape, 
                     dtype=scale.dtype, device="cuda"
                 )
@@ -149,12 +181,12 @@ def triton_permute_with_mask_map(
 
     PROB = probs is not None 
     if PROB:
-        if contiguous:
-            permuted_probs = torch.empty(
+        if ZERO:
+            permuted_probs = torch.zeros(
                 (num_out_tokens,), dtype=probs.dtype, device="cuda"
             )
         else:
-            permuted_probs = torch.zeros(
+            permuted_probs = torch.empty(
                 (num_out_tokens,), dtype=probs.dtype, device="cuda"
             ) 
     else:
@@ -177,6 +209,18 @@ def triton_permute_with_mask_map(
         num_stages=3,
         num_warps=8
     )
+
+    if not contiguous and token_per_expert is not None:
+        max_indices = row_id_map.amax(0)
+        fill_padded_token_with_zero_kernel[(num_experts,)](output, permuted_scale, permuted_probs,
+                                 max_indices, 
+                                 token_per_expert,
+                                 hidden_size, 
+                                 hs,
+                                 SCALE, 
+                                 PROB)
+
+
     return output, permuted_scale, permuted_probs
 
 
