@@ -125,7 +125,7 @@ def triton_permute_with_mask_map(
         SCALE = 2 if scale.ndim > 1 else 1
         hs = scale.shape[1] if SCALE == 2 else 1
 
-    # TODO(nanxiao): improve performance without torch.zeros
+    # TODO(nanxiao): improve performance without torch.zeros 
     if contiguous:
         output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype,
                             device="cuda")
