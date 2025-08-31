@@ -147,7 +147,8 @@ def triton_permute_with_mask_map(
         tokens_per_expert: Optional[torch.Tensor] = None
 ):
     num_tokens, hidden_size = inp.shape
-    num_experts = row_id_map.size(1)  # not transposed
+    num_tokens_, num_experts = row_id_map.shape  # not transposed
+    assert num_tokens == num_tokens_
     SCALE = 0 # NO SCALE
     hs = 0
     if scale is not None:
