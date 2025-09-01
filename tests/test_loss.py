@@ -19,7 +19,7 @@ def test_triton_softmax_cross_entropy(M=4096, N=157184, coef=1.0, bench=False):
     device = 'cuda:0'
     logits = torch.randn((M, N), dtype=torch.bfloat16, device=device,
                          requires_grad=True)
-    logits = (logits*coef).detach().clone().requires_grad_()
+    logits = (logits**3*coef).detach().clone().requires_grad_()
     targets = (torch.rand((M,), dtype=torch.float32, device=device) * N).to(
         torch.int64)
     input_grad = 1 / M * torch.ones((M,), dtype=torch.bfloat16, device=device)
@@ -36,6 +36,8 @@ def test_triton_softmax_cross_entropy(M=4096, N=157184, coef=1.0, bench=False):
                        ref_bytes=M * N * 2)
         benchmark_func(triton_softmax_cross_entropy_backward, logits, targets,
                        sum_exp, max_logit, input_grad, ref_bytes=M * N * 4)
+
 if __name__ == '__main__':
     test_triton_softmax_cross_entropy(M=8192, N=157184, coef=1.0, bench=False)
-    test_triton_softmax_cross_entropy(M=8192, N=157184, coef=100.0, bench=False)
+    test_triton_softmax_cross_entropy(M=8192, N=157184, coef=10.0, bench=False)
+    test_triton_softmax_cross_entropy(M=4096, N=157184, coef=10.0, bench=False)
