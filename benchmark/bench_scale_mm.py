@@ -2,7 +2,7 @@ import torch
 
 from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import fp16_forward
+from flops.tools.util import fp16_forward
 from flops.utils.add import triton_block_add
 
 def triton_accum_weight(x, w, out, x_scale, w_scale):

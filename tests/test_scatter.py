@@ -1,11 +1,10 @@
 import torch
 
 from flops.utils.benchmark import benchmark_func
-from flops.utils.scatter import (triton_make_row_id_map,
-                                 triton_scatter_add,
-                                 triton_unpermute_with_mask_map,
-                                 triton_make_row_id_map_and_indices)
-from flops.utils.util import (output_check,
+from flops.utils.scatter import (triton_scatter_add,
+                                 triton_unpermute_with_mask_map
+                                 )
+from flops.tools.util import (output_check,
                               torch_make_indices)
 
 
@@ -45,12 +44,6 @@ def test_scatter(M=4098, N=4096, n_experts=32, topk=2, bias=0.0, bench=False):
                                                                  unpermuted_prob)
     output_check(sums_ref, sums_unpermute, 'unpermute_data')
     output_check(probs, output_prob, 'unpermute_prob')
-
-    row_id_map_output = triton_make_row_id_map(mask_map)
-    assert (row_id_map - row_id_map_output).abs().sum().item() == 0
-
-    _, row_id_indices = triton_make_row_id_map_and_indices(mask_map, out_tokens)
-    assert (row_id_indices - indices).abs().sum().item() == 0
 
     if bench:
         n_repeat = 100

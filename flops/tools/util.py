@@ -1,10 +1,8 @@
 import math
-
 import torch
 
 
 def round_up(x, b=16):
-    assert b == 32
     return ((x - 1) // b + 1) * b
 
 
@@ -81,8 +79,9 @@ def torch_smooth_quant(x, smooth_scale, reverse=False, round_scale=False):
     if reverse:
         x_smooth = x * smooth_scale
     else:
-        x_smooth = x / smooth_scale
+        x_smooth = x / torch.maximum(smooth_scale, 1e-30*torch.ones_like(smooth_scale))
     scale = x_smooth.abs().amax(1)  / 448
+    scale = torch.maximum(scale, 1e-30*torch.ones_like(scale))
     if round_scale:
         scale = torch.exp2(torch.ceil(torch.log2(scale)))
     x_q = (x_smooth / scale[:, None]).to(torch.float8_e4m3fn)

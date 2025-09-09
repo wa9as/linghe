@@ -1,16 +1,19 @@
 import torch
 
-from flops.utils.benchmark import benchmark_func
-from flops.utils.gather import (triton_index_select,
+from flops.utils.gather import (triton_make_row_id_map,
+                                triton_make_row_id_map_and_indices,
+                                triton_index_select,
                                 triton_permute_with_mask_map,
                                 triton_smooth_permute_with_indices,
                                 triton_smooth_permute_with_mask_map,
                                 triton_smooth_unpermute_with_indices_backward,
                                 triton_smooth_weighted_unpermute_with_indices_backward,
                                 triton_batch_smooth_rescale_with_indices)
-from flops.utils.util import (output_check,
+from flops.tools.util import (output_check,
                               torch_batch_smooth_quant,
-                              torch_make_indices, torch_smooth_quant)
+                              torch_make_indices, 
+                              torch_smooth_quant)
+from flops.utils.benchmark import benchmark_func
 
 
 def torch_index_select(y, indices):
@@ -92,6 +95,10 @@ def torch_batch_smooth_rescale_with_indices(x_q, x_scale, org_smooth_scale, smoo
     s = 0
     for i, c in enumerate(token_count_per_expert_list):
         c = token_count_per_expert_list[i]
+        if c == 0:
+            y_scale = torch.zeros_like(org_smooth_scale)
+            scale_refs.append(y_scale.view(-1))
+            continue
         N = (c + 31)//32 * 32
         data_slice = x_q[indices[s:s + c]]
         scale_slice = x_scale[indices[s:s + c]]
@@ -107,6 +114,27 @@ def torch_batch_smooth_rescale_with_indices(x_q, x_scale, org_smooth_scale, smoo
     q_ref = torch.cat(q_refs, 0)
     scale_ref = torch.stack(scale_refs, 0)
     return q_ref, scale_ref
+
+
+def test_make_id_map(M=4098, n_experts=32, topk=2, bias=0.0, bench=False):
+    dtype = torch.bfloat16
+    device = 'cuda:0'
+
+    logits = torch.randn((M, n_experts), dtype=torch.float32, device=device)
+    probs, mask_map, token_count_per_expert, indices, row_id_map = torch_make_indices(
+        logits, topk=topk, bias=bias)
+
+    token_count_per_expert_list = token_count_per_expert.tolist()
+    out_tokens = sum(token_count_per_expert_list)
+
+
+    row_id_map_output = triton_make_row_id_map(mask_map)
+    assert (row_id_map - row_id_map_output).abs().sum().item() == 0
+
+    _, row_id_indices = triton_make_row_id_map_and_indices(mask_map, out_tokens)
+    assert (row_id_indices - indices).abs().sum().item() == 0
+
+
 
 def test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=256,
                                             topk=8, bench=False):
@@ -303,19 +331,34 @@ def test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
 def test_triton_batch_smooth_rescale_with_indices(M=1024, N=2048, n_experts=32, topk=8, bench=False):
 
     device = 'cuda:0'
-    logits = torch.randn((M, n_experts), dtype=torch.float32,
-                         device=device) ** 3
-    probs, mask_map, token_count_per_expert, indices, row_id_map = torch_make_indices(
-        logits, topk=topk, bias=-0.01)
+    if True:
+        logits = torch.randn((M, n_experts), dtype=torch.float32,
+                            device=device) ** 3
+        logits[:,0] -= 1000
+        logits[:,2] -= 100
+        probs, mask_map, token_count_per_expert, indices, row_id_map = torch_make_indices(
+            logits, topk=topk, bias=-0.01)
 
-    token_count_per_expert_list = token_count_per_expert.tolist()
-    out_tokens = sum(token_count_per_expert_list)
+        token_count_per_expert_list = token_count_per_expert.tolist()
+        out_tokens = sum(token_count_per_expert_list)
 
-    x = torch.randn((M, N), dtype=torch.bfloat16, device=device).to(
-        torch.float8_e4m3fn)
-    scale = torch.randn((M,), dtype=torch.float32, device=device)
-    org_smooth_scale = torch.randn((N,), dtype=torch.float32, device=device)
-    smooth_scales = torch.rand((out_tokens, ), dtype=torch.float32, device=device) + 0.1
+        x = torch.randn((M, N), dtype=torch.bfloat16, device=device).to(
+            torch.float8_e4m3fn)
+        scale = torch.rand((M,), dtype=torch.float32, device=device) + 0.1
+        org_smooth_scale = torch.rand((N,), dtype=torch.float32, device=device) + 0.1
+        smooth_scales = torch.rand((out_tokens, ), dtype=torch.float32, device=device) + 0.1
+    else:
+        #         torch.save({"x":x, "scale":scale, "org_smooth_scale":org_smooth_scale,"smooth_scales":smooth_scales, "indices":indices, "token_count_per_expert":token_count_per_expert,"splits":splits}, '/tmp/debug.bin')
+        state = torch.load('/tmp/debug.bin')
+        x = state['x']
+        scale = state['scale']
+        org_smooth_scale = state['org_smooth_scale']
+        smooth_scales = state['smooth_scales']
+        indices = state['indices']
+        token_count_per_expert = state['token_count_per_expert']
+        token_count_per_expert_list = state['splits']
+        out_tokens = sum(token_count_per_expert_list)
+
 
     x_q_ref, x_scale_ref = torch_batch_smooth_rescale_with_indices(x, scale, org_smooth_scale, smooth_scales,
                                       indices,
@@ -333,31 +376,31 @@ def test_triton_batch_smooth_rescale_with_indices(M=1024, N=2048, n_experts=32, 
         benchmark_func(torch_batch_smooth_rescale_with_indices, x, scale, org_smooth_scale, smooth_scales,
                                       indices,
                                       token_count_per_expert_list,
-                                      round_scale=True, n_repeat=100,
+                                      round_scale=True, 
                        ref_bytes=out_tokens * N * 2)
         benchmark_func(triton_batch_smooth_rescale_with_indices, x, scale, org_smooth_scale, smooth_scales, 
                                        indices, 
                                        token_count_per_expert, token_count_per_expert_list, 
                                        round_scale=True,
-                       n_repeat=100, ref_bytes=out_tokens * N * 2)
+                                       ref_bytes=out_tokens * N * 2)
 
 
 
 if __name__ == '__main__':
-    # test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=32,
-    #                                         topk=8)
-    # test_triton_smooth_weighted_unpermute_with_indices_backward(M=4096, N=4096,
-    #                                                             n_experts=32,
-    #                                                             topk=8)
+    test_make_id_map(M=4098, n_experts=32, topk=2, bias=0.0, bench=False)
+    test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=32,
+                                            topk=8)
+    test_triton_smooth_weighted_unpermute_with_indices_backward(M=4096, N=4096,
+                                                                n_experts=32,
+                                                                topk=8)
+    test_triton_permute_with_mask_map(M=16384, N=2048, n_experts=32, topk=8, bench=False)
+    test_triton_permute_with_mask_map(M=8192, N=4096, n_experts=32, topk=8, bench=False)
+    test_triton_permute_with_mask_map(M=7628, N=2048, n_experts=32, topk=8, bench=False)
 
-    test_triton_permute_with_mask_map(M=16384, N=2048, n_experts=32, topk=8, bench=True)
-    test_triton_permute_with_mask_map(M=8192, N=4096, n_experts=32, topk=8, bench=True)
-    # test_triton_permute_with_mask_map(M=7628, N=2048, n_experts=32, topk=8, bench=True)
+    test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
+                                             topk=8)
+    test_triton_smooth_permute_with_mask_map(M=7628, N=2048, n_experts=32,
+                                             topk=8)
 
-    # test_triton_smooth_permute_with_mask_map(M=4096, N=4096, n_experts=32,
-    #                                          topk=8)
-    # test_triton_smooth_permute_with_mask_map(M=7628, N=2048, n_experts=32,
-    #                                          topk=8)
-
-    # test_triton_batch_smooth_rescale_with_indices(M=16384, N=2048, n_experts=32, topk=8, bench=False)
-    # test_triton_batch_smooth_rescale_with_indices(M=8192, N=4096, n_experts=32, topk=8, bench=False)
+    test_triton_batch_smooth_rescale_with_indices(M=16384, N=2048, n_experts=32, topk=2, bench=False)
+    test_triton_batch_smooth_rescale_with_indices(M=8192, N=4096, n_experts=32, topk=2, bench=False)

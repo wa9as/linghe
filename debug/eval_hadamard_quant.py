@@ -1,7 +1,7 @@
 # import torch
 
 # from flops.quant.hadamard.naive_hadamard import *   # noqa: F403
-# from flops.utils.util import *   # noqa: F403
+# from flops.tools.util import *   # noqa: F403
 
 # qtype = torch.float8_e4m3fn
 # device = 'cuda:0'

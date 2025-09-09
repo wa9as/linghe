@@ -1,7 +1,7 @@
 import torch
 
 
-from flops.utils.util import (fp16_forward,
+from flops.tools.util import (fp16_forward,
                               fp16_f_and_b,
                               output_check,
                               quant_check,

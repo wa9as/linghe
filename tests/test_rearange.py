@@ -2,7 +2,7 @@ import torch
 
 from flops.utils.benchmark import benchmark_func
 from flops.utils.rearange import triton_split_and_cat
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def torch_split_and_cat(x, scales, counts, indices):

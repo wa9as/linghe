@@ -5,7 +5,7 @@ from flops.quant.channel.channel import (channel_quant_backward,
                                          channel_quant_update,
                                          fp8_channel_f_and_b)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import (fp16_backward,
+from flops.tools.util import (fp16_backward,
                               fp16_f_and_b,
                               fp16_forward,
                               fp16_update)

@@ -7,10 +7,10 @@ from flops.quant.smooth.naive_smooth import (smooth_quant_backward,
                                              triton_smooth_quant_nt,
                                              triton_smooth_quant_tn)
 from flops.quant.smooth.reused_smooth import (reused_smooth_quant_f_and_b)
-from flops.quant.smooth.seperate_smooth import (triton_smooth_quant_x,
-                                                triton_smooth_quant_y)
+from flops.quant.smooth.seperate_smooth import (triton_smooth_quant_input,
+                                                triton_smooth_quant_grad)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import (fp16_backward,
+from flops.tools.util import (fp16_backward,
                               fp16_f_and_b,
                               fp16_forward,
                               fp16_update)
@@ -51,9 +51,9 @@ def benchmark_with_shape(shape):
     # benchmark_func(triton_reused_transpose_pad_smooth_quant, y, yx_smooth_scale, reverse=True, pad=True, n_repeat=n_repeat)
     # benchmark_func(triton_reused_transpose_pad_rescale_smooth_quant, y_q, yw_smooth_scale, yx_smooth_scale, yx_smooth_scale, reverse=True, pad=True, n_repeat=n_repeat)
 
-    benchmark_func(triton_smooth_quant_x, x, xw_smooth_scale, transpose=True,
+    benchmark_func(triton_smooth_quant_input, x, xw_smooth_scale, transpose=True,
                    pad=True, n_repeat=n_repeat)
-    benchmark_func(triton_smooth_quant_y, y, yw_smooth_scale, yx_smooth_scale,
+    benchmark_func(triton_smooth_quant_grad, y, yw_smooth_scale, yx_smooth_scale,
                    reverse=True, transpose=True, pad=False, n_repeat=n_repeat)
 
     benchmark_func(triton_smooth_quant_nt, x, w)

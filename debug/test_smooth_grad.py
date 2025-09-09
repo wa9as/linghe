@@ -1,6 +1,6 @@
 
 import torch 
-from flops.utils.util import torch_smooth_quant,output_check
+from flops.tools.util import torch_smooth_quant,output_check
 
 
 M,N,K = 8192,2048,4096

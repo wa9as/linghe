@@ -4,7 +4,7 @@ import torch
 
 from flops.utils.rope import triton_half_rope_forward, triton_half_rope_backward, triton_qk_norm_and_half_rope_forward, triton_qk_norm_and_half_rope_backward
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def rotate_half(x):

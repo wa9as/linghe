@@ -6,7 +6,7 @@ from flops.quant.smooth.reused_smooth import (triton_batch_smooth_quant,
                                               triton_reused_smooth_quant,
                                              triton_reused_transpose_smooth_quant)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import (output_check,
+from flops.tools.util import (output_check,
                               torch_make_indices,
                               torch_smooth_quant,
                               round_up)
@@ -86,7 +86,7 @@ def triton_split_smooth_quant(x_split, smooth_scales):
     return x_qs, x_scales
 
 
-def test_triton_reused_smooth_quant(M=4096, N=4096):
+def test_triton_reused_smooth_quant(M=4096, N=4096, bench=False):
     device = 'cuda:0'
     x = torch.randn((M, N), dtype=torch.bfloat16, device=device)
     smooth_scale = torch.randn((N,), device=device, dtype=torch.float32).abs()
@@ -100,6 +100,13 @@ def test_triton_reused_smooth_quant(M=4096, N=4096):
     output_check(scales_ref, x_scale, 'triton_reused_smooth_quant.scale')
     output_check(x_maxs_ref, x_maxs, 'triton_reused_smooth_quant.x_maxs')
 
+    if bench:
+        benchmark_func(triton_reused_smooth_quant, x,
+                                  smooth_scale, 
+                                  reverse=False,
+                                  round_scale=True,
+                                  calibrate=False,
+                                  ref_bytes=M*N*3)
 
 def test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=16384):
     device = 'cuda:0'
@@ -139,7 +146,7 @@ def test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=163
 
 
 
-def test_triton_reused_transpose_smooth_quant(M=4096, N=4096):
+def test_triton_reused_transpose_smooth_quant(M=4096, N=4096, bench=False):
     device = 'cuda:0'
     P = round_up(M, b=32)
     y = torch.randn((M, N), dtype=torch.bfloat16, device=device) ** 3*1e-10
@@ -161,6 +168,14 @@ def test_triton_reused_transpose_smooth_quant(M=4096, N=4096):
                  'triton_reused_transpose_smooth_quant.data')
     output_check(scale_ref, yt_scale,
                  'triton_reused_transpose_smooth_quant.scale')
+
+    if bench:
+        benchmark_func(triton_reused_transpose_smooth_quant, y,
+                                  transpose_smooth_scale, 
+                                  reverse=True,
+                                  pad=True,
+                                  round_scale=True,
+                                  ref_bytes=M*N*3)
 
 
 def test_triton_reused_transpose_rescale_smooth_quant(M=4096, N=4096,
@@ -261,17 +276,21 @@ def test_triton_batch_smooth_quant(M=4096, N=4096, n_experts=32, topk=8,
 
 
 if __name__ == '__main__':
-    test_triton_reused_smooth_quant(M=4096, N=4096)
-    test_triton_reused_smooth_quant(M=4096, N=3072)
-    test_triton_reused_smooth_quant(M=8192, N=512)
+    test_triton_reused_smooth_quant(M=16384, N=2048, bench=False)
+    test_triton_reused_smooth_quant(M=8192, N=4096, bench=False)
+    test_triton_reused_smooth_quant(M=4096, N=8192, bench=False)
+    test_triton_reused_smooth_quant(M=8192, N=3072, bench=False)
+    test_triton_reused_smooth_quant(M=8192, N=6144, bench=False)
+    test_triton_reused_smooth_quant(M=16384, N=512, bench=False)
 
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=5120, size=2048)
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=5120)
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=5120, size=5120*10-1024)
 
-    test_triton_reused_transpose_smooth_quant(M=4096,N=4096)
-    test_triton_reused_transpose_smooth_quant(M=4045,N=4096)
-    test_triton_reused_transpose_smooth_quant(M=4096,N=3072)
+    test_triton_reused_transpose_smooth_quant(M=16384,N=2048, bench=False)
+    test_triton_reused_transpose_smooth_quant(M=8192, N=4096, bench=False)
+    test_triton_reused_transpose_smooth_quant(M=4096, N=8192, bench=False)
+    test_triton_reused_transpose_smooth_quant(M=4096, N=3072, bench=False)
 
     test_triton_reused_transpose_rescale_smooth_quant(M=4096,N=4096, round_scale=True)
     test_triton_reused_transpose_rescale_smooth_quant(M=3895, N=4096, round_scale=True)

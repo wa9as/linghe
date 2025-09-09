@@ -4,7 +4,7 @@ from flops.quant.channel.channel import (triton_deprecated_tokenwise_row_quant,
                                          triton_row_quant,
                                          triton_tokenwise_row_quant)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import (output_check,
+from flops.tools.util import (output_check,
                               torch_row_quant)
 
 

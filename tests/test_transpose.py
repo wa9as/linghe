@@ -8,7 +8,7 @@ from flops.utils.transpose import (round_up,
                                    triton_batch_transpose_and_pad,
                                    triton_transpose,
                                    triton_transpose_and_pad)
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 # from torch.profiler import profile, record_function, ProfilerActivity

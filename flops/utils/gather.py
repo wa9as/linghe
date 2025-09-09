@@ -4,6 +4,183 @@ import triton
 import triton.language as tl
 
 
+
+
+
+@triton.jit
+def block_count_kernel(map_ptr, count_ptr, M, B, T: tl.constexpr,
+                       b: tl.constexpr, E: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    counts = tl.zeros((E,), dtype=tl.int32)
+    offs = pid * B * E + tl.arange(0, b)[:, None] * E + tl.arange(0, E)[None, :]
+    t = tl.cdiv(B, b)
+    for i in range(t):
+        mask = pid * B + i * b + tl.arange(0, b)[:, None] < tl.minimum(M,
+                                                                       pid * B + B)
+        values = tl.load(map_ptr + offs, mask=mask).to(tl.int32)
+        counts += tl.sum(values, 0)
+        offs += b * E
+
+    tl.store(count_ptr + pid * E + tl.arange(0, E), counts)
+
+
+@triton.jit
+def make_row_id_map_kernel(map_ptr, count_ptr, output_ptr, M, B, P,
+                            T: tl.constexpr, b: tl.constexpr, E: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    indices = tl.arange(0, T)[:, None] * E + tl.arange(0, E)[None, :]
+    counts = tl.load(count_ptr + indices)
+    sum_counts = tl.sum(counts, 0)
+    sum_counts = tl.cdiv(sum_counts, P) * P
+    accum_sum_counts = tl.cumsum(sum_counts, 0)
+
+    partial_counts = tl.sum(tl.where(indices < pid * E, counts, 0), 0)
+
+    count_offset = accum_sum_counts - sum_counts + partial_counts - 1
+    offs = pid * B * E + tl.arange(0, b)[:, None] * E + tl.arange(0, E)[None, :]
+    t = tl.cdiv(B, b)
+    for i in range(t):
+        mask = pid * B + i * b + tl.arange(0, b)[:, None] < tl.minimum(M,
+                                                                       pid * B + B)
+        values = tl.load(map_ptr + offs, mask=mask).to(tl.int32)
+        acc = count_offset + tl.cumsum(values, 0)
+        count_offset = tl.max(acc, 0)
+        acc = tl.where(values == 0, -1, acc)
+        tl.store(output_ptr + offs, acc, mask=mask)
+        offs += b * E
+
+
+# """
+# make row id map, shape:[n_tokens, n_experts]
+# """
+def triton_make_row_id_map(
+        routing_map: torch.Tensor, 
+        multiple_of: int = 1
+):
+    n_tokens, n_experts = routing_map.shape
+    T = 128
+    block_counts = torch.empty((T, n_experts), dtype=torch.int32,
+                               device=routing_map.device)
+    output = torch.empty((n_tokens, n_experts), dtype=torch.int32,
+                         device=routing_map.device)
+    
+    B = triton.cdiv(n_tokens, T)
+    b = 16
+    grid = (T,)
+    block_count_kernel[grid](
+        routing_map,
+        block_counts,
+        n_tokens,
+        B,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+
+    make_row_id_map_kernel[grid](
+        routing_map,
+        block_counts,
+        output,
+        n_tokens,
+        B,
+        multiple_of,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+
+    return output
+
+
+@triton.jit
+def make_row_id_map_and_indices_kernel(map_ptr, count_ptr, row_map_ptr, row_indices_ptr, M, B, P,
+                            T: tl.constexpr, b: tl.constexpr, E: tl.constexpr):
+    pid = tl.program_id(axis=0)
+
+    indices = tl.arange(0, T)[:, None] * E + tl.arange(0, E)[None, :]
+    counts = tl.load(count_ptr + indices)
+    sum_counts = tl.sum(counts, 0)
+    sum_counts = tl.cdiv(sum_counts, P) * P
+    accum_sum_counts = tl.cumsum(sum_counts, 0)
+
+    partial_counts = tl.sum(tl.where(indices < pid * E, counts, 0), 0)
+
+    count_offset = accum_sum_counts - sum_counts + partial_counts - 1
+    offs = pid * B * E + tl.arange(0, b)[:, None] * E + tl.arange(0, E)[None, :]
+    t = tl.cdiv(B, b)
+    for i in range(t):
+        mask = pid * B + i * b + tl.arange(0, b)[:, None] < tl.minimum(M,
+                                                                       pid * B + B)
+        values = tl.load(map_ptr + offs, mask=mask).to(tl.int32)
+        acc = count_offset + tl.cumsum(values, 0)
+        count_offset = tl.max(acc, 0)
+        output_acc = tl.where(values == 0, -1, acc)
+        tl.store(row_map_ptr + offs, output_acc, mask=mask)
+
+        tl.store(row_indices_ptr + acc, pid * B + i * b +  tl.arange(0, b)[:,None] + (0*tl.arange(0, E))[None, :], mask = mask & values != 0)
+
+        offs += b * E
+
+
+"""
+routing map, shape:[n_tokens, n_experts]
+num_out_tokens, shape:[sum(round(bs))]
+
+row id map, shape:[n_tokens, n_experts]
+row id indices, shape: [sum(n_tokens_per_experts)]
+"""
+def triton_make_row_id_map_and_indices(
+        routing_map: torch.Tensor, 
+        num_out_tokens: int,
+        multiple_of: int = 1,
+):
+    n_tokens, n_experts = routing_map.shape
+    T = 128
+    block_counts = torch.empty((T, n_experts), dtype=torch.int32,
+                               device=routing_map.device)
+    row_id_map = torch.empty((n_tokens, n_experts), dtype=torch.int32,
+                         device=routing_map.device)
+    row_id_indices = torch.empty((num_out_tokens, ), dtype=torch.int32,
+                         device=routing_map.device)
+    
+    B = triton.cdiv(n_tokens, T)
+    b = 16
+    grid = (T,)
+    block_count_kernel[grid](
+        routing_map,
+        block_counts,
+        n_tokens,
+        B,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+
+    make_row_id_map_and_indices_kernel[grid](
+        routing_map,
+        block_counts,
+        row_id_map,
+        row_id_indices,
+        n_tokens,
+        B,
+        multiple_of,
+        T,
+        b,
+        n_experts,
+        num_stages=3,
+        num_warps=8
+    )
+    return row_id_map, row_id_indices
+
+
 @triton.jit
 def index_select_kernel(x_ptr, out_ptr, scale_ptr, scale_out_ptr, index_ptr, M,
                         T, N: tl.constexpr, SCALE: tl.constexpr):
@@ -26,8 +203,6 @@ x: [bs, dim]
 x_scale: [bs]
 indices: [K]
 """
-
-
 def triton_index_select(x, indices, scale=None, out=None, scale_out=None):
     # row-wise read, row-wise write
     M, N = x.shape
@@ -314,26 +489,23 @@ def batch_smooth_rescale_with_indices_kernel(x_ptr, scale_ptr, oss_ptr, ss_ptr, 
     cid = tl.program_id(axis=1)
 
     count = tl.load(count_ptr + eid)
-    ei = tl.load(accum_ptr + eid)
-    si = ei - count
+    counts = tl.load(count_ptr + tl.arange(0, E))
+    si = tl.load(accum_ptr + eid) - count
 
-    # n = tl.cdiv(count, H)
     pad = tl.cdiv(count, 32) * 32
     loop = tl.cdiv(pad, H)
-
-    counts = tl.load(count_ptr + tl.arange(0, E))
-    bias = tl.sum(tl.where(tl.arange(0, E)< eid, tl.cdiv(counts, 32), 0)) * 32 * N
+    bias = tl.sum(tl.where(tl.arange(0, E) < eid, tl.cdiv(counts, 32), 0)) * 32 * N
 
     # col-wise read, row-wise write
     org_smooth_scale = tl.load(oss_ptr + cid * W + tl.arange(0, W))
     x_max = tl.zeros((H, W), dtype=tl.float32)
     for i in range(loop):
         idx = i * H + tl.arange(0, H)
-        indices = tl.load(index_ptr + si + i * H + tl.arange(0, H), mask=idx<count)[:,None]
-        x = tl.load(x_ptr + cid * W + indices * N + tl.arange(0, W)[None,:], mask=idx[:,None]<count).to(tl.float32)
-        s = tl.load(scale_ptr + indices, mask=idx[:,None]<count)
-        smooth_scale = tl.load(ss_ptr + si + i * H + tl.arange(0, H), mask=idx<count)
-        x = x * s * org_smooth_scale * smooth_scale[:, None]
+        indices = tl.load(index_ptr + si + i * H + tl.arange(0, H), mask=idx<count)
+        x = tl.load(x_ptr + cid * W + indices[:,None] * N + tl.arange(0, W)[None,:], mask=idx[:,None]<count).to(tl.float32)
+        s = tl.load(scale_ptr + indices, mask=idx<count)[:, None]
+        smooth_scale = tl.load(ss_ptr + si + i * H + tl.arange(0, H), mask=idx<count)[:, None]
+        x = x * org_smooth_scale * (s * smooth_scale)
         x_max = tl.maximum(tl.abs(x), x_max)
 
     scale = tl.maximum(tl.max(x_max, 0) / 448.0, 1e-30)
@@ -343,15 +515,17 @@ def batch_smooth_rescale_with_indices_kernel(x_ptr, scale_ptr, oss_ptr, ss_ptr, 
     tl.store(qs_ptr + eid * N + cid * W + tl.arange(0, W), scale)
 
     scale = 1.0 / scale
+    toffs = bias + cid * pad * W + tl.arange(0, W)[:, None] * pad + tl.arange(0, H)
     for i in range(loop):
         idx = i * H + tl.arange(0, H)
-        indices = tl.load(index_ptr + si + i * H + tl.arange(0, H), mask=idx<count)[:,None]
-        x = tl.load(x_ptr + cid * W + indices * N + tl.arange(0, W)[None,:], mask=idx[:,None]<count).to(tl.float32)
-        s = tl.load(scale_ptr + indices, mask=idx[:,None]<count)
-        smooth_scale = tl.load(ss_ptr + si +  i * H + tl.arange(0, H), mask=idx<count)
-        x = x * s * org_smooth_scale * scale * smooth_scale[:, None]
-        xq = x.to(q_ptr.dtype.element_ty)
-        tl.store(q_ptr + bias + i * H + cid * pad * W + tl.arange(0, W)[:, None] * pad + tl.arange(0, H), tl.trans(xq), mask=idx[None, :] < pad)
+        indices = tl.load(index_ptr + si + i * H + tl.arange(0, H), mask=idx<count)
+        x = tl.load(x_ptr + cid * W + indices[:,None] * N + tl.arange(0, W)[None,:], mask=idx[:,None]<count).to(tl.float32)
+        s = tl.load(scale_ptr + indices, mask=idx<count)[:, None]
+        smooth_scale = tl.load(ss_ptr + si + i * H + tl.arange(0, H), mask=idx<count)[:, None]
+        x = x * (org_smooth_scale * scale) * (s * smooth_scale)
+        xq = tl.trans(x.to(q_ptr.dtype.element_ty))
+        tl.store(q_ptr + toffs, xq, mask=idx[None, :] < pad)
+        toffs += H
 
 
 """
@@ -367,23 +541,34 @@ indices: [sum(tokens_per_experts)]
 x_q: [sum(roundup(tokens_per_experts)) * dim]
 x_scale: [sum(roundup(tokens_per_experts))]
 """
-def triton_batch_smooth_rescale_with_indices(x, scale, org_smooth_scale, smooth_scales, 
+def triton_batch_smooth_rescale_with_indices(x, 
+                                       scale, 
+                                       org_smooth_scale, 
+                                       smooth_scales, 
                                        indices, 
-                                       token_count_per_expert, splits, 
+                                       token_count_per_expert, 
+                                       splits, 
                                        x_q=None, x_scale=None,
                                        round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n_expert = len(splits)
-    out_tokens = sum([(x+31)//32*32 for x in splits])
-    H = 128
-    W = 32
+    out_tokens = sum([(x+31)//32 for x in splits])*32
+    if N >= 4096:
+        H = 64
+        W = 64
+    else:
+        H = 128
+        W = 32
     device = x.device
     accum_token_count = torch.cumsum(token_count_per_expert, 0)
     if x_q is None:
-        x_q = torch.empty((out_tokens * N), device=device, dtype=torch.float8_e4m3fn)
+        # TODO(nanxiao): opt performance
+        x_q = torch.empty((out_tokens * N,), device=device, dtype=torch.float8_e4m3fn)
     if x_scale is None:
         x_scale = torch.empty((n_expert, N), device=device, dtype=torch.float32)
+    # import pydevd
+    # pydevd.settrace(suspend=False, trace_only_current_thread=True)
     grid = (n_expert, N//W)
     batch_smooth_rescale_with_indices_kernel[grid](
         x,
@@ -600,8 +785,10 @@ def triton_smooth_unpermute_with_indices_backward(grad_data, grad_scale,
 @triton.jit
 def smooth_permute_with_mask_map_kernel(grads_data_ptr, quant_data_ptr,
                                         mask_map_ptr, grads_scale_ptr,
-                                        smooth_scale_ptr, quant_scale_ptr, M, T,
-                                        N: tl.constexpr, hs: tl.constexpr,
+                                        smooth_scale_ptr, quant_scale_ptr, 
+                                        M, T,
+                                        N: tl.constexpr, 
+                                        hs: tl.constexpr,
                                         REVERSE: tl.constexpr,
                                         ROUND: tl.constexpr,
                                         GROUP: tl.constexpr):
@@ -673,6 +860,7 @@ def triton_smooth_permute_with_mask_map(
     permuted_scale = torch.empty(
         (num_out_tokens,), dtype=scale.dtype, device=inp.device
     )
+    # print(f'{inp.shape=} {row_id_map.shape=} {num_tokens=} {num_out_tokens=}')
     sm = torch.cuda.get_device_properties(inp.device).multi_processor_count
     T = triton.cdiv(num_tokens, sm)
     grid = (num_experts, sm)

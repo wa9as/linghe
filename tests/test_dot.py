@@ -3,7 +3,7 @@ import torch
 from flops.utils.benchmark import benchmark_func
 from flops.utils.dot import (triton_dot,
                              triton_mix_precise_dot)
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def torch_fp16_dot(x, y):

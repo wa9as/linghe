@@ -2,7 +2,7 @@ import torch
 
 from flops.utils.add import triton_inplace_add
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def torch_add(x, outputs, accum=True):
