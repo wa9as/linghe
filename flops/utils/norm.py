@@ -346,7 +346,7 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
             output_rms,
             round_scale,
             num_stages=3,
-            num_warps=4
+            num_warps=2 if N == 2048 else 4
         )
         if calibrate:
             maxs = maxs.amax(0)
