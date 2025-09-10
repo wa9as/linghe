@@ -2,7 +2,7 @@ import torch
 
 from flops.utils.unary import triton_calculate_smooth_scale
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def torch_calculate_smooth_scale(x, min_value=1.0):

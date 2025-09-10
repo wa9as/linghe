@@ -3,7 +3,7 @@ import torch
 from flops.utils.benchmark import benchmark_func
 from flops.utils.loss import triton_softmax_cross_entropy_forward, \
     triton_softmax_cross_entropy_backward
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def torch_cross_entropy(logits, targets):

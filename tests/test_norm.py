@@ -3,7 +3,7 @@ import torch
 from flops.utils.norm import (triton_rms_norm_and_quant_forward,
                               triton_rms_norm_backward,
                               triton_rms_norm_forward)
-from flops.utils.util import (output_check,
+from flops.tools.util import (output_check,
                               torch_smooth_quant,
                               torch_group_quant)
 from flops.utils.benchmark import benchmark_func
@@ -91,7 +91,7 @@ def torch_rms_and_quant_backward(x, weight, dy, smooth_scale=None, round_scale=F
     return dx_q, dx_scale, dw, dxt_q, dxt_scale
 
 
-def test_rmsnorm(M=4096, N=4096):
+def test_rmsnorm(M=4096, N=4096, bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
 
@@ -108,30 +108,52 @@ def test_rmsnorm(M=4096, N=4096):
     output_check(dx_ref, dx, mode="dx")
     output_check(dw_ref, dw, mode='dw')
 
+    if bench:
+        benchmark_func(triton_rms_norm_forward, x, weight, ref_bytes=M*N*3)
+        benchmark_func(triton_rms_norm_backward, dy, x, weight, ref_bytes=M*N*3)
 
-def test_rmsnorm_and_quant(M=4096, N=4096, bench=False):
+
+def test_rmsnorm_and_smooth_quant(M=4096, N=4096, bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
 
-    x = torch.randn(M, N, dtype=dtype, requires_grad=True, device=device) ** 3
+    x = torch.randn(M, N, dtype=dtype, requires_grad=True, device=device)
     weight = torch.randn(N, dtype=dtype, requires_grad=True, device=device)
     smooth_scale = torch.rand(N, dtype=torch.float32, requires_grad=False,
                               device=device) + 0.1
+    calibrate = True 
 
     # smooth
     q_ref, scale_ref, maxs_ref, qt_ref, scale_t_ref = torch_rms_and_quant_forward(x, weight, 
                                           smooth_scale=smooth_scale,
                                           round_scale=True)
+
     q, scale, maxs, rms, q_t, scale_t  = triton_rms_norm_and_quant_forward(x, weight,
                                                             smooth_scale=smooth_scale,
-                                                            calibrate=True,
+                                                            calibrate=calibrate,
                                                             output_rms=True,
-                                                            round_scale=True,
-                                                            output_mode=2)
+                                                            round_scale=True)
     output_check(q_ref, q, mode="smooth.data")
     output_check(scale_ref, scale, mode='smooth.scale')
-    output_check(maxs_ref, maxs, mode="smooth.maxs")
+    if calibrate:
+        output_check(maxs_ref, maxs, mode="smooth.maxs")
 
+    if bench:
+        benchmark_func(triton_rms_norm_and_quant_forward, x, weight,
+                                                                smooth_scale=smooth_scale,
+                                                                calibrate=True,
+                                                                round_scale=True,
+                                                                output_rms=True,
+                                                                ref_bytes=M*N*3)
+
+
+
+def test_rmsnorm_and_block_quant(M=4096, N=4096, bench=False):
+    dtype = torch.bfloat16
+    device = 'cuda:0'
+
+    x = torch.randn(M, N, dtype=dtype, requires_grad=True, device=device) ** 3
+    weight = torch.randn(N, dtype=dtype, requires_grad=True, device=device)
 
     # blockwise
     q_ref, scale_ref, _, qt_ref, scale_t_ref = torch_rms_and_quant_forward(x, weight, smooth_scale=None,
@@ -191,12 +213,13 @@ def test_rmsnorm_and_quant(M=4096, N=4096, bench=False):
                                                             output_mode=2,
                                                             ref_bytes=M*N*4)
 
-
 if __name__ == '__main__':
-    test_rmsnorm(M=4096, N=4096)
-    test_rmsnorm(M=4096, N=8192)
-    test_rmsnorm(M=8192, N=2048)
-    test_rmsnorm_and_quant(M=16384, N=2048, bench=False)
-    test_rmsnorm_and_quant(M=8192, N=4096, bench=False)
-
+    # test_rmsnorm(M=16384, N=2048, bench=True)
+    # test_rmsnorm(M=8192, N=4096, bench=True)
+    # test_rmsnorm(M=4096, N=8192, bench=True)
+    test_rmsnorm_and_smooth_quant(M=16384, N=2048, bench=True)
+    test_rmsnorm_and_smooth_quant(M=8192, N=4096, bench=True)
+    test_rmsnorm_and_smooth_quant(M=4096, N=8192, bench=True)
+    # test_rmsnorm_and_block_quant(M=16384, N=2048, bench=True)
+    # test_rmsnorm_and_block_quant(M=8192, N=4096, bench=True)
 

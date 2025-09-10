@@ -4,10 +4,9 @@ import transformer_engine.pytorch.triton.permutation as triton_permutation
 from flops.utils.benchmark import benchmark_func
 from flops.utils.gather import triton_permute_with_mask_map
 from flops.utils.scatter import (triton_scatter_add,
-                                 triton_scatter_add_with_count,
                                  triton_unpermute_with_mask_map,
                                  triton_make_row_id_map)
-from flops.utils.util import torch_make_indices
+from flops.tools.util import torch_make_indices
 
 
 def torch_index_select(y, indices):
@@ -72,9 +71,7 @@ def bench_triton_unpermute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2):
     n_repeat = 100
     ref_time = benchmark_func(triton_scatter_add, x, outputs, indices,
                               n_repeat=n_repeat)
-    benchmark_func(triton_scatter_add_with_count, x, outputs, indices, counts,
-                   n_repeat=n_repeat, ref_time=ref_time)
-    benchmark_func(triton_unpermute_with_mask_map, x, row_id_map.T.contiguous(),
+    benchmark_func(triton_unpermute_with_mask_map, x, row_id_map,
                    probs, n_repeat=n_repeat, ref_time=ref_time)
     benchmark_func(triton_permutation.make_row_id_map, mask_map.T.contiguous(),
                    M, n_experts, n_repeat=n_repeat, ref_time=ref_time)
@@ -86,5 +83,5 @@ def bench_triton_unpermute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2):
 
 
 if __name__ == '__main__':
-    bench_triton_permute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2)
+    # bench_triton_permute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2)
     bench_triton_unpermute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2)

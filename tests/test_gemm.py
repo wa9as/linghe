@@ -7,7 +7,7 @@ from flops.gemm.fp32_gemm import (triton_fp32_gemm,
                                   triton_scaled_fp32_gemm,
                                   triton_scaled_fp32_gemm_for_update)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 
 def test_scaled_mm(M=2048, N=8192, K=8192):

@@ -1,6 +1,6 @@
 import torch
 
-from flops.utils.util import (fp16_forward,
+from flops.tools.util import (fp16_forward,
                               quant_check,
                               torch_block_quant,
                               torch_group_quant)

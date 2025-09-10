@@ -13,7 +13,7 @@ from flops.quant.hadamard.seperate_hadamard import (
     triton_hadamard_quant_nt_megatron,
     triton_hadamard_quant_tn_megatron)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import (fp16_f_and_b,
+from flops.tools.util import (fp16_f_and_b,
                               fp16_forward)
 
 

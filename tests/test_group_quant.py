@@ -3,7 +3,7 @@ import torch
 from flops.quant.block.group import (triton_group_quant,
                                      triton_persist_group_quant)
 from flops.utils.benchmark import benchmark_func
-from flops.utils.util import (output_check,
+from flops.tools.util import (output_check,
                               torch_group_quant)
 
 

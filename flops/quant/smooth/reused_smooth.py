@@ -2,7 +2,7 @@ import torch
 import triton
 import triton.language as tl
 
-from flops.utils.util import round_up
+from flops.tools.util import round_up
 
 
 # TODO(nanxiao): use max instead of sum
@@ -130,16 +130,16 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
         x_q = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
     if x_scale is None:
         x_scale = torch.empty((M,), device=device, dtype=torch.float32)
-    sm = torch.cuda.get_device_properties(device).multi_processor_count
     if triton.next_power_of_2(N) == N and N <= 8192:
         W = 8192 // N
-        T = triton.cdiv(M, sm * W)
+        T = 8
+        assert M % (W * T) == 0
+        g = M // (W * T)
         if calibrate:
-            x_maxs = torch.empty((sm, N), device=device, dtype=torch.float32)
+            x_maxs = torch.empty((g, N), device=device, dtype=torch.bfloat16)
         else:
             x_maxs = None
-        grid = (sm,)
-        tokenwise_reused_smooth_quant_kernel[grid](
+        tokenwise_reused_smooth_quant_kernel[(g,)](
             x,
             x_q,
             smooth_scale,
@@ -153,14 +153,13 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
             round_scale,
             calibrate,
             num_stages=3,
-            num_warps=32
+            num_warps=4
         )
         if calibrate:
-            x_maxs = x_maxs.amax(0)
+            x_maxs = x_maxs.amax(0).float()
     else:
-        W = 8 if M <= sm * 8 else 16
-        H = 1024 if W == 8 and N%1024 == 0 else 512
-        assert N % H == 0, f'N:{N} is not divided by H:{H}'
+        H = max([x for x in [256, 512, 1024, 2048] if N%x == 0])
+        W = 8 if M > 8192 else 4
         EVEN = M % W == 0
         T = triton.cdiv(M, W)
         if calibrate:
@@ -182,11 +181,11 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
             reverse,
             round_scale,
             calibrate,
-            num_stages=5,
+            num_stages=3,
             num_warps=4
         )
         if calibrate:
-            x_maxs = x_maxs.amax(0).to(torch.float32)
+            x_maxs = x_maxs.amax(0).float()
 
     return x_q, x_scale, x_maxs
 
@@ -593,48 +592,50 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
         tl.store(qs_ptr + pid * W + tl.arange(0, W), scale,
                  mask=pid * W + tl.arange(0, W) < N)
 
-    s = (1.0 / scale)[:, None]
+    s = (1.0 / scale)[None, :]
     offs = pid * W + tl.arange(0, H)[:, None] * N + tl.arange(0, W)[None, :]
     soffs = tl.arange(0, H)
     toffs = pid * W * P + tl.arange(0, W)[:, None] * P + tl.arange(0, H)[None,
                                                          :]
     for i in range(m):
         if EVEN:
-            x = tl.trans(tl.load(x_ptr + offs))
-            smooth_scale = tl.load(ss_ptr + soffs)
+            x = tl.load(x_ptr + offs).to(tl.float32)
+            smooth_scale = tl.load(ss_ptr + soffs)[:, None]
         else:
-            x = tl.trans(tl.load(x_ptr + offs,
-                                 mask=(i * H + tl.arange(0, H)[:, None] < M)))
+            x = tl.load(x_ptr + offs,
+                                 mask=(i * H + tl.arange(0, H)[:, None] < M)).to(tl.float32)
             other = 0.0 if REVERSE else 1e30
-            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < M, other=other)
+            smooth_scale = tl.load(ss_ptr + soffs, mask=soffs < M, other=other)[:,None]
 
         if REVERSE:
             x = (x * smooth_scale * s).to(q_ptr.dtype.element_ty)
         else:
             x = (x / smooth_scale * s).to(q_ptr.dtype.element_ty)
         if EVEN:
-            tl.store(q_ptr + toffs, x)
+            tl.store(q_ptr + toffs, tl.trans(x))
         else:
             # mask with P instead of M
-            tl.store(q_ptr + toffs, x,
+            tl.store(q_ptr + toffs, tl.trans(x),
                      mask=(i * H + tl.arange(0, H)[None, :] < P))
         offs += H * N
         toffs += H
         soffs += H
 
 
-def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False,
-                                         pad=False, round_scale=False):
+def triton_reused_transpose_smooth_quant(x, 
+                                         smooth_scale, 
+                                         reverse=False,
+                                         pad=False, 
+                                         round_scale=False):
     # col-wise read, row-wise write
-    # M should be padded
-
+    # M should be padded if M % 32 != 0
     M, N = x.shape
     device = x.device
-    P = round_up(M, b=32) if pad else M
+    P = (M + 31 ) // 32 * 32 if pad else M
     x_q = torch.empty((N, P), device=device, dtype=torch.float8_e4m3fn)
     x_scale = torch.empty((N,), device=device, dtype=torch.float32)
-    H = 256
-    W = 32
+    H = 1024
+    W = 16 # if N >= 4096 else 16
     assert N % W == 0
     EVEN = P % H == 0 and M == P
 
@@ -644,16 +645,17 @@ def triton_reused_transpose_smooth_quant(x, smooth_scale, reverse=False,
         x_q,
         smooth_scale,
         x_scale,
-        M, N,
+        M, 
+        N,
         P,
-        H, W,
+        H, 
+        W,
         EVEN,
         reverse,
         round_scale,
         num_stages=3,
-        num_warps=4
+        num_warps=4 if N >= 8192 else 4
     )
-
     return x_q, x_scale
 
 

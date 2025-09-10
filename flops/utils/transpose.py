@@ -5,7 +5,7 @@ import triton
 import triton.language as tl
 from triton import Config
 
-from flops.utils.util import round_up
+from flops.tools.util import round_up
 
 
 # os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
@@ -287,7 +287,7 @@ pad: M will be padded to mutiplier of 32
 padding should be filled with 0
 M is usually less than N
 x: [sum(bs), N]
-x_t: [sum([pad(bs)*N for bs in bss])]
+x_t: [sum(pad(bs)*N)]
 """
 
 

@@ -1,6 +1,6 @@
 import torch
 
-from flops.utils.util import output_check
+from flops.tools.util import output_check
 
 M, N = 2049, 8192
 n = 64
