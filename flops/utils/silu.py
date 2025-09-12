@@ -622,22 +622,16 @@ def triton_batch_weighted_silu_and_quant_forward(x,
     smooth = smooth_scale is not None
     assert N <= 8192
     device = x.device
-    sm = torch.cuda.get_device_properties(device).multi_processor_count
     if out is None:
         out = torch.empty((M, n), device=device, dtype=torch.float8_e4m3fn)
-    if scale is None:
-        if smooth:
-            scale = torch.empty((M,), device=device, dtype=torch.float32)
-        else:
-            # intra layout and inner layput are not consist,
-            # tensors will be viewed after splitting
-            scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
-    
+
     if smooth:
+        sm = torch.cuda.get_device_properties(device).multi_processor_count
         transpose_output = None
         transpose_scale = None
         tmp_maxs = None
-        maxs = None
+        if scale is None:
+            scale = torch.empty((M,), device=device, dtype=torch.float32)
         if M == 0:
             maxs = torch.zeros((n_experts, n), device=device,
                                     dtype=torch.float32)
@@ -647,6 +641,8 @@ def triton_batch_weighted_silu_and_quant_forward(x,
                                 dtype=torch.float32)
             maxs = torch.empty((n_experts, n), device=device,
                             dtype=torch.float32)
+        else:
+            maxs = None
             
     else:
         assert splits is not None, 'batch mode need splits to launch kernels'
@@ -654,6 +650,9 @@ def triton_batch_weighted_silu_and_quant_forward(x,
         blocks = sum([(x+127)//128 for x in splits])
         transpose_output = torch.empty((M * n), device=device, dtype=torch.float8_e4m3fn)
         transpose_scale = torch.empty((blocks * n), device=device, dtype=torch.float32)
+        # intra layout and inner layput are not consist,
+        # tensors will be viewed after splitting
+        scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
 
 
     if M == 0:
