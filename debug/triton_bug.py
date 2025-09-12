@@ -62,8 +62,6 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale, eps=1e-6,
     out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
 
     scale = torch.empty((M,), device=device, dtype=torch.float32)
-    transpose_output = None 
-    transpose_scale = None
     W = 8192 // N
     T = 8 if M // W >= 4096 else 4
     assert M % (T * W) == 0
@@ -104,7 +102,7 @@ if __name__ == '__main__':
     dtype = torch.bfloat16
     device = 'cuda:0'
     calibrate = True 
-    # bug condition: triton=3.3.1 N=2048 calibrate=True
+    # bug condition: triton=3.3.1 N=2048 calibrate=True num_warps=4
 
     x = torch.randn(M, N, dtype=dtype, requires_grad=True, device=device)
     weight = torch.randn(N, dtype=dtype, requires_grad=True, device=device)

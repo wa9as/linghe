@@ -282,6 +282,7 @@ if __name__ == '__main__':
     test_triton_reused_smooth_quant(M=8192, N=3072, bench=False)
     test_triton_reused_smooth_quant(M=8192, N=6144, bench=False)
     test_triton_reused_smooth_quant(M=16384, N=512, bench=False)
+    test_triton_reused_smooth_quant(M=3457, N=512, bench=False)
 
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=5120, size=2048)
     test_triton_subrow_reused_smooth_quant(M=4096, N=5120, offset=4096, size=5120)

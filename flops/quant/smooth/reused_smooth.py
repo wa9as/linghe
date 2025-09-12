@@ -11,6 +11,7 @@ def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
                                          M, T,
                                          N: tl.constexpr, 
                                          W: tl.constexpr,
+                                         EVEN: tl.constexpr,
                                          REVERSE: tl.constexpr,
                                          ROUND: tl.constexpr,
                                          CALIBRATE: tl.constexpr):
@@ -23,11 +24,18 @@ def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
     if CALIBRATE:
         output_maxs = tl.zeros((W, N), dtype=tl.float32)
     for i in range(T):
-        x = tl.load(x_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
-                                                          None] * N + tl.arange(
-            0, N)[None, :],
-                    mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M).to(
-            tl.float32)
+        indices = pid * W * T + i * W + tl.arange(0, W)
+        if EVEN:
+            x = tl.load(x_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
+                                                            None] * N + tl.arange(
+                0, N)[None, :]).to(
+                tl.float32)
+        else:
+            x = tl.load(x_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
+                                                            None] * N + tl.arange(
+                0, N)[None, :],
+                        mask=indices[:, None] < M).to(
+                tl.float32)
         if CALIBRATE:
             output_maxs = tl.maximum(tl.abs(x), output_maxs)
         x *= smooth_scale
@@ -35,16 +43,25 @@ def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
         scale = tl.maximum(x_max / 448.0, 1e-30)
         if ROUND:
             scale = tl.exp2(tl.ceil(tl.log2(scale)))
-        tl.store(qs_ptr + pid * W * T + i * W + tl.arange(0, W), scale,
-                 mask=pid * W * T + i * W + tl.arange(0, W) < M)
+        if EVEN:
+            tl.store(qs_ptr + pid * W * T + i * W + tl.arange(0, W), scale,)
+        else:
+            tl.store(qs_ptr + pid * W * T + i * W + tl.arange(0, W), scale,
+                 mask=indices < M)
 
         x /= scale[:, None]
         xq = x.to(q_ptr.dtype.element_ty)
-        tl.store(q_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
+        if EVEN:
+            tl.store(q_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
+                                                       None] * N + tl.arange(0,
+                                                                             N)[
+                                                                   None, :], xq)
+        else:
+            tl.store(q_ptr + pid * W * T * N + i * N * W + tl.arange(0, W)[:,
                                                        None] * N + tl.arange(0,
                                                                              N)[
                                                                    None, :], xq,
-                 mask=pid * W * T + i * W + tl.arange(0, W)[:, None] < M)
+                 mask=indices[:, None] < M)
     if CALIBRATE:
         output_maxs = tl.max(output_maxs, 0)
         tl.store(max_ptr + pid * N + tl.arange(0, N), output_maxs)
@@ -133,8 +150,10 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
     if triton.next_power_of_2(N) == N and N <= 8192:
         W = 8192 // N
         T = 8
-        assert M % (W * T) == 0
-        g = M // (W * T)
+        # it may used in shard weight quantization, therefore M is not batch size
+        # assert M % (W * T) == 0
+        EVEN = M % (W * T) == 0
+        g = triton.cdiv(M, W*T)
         if calibrate:
             x_maxs = torch.empty((g, N), device=device, dtype=torch.bfloat16)
         else:
@@ -149,6 +168,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
             T,
             N,
             W,
+            EVEN,
             reverse,
             round_scale,
             calibrate,
