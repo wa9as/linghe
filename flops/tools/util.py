@@ -431,20 +431,27 @@ def output_check(org_out, opt_out, mode='', rtol=None, atol=None):
     assert org_out.shape == opt_out.shape, f"ref:{org_out.shape} != out:{opt_out.shape}"
     dtype = org_out.dtype
     assert opt_out.dtype == dtype, f"ref:{dtype} != out:{opt_out.dtype}"
+    if org_out.numel() == 0:
+        return 
+
     if dtype != torch.float32:
         org_out = org_out.float()
         opt_out = opt_out.float()
     if dtype == torch.float8_e4m3fn:
         rtol = 0.1
     abs_error = (opt_out - org_out).abs().mean().item()
-    rel_error = abs_error / org_out.abs().mean().item()
+    rel_error = abs_error / max(org_out.abs().mean().item(), 1e-38)
     if rel_error >= 0.005:
         rel_err_str = f"\033[91m {rel_error:.3f}\033[00m"
     else:
         rel_err_str = f"{rel_error:.3f}"
+    org_max = org_out.abs().max()
+    org_mean = org_out.abs().mean()
+    opt_max = opt_out.abs().max()
+    opt_mean = opt_out.abs().mean()
     print(f'\n{mode:<16}  rel:{rel_err_str}  abs:{abs_error:.6f}  ' \
-          f'org:{org_out.abs().max():.3f}/{org_out.abs().mean():.3f} ' \
-          f'opt:{opt_out.abs().max():.3f}/{opt_out.abs().mean():.3f} ')
+          f'org:{org_max:.3f}/{org_mean:.3f} ' \
+          f'opt:{opt_max:.3f}/{opt_mean:.3f} ')
     if rtol is not None and atol is not None:
         torch.testing.assert_close(opt_out, org_out, rtol=rtol, atol=atol)
 

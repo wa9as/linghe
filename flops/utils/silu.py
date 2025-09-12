@@ -611,7 +611,6 @@ def triton_batch_weighted_silu_and_quant_forward(x,
                                                  splits=None,
                                                  out=None, 
                                                  scale=None,
-                                                 maxs=None, 
                                                  round_scale=False,
                                                  reverse=False,
                                                  calibrate=False,
@@ -633,26 +632,36 @@ def triton_batch_weighted_silu_and_quant_forward(x,
             # intra layout and inner layput are not consist,
             # tensors will be viewed after splitting
             scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
+    
     if smooth:
         transpose_output = None
         transpose_scale = None
+        tmp_maxs = None
+        maxs = None
+        if M == 0:
+            maxs = torch.zeros((n_experts, n), device=device,
+                                    dtype=torch.float32)
+
+        elif calibrate:
+            tmp_maxs = torch.empty((n_experts, sm, n), device=device,
+                                dtype=torch.float32)
+            maxs = torch.empty((n_experts, n), device=device,
+                            dtype=torch.float32)
+            
     else:
         assert splits is not None, 'batch mode need splits to launch kernels'
+        maxs = None
         blocks = sum([(x+127)//128 for x in splits])
         transpose_output = torch.empty((M * n), device=device, dtype=torch.float8_e4m3fn)
         transpose_scale = torch.empty((blocks * n), device=device, dtype=torch.float32)
 
 
+    if M == 0:
+        return out, scale, maxs, transpose_output, transpose_scale
+
+
     accums = torch.cumsum(counts, 0)
     if smooth:
-        if calibrate:
-            if maxs is None:
-                maxs = torch.empty((n_experts, n), device=device,
-                                dtype=torch.float32)
-            tmp_maxs = torch.empty((n_experts, sm, n), device=device,
-                                dtype=torch.float32)
-        else:
-            tmp_maxs = None
         W = 8192 // N
         grid = (n_experts, sm)
         batch_weighted_silu_and_smooth_quant_forward_kernel[grid](
@@ -974,6 +983,10 @@ def triton_batch_weighted_silu_and_quant_backward(g, x, weight,
         transpose_dx = torch.empty((N * s,), device=device, dtype=torch.float8_e4m3fn)   
         transpose_dx_scales = torch.zeros((n_expert, max_block, N), device=device, dtype=torch.bfloat16)    
 
+        if s == 0:
+            transpose_dx_scale = torch.zeros((n_expert, N), device=device, dtype=torch.float32)   
+            return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
+
         grid = (n_expert, max_block)
         batch_weighted_silu_and_smooth_quant_backward_kernel[grid](
             g,
@@ -1015,6 +1028,9 @@ def triton_batch_weighted_silu_and_quant_backward(g, x, weight,
         s = sum([(x+127)//128 for x in splits])
         transpose_dx = torch.empty((N * M), device=device, dtype=torch.float8_e4m3fn)  
         transpose_dx_scale = torch.empty((s * N), device=device, dtype=torch.float32) 
+        if s == 0:
+            dw = torch.empty_like(weight)
+            return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
 
         # grid = (n_expert, triton.cdiv(max(splits), 128))
         grid = (n_expert, triton.cdiv(max(splits), 128), N//256)
