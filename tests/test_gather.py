@@ -248,7 +248,7 @@ def test_triton_permute_with_mask_map(M=4096, N=4096, n_experts=256, topk=8,
                                                                round_row_id_map,
                                                                padded_out_tokens,
                                                                contiguous=False, 
-                                                               token_per_expert=token_count_per_expert)
+                                                               tokens_per_expert=token_count_per_expert)
     output_check(x_out_ref, x_out, 'noncontiguous.x_out')
     output_check(scale_out_ref, scale_out, 'noncontiguous.scale_out')
     output_check(prob_out_ref, probs_out, 'noncontiguous.prob')
