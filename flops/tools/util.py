@@ -442,9 +442,9 @@ def output_check(org_out, opt_out, mode='', rtol=None, atol=None):
     abs_error = (opt_out - org_out).abs().mean().item()
     rel_error = abs_error / max(org_out.abs().mean().item(), 1e-38)
     if rel_error >= 0.005:
-        rel_err_str = f"\033[91m {rel_error:.3f}\033[00m"
+        rel_err_str = f"\033[91m {rel_error:.6f}\033[00m"
     else:
-        rel_err_str = f"{rel_error:.3f}"
+        rel_err_str = f"{rel_error:.6f}"
     org_max = org_out.abs().max()
     org_mean = org_out.abs().mean()
     opt_max = opt_out.abs().max()

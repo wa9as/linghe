@@ -18,7 +18,7 @@ def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
             tl.float32)
         max_logit = tl.maximum(max_logit, tl.max(logit))
         sum_exp += tl.sum(tl.exp(logit))
-    
+
     retry = sum_exp > 3.389e38
     max_logit = tl.where(retry, max_logit, 0.0)
     retry_sum_exp = 0.0
@@ -34,7 +34,6 @@ def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
     loss = tl.log(sum_exp) - (target_logit - max_logit)
     tl.store(loss_ptr + pid, loss)
     tl.store(max_logit_ptr + pid, max_logit)
-
 
 
 # loss is tokenwise instead of reduced
@@ -61,7 +60,8 @@ def triton_softmax_cross_entropy_forward(logits, labels):
 
 
 @triton.jit
-def softmax_cross_entropy_backward_kernel(logit_ptr, label_ptr, sum_exp_ptr, max_logit_ptr,
+def softmax_cross_entropy_backward_kernel(logit_ptr, label_ptr, sum_exp_ptr,
+                                          max_logit_ptr,
                                           input_grad_ptr, output_grad_ptr,
                                           N, B: tl.constexpr):
     pid = tl.program_id(axis=0).to(tl.int64)
@@ -84,7 +84,8 @@ def softmax_cross_entropy_backward_kernel(logit_ptr, label_ptr, sum_exp_ptr, max
     tl.store(output_grad_ptr + pid * N + label, target_grad)
 
 
-def triton_softmax_cross_entropy_backward(logits, labels, sum_exp, max_logit, input_grad,
+def triton_softmax_cross_entropy_backward(logits, labels, sum_exp, max_logit,
+                                          input_grad,
                                           output_grad=None):
     M, N = logits.shape
     device = logits.device

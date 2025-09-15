@@ -9,13 +9,13 @@ from flops.quant.channel.channel import row_quant_kernel
 
 def hadamard_matrix(n, device='cuda:0', dtype=torch.bfloat16, norm=False):
     assert 2 ** int(math.log2(n)) == n
-    m2 = torch.tensor([[1, 1], [1, -1]], device=device, dtype=torch.float32)
+    m2 = torch.tensor([[1, 1], [1, -1]], device='cpu', dtype=torch.float32)
     m = m2
     for i in range(int(math.log2(n)) - 1):
         m = torch.kron(m, m2)
     if norm:
         m = m / n ** 0.5
-    return m.to(dtype)
+    return m.to(dtype=dtype,device=device)
 
 
 @triton.jit

@@ -188,7 +188,7 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr,
     for i in range(T):
         indices = pid * W * T + i * W + tl.arange(0, W)
         x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32)
-        rms = tl.rsqrt(tl.sum(x * x, axis=1) / N + eps)
+        rms = 1/tl.sqrt(tl.sum(x * x, axis=1) / N + eps)
         tl.store(rms_ptr + indices, rms, mask=indices < M)
         x = (x * rms[:, None]) * weight
         x = tl.reshape(x, [W, nb, 128])
@@ -201,13 +201,13 @@ def rms_norm_and_block_quant_forward_kernel(x_ptr,
         tl.store(out_ptr + offs, x, mask=indices[:, None] < M)
         offs += N * W
 
-    tl.debug_barrier()
 
     offs = pid * W * T * N + tl.arange(0, 128)[:, None] * N + tl.arange(0, H)[
                                                             None, :]
     toffs = pid * 128 + tl.arange(0, H)[:, None] * M + tl.arange(0, 128)[
                                                             None, :]
     indices = pid * W * T + tl.arange(0, 128)
+    tl.debug_barrier()
     rms = tl.load(rms_ptr + indices, mask=indices < M)[:, None]
     for i in range(N//H):
         x = tl.load(x_ptr + offs, mask=indices[:, None] < M).to(tl.float32) 
