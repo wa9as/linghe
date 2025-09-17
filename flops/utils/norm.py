@@ -29,13 +29,13 @@ def rms_norm_forward_kernel(x_ptr, weight_ptr, out_ptr, eps, M, T,
 def triton_rms_norm_forward(x, weight, eps=1e-6, out=None):
     # row-wise read, row-wise write
     M, N = x.shape
-    assert N <= 8192
+    W = 8192 // N
+    T = 4
+    assert N <= 8192 and M % (W*T) == 0
     device = x.device
     if out is None:
         out = torch.empty((M, N), device=device, dtype=x.dtype)
 
-    W = 8192 // N
-    T = 4
     grid = (M//(T*W),)
     rms_norm_forward_kernel[grid](
         x,

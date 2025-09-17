@@ -19,7 +19,7 @@ def torch_rms_forward(x, weight):
     rmsnorm = torch.nn.RMSNorm(
         normalized_shape=N,
         eps=1e-6,
-        dtype=torch.bfloat16,
+        dtype=torch.float32,
         device=x.device
     )
     with torch.no_grad():
@@ -35,7 +35,7 @@ def torch_rms_backward(x, weight, dy):
     rmsnorm = torch.nn.RMSNorm(
         normalized_shape=N,
         eps=1e-6,
-        dtype=torch.bfloat16,
+        dtype=torch.float32,
         device=x.device
     )
     with torch.no_grad():
@@ -56,7 +56,7 @@ def torch_rms_and_quant_forward(x, weight, smooth_scale=None, round_scale=False)
     rmsnorm = torch.nn.RMSNorm(
         normalized_shape=N,
         eps=1e-6,
-        dtype=torch.bfloat16,
+        dtype=torch.float32,
         device=x.device
     )
     with torch.no_grad():
@@ -85,7 +85,7 @@ def torch_rms_and_quant_backward(x, weight, dy, smooth_scale=None, round_scale=F
     rmsnorm = torch.nn.RMSNorm(
         normalized_shape=N,
         eps=1e-6,
-        dtype=torch.bfloat16,
+        dtype=torch.float32,
         device=x.device
     )
     with torch.no_grad():
