@@ -1,6 +1,6 @@
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.scatter import (triton_scatter_add,
                                  triton_unpermute_with_mask_map
                                  )

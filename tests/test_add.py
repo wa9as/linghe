@@ -1,7 +1,7 @@
 import torch
 
 from flops.utils.add import triton_inplace_add
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.tools.util import output_check
 
 

@@ -1,6 +1,6 @@
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.rearange import triton_split_and_cat
 from flops.tools.util import output_check
 

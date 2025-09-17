@@ -1,6 +1,6 @@
 import torch 
 import torch.nn.functional as F
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 
 
 

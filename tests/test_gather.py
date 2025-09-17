@@ -13,7 +13,7 @@ from flops.tools.util import (output_check,
                               torch_batch_smooth_quant,
                               torch_make_indices, 
                               torch_smooth_quant)
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 
 
 def torch_index_select(y, indices):

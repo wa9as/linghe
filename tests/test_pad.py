@@ -2,7 +2,7 @@
 
 import random
 import torch
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.pad import triton_slice_and_pad
 from flops.utils.pad import triton_batch_slice_and_pad
 

@@ -2,7 +2,7 @@ import torch
 import transformer_engine as te
 
 from flops.facade.rmsnorm import RMSNormFunction
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 
 
 def bench_rmsnorm(M=4096, N=4096):

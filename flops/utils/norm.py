@@ -9,7 +9,7 @@ import triton.language as tl
 def rms_norm_forward_kernel(x_ptr, weight_ptr, out_ptr, eps, M, T,
                             N: tl.constexpr, W: tl.constexpr):
     pid = tl.program_id(axis=0)
-    weight = tl.load(weight_ptr + tl.arange(0, N))[None, :]
+    weight = tl.load(weight_ptr + tl.arange(0, N)).to(tl.float32)[None, :]
 
     offs = pid * W * T * N + tl.arange(0, W)[:, None] * N + tl.arange(0, N)[
                                                             None, :]
@@ -425,3 +425,148 @@ def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
             scale = scale.t().contiguous()
 
     return out, scale, maxs, rms, transpose_output, transpose_scale
+
+
+
+# TOOD(nanxiao): opt performance
+@triton.jit
+def group_norm_gate_forward_kernel(x_ptr, gate_ptr, weight_ptr, out_ptr, eps, bs, length,
+                            DIM: tl.constexpr, 
+                            D: tl.constexpr, 
+                            GROUP_SIZE: tl.constexpr):
+    pid = tl.program_id(axis=0)
+    bid = pid // length 
+    sid = pid % length
+
+    weight = tl.load(weight_ptr + tl.arange(0, DIM))
+    weight = tl.reshape(weight, [GROUP_SIZE, D])
+
+    x_offs = pid * DIM + tl.arange(0, GROUP_SIZE)[:, None] * D + tl.arange(0, D)[
+                                                            None, :]
+    x = tl.load(x_ptr + x_offs).to(tl.float32)
+    offs = sid * bs * DIM + bid * DIM + tl.arange(0, GROUP_SIZE)[:, None] * D + tl.arange(0, D)[
+                                                            None, :]
+    g = tl.load(gate_ptr + offs).to(tl.float32)
+    rms = tl.sqrt(tl.sum(x * x, axis=1) / D + eps)
+
+    x = (x / rms[:, None]) * weight * tl.sigmoid(g)
+
+    tl.store(out_ptr + offs, x)
+
+"""
+x: [bs, length, n_heads, head_dim], output of attn
+gate: [length, bs, dim]
+weight: [dim]
+output: [length, bs, dim]
+"""
+def triton_group_norm_gate_forward(x, gate, weight, eps=1e-6, group_size=4):
+    # row-wise read, row-wise write
+    length, bs, dim = gate.shape
+    assert dim <= 8192 and triton.next_power_of_2(dim) == dim and triton.next_power_of_2(group_size) == group_size
+    d = dim // group_size
+    device = x.device
+    out = torch.empty((length, bs, dim), device=device, dtype=x.dtype)
+
+    grid = (bs*length,)
+    group_norm_gate_forward_kernel[grid](
+        x,
+        gate,
+        weight.data,
+        out,
+        eps,
+        bs,
+        length,
+        dim, 
+        d,
+        group_size,
+        num_stages=3,
+        num_warps=4
+    )
+    return out
+
+
+@triton.jit
+def group_rms_gate_backward_kernel(
+        grad_output_ptr,
+        x_ptr,
+        gate_ptr,
+        w_ptr,
+        dx_ptr,
+        dg_ptr,
+        dw_ptr,
+        eps, 
+        bs, 
+        length,
+        DIM: tl.constexpr, 
+        D: tl.constexpr, 
+        GROUP_SIZE: tl.constexpr,
+        T: tl.constexpr
+):
+    pid = tl.program_id(0)
+    bid = pid * T // length 
+    sid = pid * T % length
+
+    w = tl.load(w_ptr + tl.arange(0, DIM))
+    w = tl.reshape(w, [GROUP_SIZE, D])
+
+    x_offs = pid * DIM * T + tl.arange(0, GROUP_SIZE)[:, None] * D + tl.arange(0, D)[
+                                                            None, :]
+    offs = sid * bs * DIM + bid * DIM + tl.arange(0, GROUP_SIZE)[:, None] * D + tl.arange(0, D)[
+                                                            None, :]
+    dw = tl.zeros((GROUP_SIZE, D), dtype=tl.float32)
+    for i in range(T):
+        x = tl.load(x_ptr + x_offs).to(tl.float32)
+        g = tl.load(grad_output_ptr + offs).to(tl.float32)
+        gate = tl.load(gate_ptr + offs).to(tl.float32)
+        gate = tl.sigmoid(gate)
+        rms = tl.sqrt(tl.sum(x * x, 1) / D + eps)
+        r = 1.0 / rms[:, None]
+        w_grad = x * g * r * gate
+        dw += w_grad
+
+        dx = r * g * w * gate - r * r * r * x * tl.sum(x * g * w * gate, 1, keep_dims=True) / D
+
+        tl.store(dx_ptr + x_offs, dx)
+
+        dg = x * r * w * g * gate * (1 - gate)
+        tl.store(dg_ptr + offs, dg)
+
+        x_offs += DIM
+        offs += DIM * bs
+
+    dw = tl.reshape(dw, [DIM])
+    tl.store(dw_ptr + pid * DIM + tl.arange(0, DIM), dw)
+
+
+def triton_group_norm_gate_backward(grad_output, x, gate, weight, eps=1e-6, group_size=4):
+    length, bs, dim = gate.shape
+    assert dim <= 8192 and triton.next_power_of_2(dim) == dim and triton.next_power_of_2(group_size) == group_size
+    d = dim // group_size
+    device = x.device
+    dx = torch.empty_like(x)
+    dg = torch.empty_like(gate)
+
+    T = 8
+    g = (bs*length)//T
+    tmp_dw = torch.empty(g, dim, dtype=torch.float32, device=device)
+    grid = (g,)
+    group_rms_gate_backward_kernel[grid](
+        grad_output,
+        x,
+        gate,
+        weight,
+        dx,
+        dg,
+        tmp_dw,
+        eps,
+        bs,
+        length,
+        dim, 
+        d,
+        group_size,
+        T,
+        num_stages=3,
+        num_warps=8
+    )
+    dw = tmp_dw.sum(dim=0).to(weight.dtype)
+    return dx, dg, dw

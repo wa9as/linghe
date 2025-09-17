@@ -1,8 +1,9 @@
 import random
+random.seed(7)
 
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.silu import (triton_batch_weighted_silu_and_quant_backward,
                               triton_batch_weighted_silu_and_quant_forward,
                               triton_silu_and_quant_backward,
@@ -34,6 +35,7 @@ def torch_weighted_silu_backward(dy, x, weight):
 
 def torch_silu_and_quant_forward(x, smooth_scale=None, round_scale=True):
     M, N = x.shape
+    x = x.float()
     x1, x2 = torch.split(x, N // 2, dim=1)
     y = torch.sigmoid(x1) * x1 * x2
     if smooth_scale is None:
@@ -56,7 +58,8 @@ def torch_silu_and_quant_forward(x, smooth_scale=None, round_scale=True):
 
 
 def torch_silu_and_quant_backward(grad, x, smooth_scale=None, transpose_smooth_scale=None, round_scale=True, reverse=True):
-    x = x.detach().clone().requires_grad_()
+    grad = grad.float()
+    x = x.float().detach().clone().requires_grad_()
     y = torch_silu(x)
     y.backward(gradient=grad)
     dx = x.grad
@@ -87,6 +90,12 @@ def torch_batch_weighted_silu_and_quant_forward(xs, weight,
         qts = torch.empty((0,),device=device,dtype=torch.float8_e4m3fn)
         qtscales = torch.zeros((0,),device=device,dtype=torch.float32)
         return qs, scales, maxs, qts, qtscales
+    
+    xs = xs.float()
+    weight = weight.float()
+    if smooth_scales is not None:
+        smooth_scales = smooth_scales.float()
+    
     qs = []
     scales = []
     maxs = []
@@ -136,6 +145,14 @@ def torch_batch_weighted_silu_and_quant_backward(grad_output, x, weight,
         qts = torch.empty((0,),device=device,dtype=torch.float8_e4m3fn)
         qtscales = torch.zeros((N*len(counts),),device=device,dtype=torch.float32)
         return dx_q, dx_scale, dw, qts, qtscales
+
+    grad_output = grad_output.float()
+    x = x.float()
+    weight = weight.float()
+    if smooth_scales is not None:
+        smooth_scales = smooth_scales.float()
+    if transpose_smooth_scale is not None:
+        transpose_smooth_scale = transpose_smooth_scale.float()
 
     dx, dw = torch_weighted_silu_backward(grad_output, x, weight)
     qs = []
@@ -258,26 +275,26 @@ def test_silu_and_block_quant(M=4096, N=4096, bench=False):
                                                     round_scale=True,
                                                     calibrate=False,
                                                     output_mode=2)
-    output_check(y_q_ref.float(), y_q.float(), 'block.y_q')
-    output_check(y_scale_ref, y_scale.t(), 'block.y_scale')
-    output_check(yt_q_ref.float(), yt_q.float(), 'block.yt_q')
-    output_check(yt_scale_ref, yt_scale.t(), 'block.yt_scale')
+    output_check(y_q_ref.float(), y_q.float(), 'block.2.y_q')
+    output_check(y_scale_ref, y_scale.t(), 'block.2.y_scale')
+    output_check(yt_q_ref, yt_q, 'block.2.yt_q')
+    output_check(yt_scale_ref, yt_scale.t(), 'block.2.yt_scale')
 
     y_q, y_scale, y_maxs, yt_q, yt_scale = triton_silu_and_quant_forward(x, 
                                                     smooth_scale=None,
                                                     round_scale=True,
                                                     calibrate=False,
                                                     output_mode=0)
-    output_check(y_q_ref.float(), y_q.float(), 'block.y_q')
-    output_check(y_scale_ref, y_scale.t(), 'block.y_scale')
+    output_check(y_q_ref.float(), y_q.float(), 'block.0.y_q')
+    output_check(y_scale_ref, y_scale.t(), 'block.0.y_scale')
 
     y_q, y_scale, y_maxs, yt_q, yt_scale = triton_silu_and_quant_forward(x, 
                                                     smooth_scale=None,
                                                     round_scale=True,
                                                     calibrate=False,
                                                     output_mode=1)
-    output_check(yt_q_ref.float(), yt_q.float(), 'block.yt_q')
-    output_check(yt_scale_ref, yt_scale.t(), 'block.yt_scale')
+    output_check(yt_q_ref.float(), yt_q.float(), 'block.1.yt_q')
+    output_check(yt_scale_ref, yt_scale.t(), 'block.1.yt_scale')
 
     dx_q_ref, dx_scale_ref, dxt_q_ref, dxt_scale_ref = torch_silu_and_quant_backward(grad_output, x,
                                                            smooth_scale=None,
@@ -382,7 +399,7 @@ def test_triton_batch_weighted_silu_and_block_quant(M=1024, N=4096, n_experts=32
         counts = torch.tensor(count_list, device='cuda:0', dtype=torch.int32)
         bs = sum(count_list)
 
-        x = torch.randn((bs, N), dtype=torch.bfloat16, device='cuda:0') ** 3 / 4
+        x = torch.randn((bs, N), dtype=torch.bfloat16, device='cuda:0') ** 3 / 10
         weight = torch.randn((bs, 1), dtype=torch.float32, device='cuda:0')
     else:
         d = torch.load('/ossfs/workspace/Megatron-LM/silu.bin')
@@ -450,18 +467,16 @@ def test_triton_batch_weighted_silu_and_block_quant(M=1024, N=4096, n_experts=32
                        ref_bytes=n_experts * M * N * 4, ref_time=ref_time)
 
 if __name__ == '__main__':
-    # test_silu_and_smooth_quant(M=16384, N=1024, bench=True)
-    # test_silu_and_smooth_quant(M=8192, N=2048, bench=False)
-    # test_silu_and_smooth_quant(M=4096, N=10240, bench=False)
-    # test_silu_and_smooth_quant(M=4096, N=5120, bench=False)
+    test_silu_and_smooth_quant(M=16384, N=1024, bench=False)
+    test_silu_and_smooth_quant(M=8192, N=2048, bench=False)
+    test_silu_and_smooth_quant(M=4096, N=10240, bench=False)
+    test_silu_and_smooth_quant(M=4096, N=5120, bench=False)
 
-    # test_silu_and_block_quant(M=16384, N=1024, bench=True)
+    test_silu_and_block_quant(M=16384, N=1024, bench=True)
 
-
-    # test_triton_batch_weighted_silu_and_smooth_quant(M=2048, N=2048, n_experts=32, bench=False)
-
-    # test_triton_batch_weighted_silu_and_smooth_quant(M=800, N=2048, n_experts=32, bench=False)
+    test_triton_batch_weighted_silu_and_smooth_quant(M=2048, N=2048, n_experts=32, bench=False)
+    test_triton_batch_weighted_silu_and_smooth_quant(M=800, N=2048, n_experts=32, bench=False)
     test_triton_batch_weighted_silu_and_smooth_quant(M=0, N=2048, n_experts=32, bench=False)
 
-    # test_triton_batch_weighted_silu_and_block_quant(M=4096, N=2048, n_experts=32, bench=False)
-    # test_triton_batch_weighted_silu_and_block_quant(M=800, N=2048, n_experts=32, bench=False)
+    test_triton_batch_weighted_silu_and_block_quant(M=4096, N=2048, n_experts=32, bench=True)
+    test_triton_batch_weighted_silu_and_block_quant(M=1008, N=2048, n_experts=32, bench=False)

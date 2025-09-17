@@ -1,6 +1,6 @@
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.dot import (triton_dot,
                              triton_mix_precise_dot)
 from flops.tools.util import output_check

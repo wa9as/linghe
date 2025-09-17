@@ -5,7 +5,7 @@ from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm
 from flops.gemm.fp8_gemm import (persistent_fp8_gemm,
                                  trival_fp8_gemm)
 from flops.utils.add import triton_block_add
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 
 
 

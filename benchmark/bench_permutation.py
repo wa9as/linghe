@@ -1,7 +1,7 @@
 import torch
 import transformer_engine.pytorch.triton.permutation as triton_permutation
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.gather import triton_permute_with_mask_map
 from flops.utils.scatter import (triton_scatter_add,
                                  triton_unpermute_with_mask_map,

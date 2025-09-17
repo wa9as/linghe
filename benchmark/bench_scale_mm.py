@@ -1,7 +1,7 @@
 import torch
 
 from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.tools.util import fp16_forward
 from flops.utils.add import triton_block_add
 

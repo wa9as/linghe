@@ -6,7 +6,7 @@ from flops.gemm.fp32_gemm import (triton_fp32_gemm,
                                   triton_fp32_gemm_for_update,
                                   triton_scaled_fp32_gemm,
                                   triton_scaled_fp32_gemm_for_update)
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.tools.util import output_check
 
 

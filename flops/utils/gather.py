@@ -282,7 +282,7 @@ def fill_padded_token_with_zero_kernel(data_ptr, scale_ptr, probs_ptr,
                                  SCALE: tl.constexpr, 
                                  PROB: tl.constexpr):
     pid = tl.program_id(axis=0)
-    x = tl.zeros((N,), dtype=data_ptr.dtype.element_ty)
+    x = tl.zeros((N,), dtype=tl.float32)
     si = tl.load(max_indices_ptr + pid)
     count = tl.load(token_per_expert_ptr + pid)
     c = tl.cdiv(count, 16) * 16 - count

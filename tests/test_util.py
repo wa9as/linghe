@@ -1,5 +1,5 @@
 import torch
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 
 M, N, K = 8192, 4096, 8192
 # M, N, K = 4096, 4096, 6144

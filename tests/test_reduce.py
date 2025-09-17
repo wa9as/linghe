@@ -1,6 +1,6 @@
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.reduce import (triton_abs_max,
                                 triton_batch_count_zero,
                                 triton_batch_sum_with_ord)

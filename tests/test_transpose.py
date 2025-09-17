@@ -2,7 +2,7 @@ import random
 
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.transpose import (round_up,
                                    triton_batch_transpose,
                                    triton_batch_transpose_and_pad,

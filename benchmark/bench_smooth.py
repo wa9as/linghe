@@ -9,7 +9,7 @@ from flops.quant.smooth.naive_smooth import (smooth_quant_backward,
 from flops.quant.smooth.reused_smooth import (reused_smooth_quant_f_and_b)
 from flops.quant.smooth.seperate_smooth import (triton_smooth_quant_input,
                                                 triton_smooth_quant_grad)
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.tools.util import (fp16_backward,
                               fp16_f_and_b,
                               fp16_forward,

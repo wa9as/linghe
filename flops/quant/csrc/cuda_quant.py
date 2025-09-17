@@ -8,7 +8,7 @@ from torch.utils.cpp_extension import load
 os.environ['TORCH_CUDA_ARCH_LIST'] = "9.0"
 
 
-# from flops.utils.benchmark import benchmark_func
+# from flops.tools.benchmark import benchmark_func
 
 def benchmark_func(fn, *args, n_repeat=1000, ref_flops=None, ref_time=None,
                    name='', **kwargs):

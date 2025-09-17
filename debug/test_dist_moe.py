@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 from torch.profiler import profile, ProfilerActivity
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 
 
 def moe_ref(hs, logits, ws, vs, n_act=4):

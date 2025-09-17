@@ -1,7 +1,7 @@
 import random
 import torch
 
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.loss import triton_softmax_cross_entropy_forward, \
     triton_softmax_cross_entropy_backward
 from flops.tools.util import output_check

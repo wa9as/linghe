@@ -7,7 +7,7 @@ from transformer_engine.pytorch.cross_entropy import parallel_cross_entropy
 from megatron.core.fusions.fused_cross_entropy import fused_vocab_parallel_cross_entropy
 
 from flops.tools.util import output_check
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.utils.loss import (triton_softmax_cross_entropy_backward,
                               triton_softmax_cross_entropy_forward)
 

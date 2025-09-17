@@ -5,7 +5,7 @@ from flops.quant.smooth.reused_smooth import (triton_batch_smooth_quant,
                                               triton_reused_transpose_rescale_smooth_quant,
                                               triton_reused_smooth_quant,
                                              triton_reused_transpose_smooth_quant)
-from flops.utils.benchmark import benchmark_func
+from flops.tools.benchmark import benchmark_func
 from flops.tools.util import (output_check,
                               torch_make_indices,
                               torch_smooth_quant,
