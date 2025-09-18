@@ -295,7 +295,7 @@ if __name__ == '__main__':
     test_rmsnorm_and_smooth_quant(M=4096, N=8192, bench=False)
     test_rmsnorm_and_block_quant(M=128, N=2048, bench=False)
     test_rmsnorm_and_block_quant(M=8192, N=4096, bench=False)
-    test_group_norm_gate_quant(bs=1, length=4096, dim=2048, group_size=4, bench=True)
-    test_group_norm_gate_quant(bs=2, length=4096, dim=4096, group_size=4, bench=True)
+    test_group_norm_gate_quant(bs=2, length=4096, dim=2048, group_size=4, bench=True)
+    test_group_norm_gate_quant(bs=1, length=4096, dim=4096, group_size=4, bench=True)
 
 
