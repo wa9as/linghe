@@ -77,8 +77,6 @@ if __name__ == '__main__':
     ref_flops = length * n_act * dim * ims * 3 * 2
     n_repeat = 10
 
-    logits = torch.randn((length, expert), dtype=torch.float32, device=device,
-                         requires_grad=True)
     hidden_states = torch.ones((length, dim), dtype=dtype, device=device,
                                requires_grad=True) * (rank + 1)
     output_states = torch.zeros((length, dim), dtype=dtype, device=device,
