@@ -3,6 +3,100 @@
 # from flops.quant.hadamard.naive_hadamard import *   # noqa: F403
 # from flops.tools.util import *   # noqa: F403
 
+
+
+# def torch_hadamard_tensor_quant(x, w, hm, dtype):
+#     fmax = torch.finfo(dtype).max
+#     x = x.clone()
+#     w = w.clone()
+#     M, K = x.shape
+#     N, K = w.shape
+#     B = hm.size(0)
+
+#     xp = torch.reshape(x, (M // B, B, K // B, B)).permute(0, 2, 1, 3)
+
+#     xp = xp @ hm
+#     xp = xp.permute(0, 2, 1, 3)
+#     xp = torch.reshape(xp, (M, K))
+
+#     # print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
+#     x_scale = torch.max(torch.abs(xp).float()) / fmax
+#     xq = (xp / x_scale).to(dtype)
+
+#     wp = torch.reshape(w.t().contiguous(), (K // B, B, N // B, B)).permute(0, 2,
+#                                                                            1, 3)
+#     wp = hm @ wp
+#     wp = wp.permute(0, 2, 1, 3)
+#     wp = torch.reshape(wp, (K, N)).t().contiguous()
+#     # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
+#     w_scale = torch.max(torch.abs(wp).float()) / fmax
+#     wq = (wp / w_scale).to(dtype)
+
+#     return xq, wq, x_scale, w_scale
+
+
+# def torch_hadamard_block_quant(x, w, hm, dtype):
+#     fmax = torch.finfo(dtype).max
+#     x = x.clone()
+#     w = w.clone()
+#     M, K = x.shape
+#     N, K = w.shape
+#     B = hm.size(0)
+
+#     xp = torch.reshape(x, (M // B, B, K // B, B)).permute(0, 2, 1, 3)
+
+#     xp = xp @ hm
+
+#     x_scale = torch.amax(torch.amax(torch.abs(xp).float(), dim=2), dim=2) / fmax
+#     # print(f'x.max:{x.abs().max().item()} x.mean:{x.abs().mean().item()} xp.max:{xp.abs().max().item()} xp.mean:{xp.abs().mean().item()}')
+#     xq = (xp / x_scale[:, :, None, None]).to(dtype)
+
+#     xq = xq.view(torch.int8).permute(0, 2, 1, 3)
+#     xq = torch.reshape(xq, (M, K)).view(torch.float8_e4m3fn)
+
+#     wp = torch.reshape(w.t().contiguous(), (K // B, B, N // B, B)).permute(0, 2,
+#                                                                            1, 3)
+#     wp = hm @ wp
+
+#     w_scale = torch.amax(torch.amax(torch.abs(wp).float(), dim=2), dim=2) / fmax
+#     # print(f'w.max:{w.abs().max().item()} w.mean:{w.abs().mean().item()} wp.max:{wp.abs().max().item()} wp.mean:{wp.abs().mean().item()}')
+#     wq = (wp / w_scale[:, :, None, None]).to(dtype)
+
+#     wq = wq.view(torch.int8).permute(0, 2, 1, 3)
+#     wq = torch.reshape(wq, (K, N)).t().contiguous().view(torch.float8_e4m3fn)
+
+#     return xq, wq, x_scale, w_scale
+
+
+
+
+# def torch_hadamard_quant(x, w, hm, dtype):
+#     fmax = torch.finfo(dtype).max
+#     x = x.clone()
+#     w = w.clone()
+#     M, K = x.shape
+#     N, K = w.shape
+#     B = hm.size(0)
+#     xp = torch.reshape(x, (M // B, B, K // B, B)).permute(0, 2, 1, 3)
+
+#     xp = xp @ hm
+#     xp = xp.permute(0, 2, 1, 3)
+#     xp = torch.reshape(xp, (M, K))
+#     # print(f'{x.abs().mean()=} {xp.abs().mean()=} {x.abs().max()=} {xp.abs().max()=}')
+#     x_scale = torch.amax(torch.abs(xp).float(), dim=1, keepdim=True) / fmax
+#     xq = (xp / x_scale).to(dtype)
+
+#     wp = torch.reshape(w.t().contiguous(), (K // B, B, N // B, B)).permute(0, 2,
+#                                                                            1, 3)
+#     wp = hm @ wp
+#     wp = wp.permute(0, 2, 1, 3)
+#     wp = torch.reshape(wp, (K, N)).t().contiguous()
+#     w_scale = torch.amax(torch.abs(wp).float(), dim=1, keepdim=True) / fmax
+#     wq = (wp / w_scale).to(dtype)
+
+#     return xq, wq, x_scale, w_scale.view(1, -1)
+
+
 # qtype = torch.float8_e4m3fn
 # device = 'cuda:0'
 # dtype = torch.bfloat16

@@ -137,98 +137,108 @@ def silu_and_block_quant_forward_kernel(x_ptr,
 
 
 # used in shared expert
-def triton_silu_and_quant_forward(x, smooth_scale=None, out=None, scale=None,
+def triton_silu_and_smooth_quant_forward(x, smooth_scale=None, out=None, scale=None,
                                   maxs=None, round_scale=False,
-                                  calibrate=False, output_mode=2):
+                                  calibrate=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n = N // 2
     device = x.device
-    smooth = smooth_scale is not None 
     if out is None:
         out = torch.empty((M, N // 2), device=device, dtype=torch.float8_e4m3fn)
     if scale is None:
-        if smooth:
-            scale = torch.empty((M,), device=device, dtype=torch.float32)
-        else:
-            scale = torch.empty((N // 2 // 128, M), device=device, dtype=torch.float32)
+        scale = torch.empty((M,), device=device, dtype=torch.float32)
 
-    if not smooth:
-        transpose_output = torch.empty((N // 2, M), device=device, dtype=torch.float8_e4m3fn) 
-        transpose_scale = torch.empty((triton.cdiv(M, 128), N // 2), device=device, dtype=torch.float32)
-    else:
-        transpose_output = None 
-        transpose_scale = None
-
-    if smooth:
-        if triton.next_power_of_2(N) == N and N <= 8192:
-            # sm = torch.cuda.get_device_properties(device).multi_processor_count
-            W = 8192 // N
-            T = 8 if M//W >= 1024 else 4
-            assert M % (T*W) == 0
-            g = M//(T*W)
-            # T = triton.cdiv(M, sm * W)
-            if maxs is None and calibrate:
-                maxs = torch.empty((g, n), device=device, dtype=torch.float32)
-            grid = (g,)
-            silu_and_smooth_quant_forward_kernel[grid](
-                x,
-                smooth_scale,
-                out,
-                scale,
-                maxs,
-                M,
-                T,
-                n,
-                W,
-                round_scale,
-                calibrate,
-                num_stages=2,
-                num_warps=16
-            )
-        else:
-            B = 512
-            T = 16
-            assert n % B == 0 and M % T == 0
-            grid = (M // T,)
-            if maxs is None and calibrate:
-                maxs = torch.empty((M // T, n), device=device, dtype=torch.float32)
-            compatible_silu_and_smooth_quant_forward_kernel[grid](
-                x,
-                smooth_scale,
-                out,
-                scale,
-                maxs,
-                M,
-                T,
-                N // 2,
-                B,
-                round_scale,
-                calibrate,
-                num_stages=2,
-                num_warps=16
-            )
-
-        if calibrate:
-            maxs = maxs.amax(0)
-
-    else:
-        grid = (triton.cdiv(M, 128), n // 128)
-        silu_and_block_quant_forward_kernel[grid](
+    if triton.next_power_of_2(N) == N and N <= 8192:
+        # sm = torch.cuda.get_device_properties(device).multi_processor_count
+        W = 8192 // N
+        T = 8 if M//W >= 1024 else 4
+        assert M % (T*W) == 0
+        g = M//(T*W)
+        # T = triton.cdiv(M, sm * W)
+        if maxs is None and calibrate:
+            maxs = torch.empty((g, n), device=device, dtype=torch.float32)
+        grid = (g,)
+        silu_and_smooth_quant_forward_kernel[grid](
             x,
+            smooth_scale,
             out,
             scale,
-            transpose_output, 
-            transpose_scale,
+            maxs,
             M,
+            T,
             n,
+            W,
             round_scale,
-            output_mode,
+            calibrate,
+            num_stages=2,
+            num_warps=16
+        )
+    else:
+        B = 512
+        T = 16
+        assert n % B == 0 and M % T == 0
+        grid = (M // T,)
+        if maxs is None and calibrate:
+            maxs = torch.empty((M // T, n), device=device, dtype=torch.float32)
+        compatible_silu_and_smooth_quant_forward_kernel[grid](
+            x,
+            smooth_scale,
+            out,
+            scale,
+            maxs,
+            M,
+            T,
+            N // 2,
+            B,
+            round_scale,
+            calibrate,
             num_stages=2,
             num_warps=16
         )
 
-    return out, scale, maxs, transpose_output, transpose_scale
+    if calibrate:
+        maxs = maxs.amax(0)
+
+
+    return out, scale, maxs
+
+
+
+
+# used in shared expert
+def triton_silu_and_block_quant_forward(x, out=None, scale=None,
+                                  round_scale=False,
+                                  output_mode=2):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    n = N // 2
+    device = x.device
+    if out is None:
+        out = torch.empty((M, N // 2), device=device, dtype=torch.float8_e4m3fn)
+    if scale is None:
+        scale = torch.empty((N // 2 // 128, M), device=device, dtype=torch.float32)
+
+    transpose_output = torch.empty((N // 2, M), device=device, dtype=torch.float8_e4m3fn) 
+    transpose_scale = torch.empty((triton.cdiv(M, 128), N // 2), device=device, dtype=torch.float32)
+
+    grid = (triton.cdiv(M, 128), n // 128)
+    silu_and_block_quant_forward_kernel[grid](
+        x,
+        out,
+        scale,
+        transpose_output, 
+        transpose_scale,
+        M,
+        n,
+        round_scale,
+        output_mode,
+        num_stages=2,
+        num_warps=16
+    )
+
+    return out, scale, transpose_output, transpose_scale
+
 
 
 
@@ -423,7 +433,7 @@ def silu_and_block_quant_backward_kernel(g_ptr, x_ptr,
 
 
 # used in shared expert
-def triton_silu_and_quant_backward(g, x, 
+def triton_silu_and_smooth_quant_backward(g, x, 
                                    smooth_scale=None, 
                                    transpose_smooth_scale=None, 
                                    reverse=True,
@@ -434,62 +444,77 @@ def triton_silu_and_quant_backward(g, x,
     device = x.device
     smooth = smooth_scale is not None
     dx = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
-    if smooth:
-        dx_scale = torch.empty((M,), device=device, dtype=torch.float32)
-        scale_shape = (N, )
-    else:
-        dx_scale = torch.empty((N//128, M), device=device, dtype=torch.float32)
-        scale_shape = (triton.cdiv(M, 128), N)
+    dx_scale = torch.empty((M,), device=device, dtype=torch.float32)
+    scale_shape = (N, )
     transpose_dx = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
     transpose_dx_scale = torch.empty(scale_shape, device=device, dtype=torch.float32)
 
-    if smooth:
-        T = 32
-        B = 32
-        assert M % T == 0 and n % B == 0
-        transpose_dx_scales = torch.empty((M // T, N), device=device, dtype=torch.float32)
-        grid = (M // T,)
-        silu_and_smooth_quant_backward_kernel[grid](
-            g,
-            x,
-            smooth_scale,
-            transpose_smooth_scale,
-            dx,
-            dx_scale,
-            transpose_dx,
-            transpose_dx_scales,
+    T = 32
+    B = 32
+    assert M % T == 0 and n % B == 0
+    transpose_dx_scales = torch.empty((M // T, N), device=device, dtype=torch.float32)
+    grid = (M // T,)
+    silu_and_smooth_quant_backward_kernel[grid](
+        g,
+        x,
+        smooth_scale,
+        transpose_smooth_scale,
+        dx,
+        dx_scale,
+        transpose_dx,
+        transpose_dx_scales,
+        M,
+        n,
+        T,
+        B,
+        reverse,
+        round_scale,
+        num_stages=3,
+        num_warps=2
+    )
+    transpose_dx_scale = transpose_dx_scales.amax(0)
+    grid = (N // B, M // T)
+    _requant_kernel[grid](transpose_dx, transpose_dx_scale, transpose_dx_scales,
+            N, 
             M,
-            n,
-            T,
             B,
-            reverse,
-            round_scale,
-            num_stages=3,
-            num_warps=2
-        )
-        transpose_dx_scale = transpose_dx_scales.amax(0)
-        grid = (N // B, M // T)
-        _requant_kernel[grid](transpose_dx, transpose_dx_scale, transpose_dx_scales,
-                N, 
-                M,
-                B,
-                T)
-    else:
-        assert M % 128 == 0
-        grid = (M//128, N // 256)
-        silu_and_block_quant_backward_kernel[grid](
-            g,
-            x,
-            dx,
-            dx_scale,
-            transpose_dx,
-            transpose_dx_scale,
-            M,
-            n,
-            round_scale,
-            num_stages=2,
-            num_warps=8
-        )
+            T)
+
+    return dx, dx_scale, transpose_dx, transpose_dx_scale
+
+
+
+
+# used in shared expert
+def triton_silu_and_block_quant_backward(g, x, 
+                                   round_scale=False):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    n = N // 2
+    device = x.device
+    dx = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+
+    dx_scale = torch.empty((N//128, M), device=device, dtype=torch.float32)
+    scale_shape = (triton.cdiv(M, 128), N)
+    transpose_dx = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
+    transpose_dx_scale = torch.empty(scale_shape, device=device, dtype=torch.float32)
+
+
+    assert M % 128 == 0
+    grid = (M//128, N // 256)
+    silu_and_block_quant_backward_kernel[grid](
+        g,
+        x,
+        dx,
+        dx_scale,
+        transpose_dx,
+        transpose_dx_scale,
+        M,
+        n,
+        round_scale,
+        num_stages=2,
+        num_warps=8
+    )
     return dx, dx_scale, transpose_dx, transpose_dx_scale
 
 
@@ -615,7 +640,7 @@ def batch_weighted_silu_and_block_quant_forward_kernel(x_ptr, weight_ptr,
 
 
 # used in routed experts
-def triton_batch_weighted_silu_and_quant_forward(x, 
+def triton_batch_weighted_silu_and_smooth_quant_forward(x, 
                                                  weight, 
                                                  counts, 
                                                  smooth_scale=None,
@@ -624,98 +649,116 @@ def triton_batch_weighted_silu_and_quant_forward(x,
                                                  scale=None,
                                                  round_scale=False,
                                                  reverse=False,
-                                                 calibrate=False,
-                                                 output_mode=2):
+                                                 calibrate=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n = N // 2
     n_experts = counts.shape[0]
-    smooth = smooth_scale is not None
     assert N <= 8192
     device = x.device
     if out is None:
         out = torch.empty((M, n), device=device, dtype=torch.float8_e4m3fn)
 
-    if smooth:
-        sm = torch.cuda.get_device_properties(device).multi_processor_count
-        transpose_output = None
-        transpose_scale = None
-        tmp_maxs = None
-        if scale is None:
-            scale = torch.empty((M,), device=device, dtype=torch.float32)
-        if M == 0:
-            maxs = torch.zeros((n_experts, n), device=device,
-                                    dtype=torch.float32)
-
-        elif calibrate:
-            tmp_maxs = torch.empty((n_experts, sm, n), device=device,
-                                dtype=torch.float32)
-            maxs = torch.empty((n_experts, n), device=device,
-                            dtype=torch.float32)
-        else:
-            maxs = None
-            
-    else:
-        assert splits is not None, 'batch mode need splits to launch kernels'
-        maxs = None
-        blocks = sum([(x+127)//128 for x in splits])
-        transpose_output = torch.empty((M * n), device=device, dtype=torch.float8_e4m3fn)
-        transpose_scale = torch.empty((blocks * n), device=device, dtype=torch.float32)
-        # intra layout and inner layput are not consist,
-        # tensors will be viewed after splitting
-        scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
-
-
+    sm = torch.cuda.get_device_properties(device).multi_processor_count
+    tmp_maxs = None
+    if scale is None:
+        scale = torch.empty((M,), device=device, dtype=torch.float32)
     if M == 0:
-        return out, scale, maxs, transpose_output, transpose_scale
+        maxs = torch.zeros((n_experts, n), device=device,
+                                dtype=torch.float32)
+
+    elif calibrate:
+        tmp_maxs = torch.empty((n_experts, sm, n), device=device,
+                            dtype=torch.float32)
+        maxs = torch.empty((n_experts, n), device=device,
+                        dtype=torch.float32)
+    else:
+        maxs = None
+            
+    if M == 0:
+        return out, scale, maxs
 
 
     accums = torch.cumsum(counts, 0)
-    if smooth:
-        W = 8192 // N
-        grid = (n_experts, sm)
-        batch_weighted_silu_and_smooth_quant_forward_kernel[grid](
-            x,
-            weight,
-            smooth_scale,
-            out,
-            scale,
-            tmp_maxs,
-            counts,
-            accums,
-            M,
-            n,
-            W,
-            round_scale,
-            reverse,
-            calibrate,
-            num_stages=3,
-            num_warps=16
-        )
-        if calibrate:
-            maxs = tmp_maxs.amax(1)
-    else:
-        # grid = (n_experts, triton.cdiv(max(splits), 128))
-        grid = (n_experts, triton.cdiv(max(splits), 128), n//128)
-        batch_weighted_silu_and_block_quant_forward_kernel[grid](
-            x,
-            weight,
-            out,
-            scale,
-            transpose_output,
-            transpose_scale,
-            counts,
-            accums,
-            n,
-            len(splits),
-            round_scale,
-            output_mode,
-            num_stages=2,
-            num_warps=8
-        )
+    W = 8192 // N
+    grid = (n_experts, sm)
+    batch_weighted_silu_and_smooth_quant_forward_kernel[grid](
+        x,
+        weight,
+        smooth_scale,
+        out,
+        scale,
+        tmp_maxs,
+        counts,
+        accums,
+        M,
+        n,
+        W,
+        round_scale,
+        reverse,
+        calibrate,
+        num_stages=3,
+        num_warps=16
+    )
+    if calibrate:
+        maxs = tmp_maxs.amax(1)
+    
+    return out, scale, maxs
 
 
-    return out, scale, maxs, transpose_output, transpose_scale
+
+
+# used in routed experts
+def triton_batch_weighted_silu_and_block_quant_forward(x, 
+                                                 weight, 
+                                                 counts, 
+                                                 splits=None,
+                                                 out=None, 
+                                                 scale=None,
+                                                 round_scale=False,
+                                                 output_mode=2):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    n = N // 2
+    n_experts = counts.shape[0]
+    assert N <= 8192
+    device = x.device
+    if out is None:
+        out = torch.empty((M, n), device=device, dtype=torch.float8_e4m3fn)
+
+    assert splits is not None, 'batch mode need splits to launch kernels'
+    blocks = sum([(x+127)//128 for x in splits])
+    transpose_output = torch.empty((M * n), device=device, dtype=torch.float8_e4m3fn)
+    transpose_scale = torch.empty((blocks * n), device=device, dtype=torch.float32)
+    # intra layout and inner layput are not consist,
+    # tensors will be viewed after splitting
+    scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
+
+    if M == 0:
+        return out, scale, transpose_output, transpose_scale
+
+    accums = torch.cumsum(counts, 0)
+    
+    grid = (n_experts, triton.cdiv(max(splits), 128), n//128)
+    batch_weighted_silu_and_block_quant_forward_kernel[grid](
+        x,
+        weight,
+        out,
+        scale,
+        transpose_output,
+        transpose_scale,
+        counts,
+        accums,
+        n,
+        len(splits),
+        round_scale,
+        output_mode,
+        num_stages=2,
+        num_warps=8
+    )
+
+
+    return out, scale, transpose_output, transpose_scale
 
 
 @triton.jit
@@ -873,6 +916,83 @@ def _batch_requant_kernel(x_ptr, scale_ptr, scales_ptr,
 
 
 
+
+# used in routed experts
+def triton_batch_weighted_silu_and_smooth_quant_backward(g, x, weight, 
+                                                  counts,
+                                                  smooth_scale=None,
+                                                  transpose_smooth_scale=None,
+                                                  splits=None,
+                                                  reverse=True,
+                                                  round_scale=False):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    n = N // 2
+    n_expert = counts.shape[0]
+    assert N <= 8192 and 8192 % N == 0
+    assert splits is not None, 'batch mode need splits to launch kernels'
+
+    device = x.device
+
+    accums = torch.cumsum(counts, 0)
+
+    dx = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn) 
+
+    dx_scale = torch.empty((M,), device=device, dtype=torch.float32)
+
+    dw = torch.empty_like(weight)
+    T = 32 
+    B = 32
+    assert n % B == 0 and T == 32
+    max_block = triton.cdiv(max(splits), T)
+    s = sum([(x+31)//32 for x in splits])*32
+    transpose_dx = torch.empty((N * s,), device=device, dtype=torch.float8_e4m3fn)   
+
+    if s == 0:
+        transpose_dx_scale = torch.zeros((n_expert, N), device=device, dtype=torch.float32)   
+        return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
+    else:
+        transpose_dx_scales = torch.zeros((n_expert, max_block, N), device=device, dtype=torch.bfloat16)    
+
+    grid = (n_expert, max_block)
+    batch_weighted_silu_and_smooth_quant_backward_kernel[grid](
+        g,
+        x,
+        weight,
+        smooth_scale,
+        transpose_smooth_scale,
+        counts,
+        accums,
+        dx,
+        dx_scale,
+        transpose_dx,
+        transpose_dx_scales,
+        dw,
+        n,
+        T,
+        B,
+        n_expert,
+        reverse,
+        round_scale,
+        num_stages=5,
+        num_warps=4
+    )
+    transpose_dx_scale = transpose_dx_scales.amax(1).float()
+    grid = (n_expert, N // B, max_block)
+    _batch_requant_kernel[grid](transpose_dx, transpose_dx_scale, transpose_dx_scales,
+            counts,
+            N, 
+            B,
+            T,
+            n_expert,
+            num_stages=3,
+            num_warps=2)
+    
+    return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
+
+
+
+
 @triton.jit
 def batch_weighted_silu_and_block_quant_backward_kernel(g_ptr, x_ptr, weight_ptr,
                                                   count_ptr,
@@ -956,19 +1076,17 @@ def batch_weighted_silu_and_block_quant_backward_kernel(g_ptr, x_ptr, weight_ptr
 
 
 
+
+
 # used in routed experts
-def triton_batch_weighted_silu_and_quant_backward(g, x, weight, 
+def triton_batch_weighted_silu_and_block_quant_backward(g, x, weight, 
                                                   counts,
-                                                  smooth_scale=None,
-                                                  transpose_smooth_scale=None,
                                                   splits=None,
-                                                  reverse=True,
                                                   round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n = N // 2
     n_expert = counts.shape[0]
-    smooth = smooth_scale is not None
     assert N <= 8192 and 8192 % N == 0
     assert splits is not None, 'batch mode need splits to launch kernels'
 
@@ -978,87 +1096,36 @@ def triton_batch_weighted_silu_and_quant_backward(g, x, weight,
 
     dx = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn) 
 
-    if smooth:
-        dx_scale = torch.empty((M,), device=device, dtype=torch.float32)
+    # intra layout and inner layput are not consist,
+    # tensors will be viewed after splitting
+    dx_scale = torch.empty((N // 128 * M), device=device, dtype=torch.float32)
 
+    s = sum([(x+127)//128 for x in splits])
+    transpose_dx = torch.empty((N * M), device=device, dtype=torch.float8_e4m3fn)  
+    transpose_dx_scale = torch.empty((s * N), device=device, dtype=torch.float32) 
+    if s == 0:
         dw = torch.empty_like(weight)
-        T = 32 
-        B = 32
-        assert n % B == 0 and T == 32
-        max_block = triton.cdiv(max(splits), T)
-        s = sum([(x+31)//32 for x in splits])*32
-        transpose_dx = torch.empty((N * s,), device=device, dtype=torch.float8_e4m3fn)   
+        return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
 
-        if s == 0:
-            transpose_dx_scale = torch.zeros((n_expert, N), device=device, dtype=torch.float32)   
-            return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
-        else:
-            transpose_dx_scales = torch.zeros((n_expert, max_block, N), device=device, dtype=torch.bfloat16)    
-
-        grid = (n_expert, max_block)
-        batch_weighted_silu_and_smooth_quant_backward_kernel[grid](
-            g,
-            x,
-            weight,
-            smooth_scale,
-            transpose_smooth_scale,
-            counts,
-            accums,
-            dx,
-            dx_scale,
-            transpose_dx,
-            transpose_dx_scales,
-            dw,
-            n,
-            T,
-            B,
-            n_expert,
-            reverse,
-            round_scale,
-            num_stages=5,
-            num_warps=4
-        )
-        transpose_dx_scale = transpose_dx_scales.amax(1).float()
-        grid = (n_expert, N // B, max_block)
-        _batch_requant_kernel[grid](transpose_dx, transpose_dx_scale, transpose_dx_scales,
-                counts,
-                N, 
-                B,
-                T,
-                n_expert,
-                num_stages=3,
-                num_warps=2)
-    else:
-        # intra layout and inner layput are not consist,
-        # tensors will be viewed after splitting
-        dx_scale = torch.empty((N // 128 * M), device=device, dtype=torch.float32)
-
-        s = sum([(x+127)//128 for x in splits])
-        transpose_dx = torch.empty((N * M), device=device, dtype=torch.float8_e4m3fn)  
-        transpose_dx_scale = torch.empty((s * N), device=device, dtype=torch.float32) 
-        if s == 0:
-            dw = torch.empty_like(weight)
-            return dx, dx_scale, dw, transpose_dx, transpose_dx_scale
-
-        # grid = (n_expert, triton.cdiv(max(splits), 128))
-        grid = (n_expert, triton.cdiv(max(splits), 128), N//256)
-        dws = torch.empty((M, N//256), device=device, dtype=torch.float32)
-        batch_weighted_silu_and_block_quant_backward_kernel[grid](
-            g,
-            x,
-            weight,
-            counts,
-            accums,
-            dx,
-            dx_scale,
-            transpose_dx,
-            transpose_dx_scale,
-            dws,
-            n,
-            n_expert,
-            round_scale,
-            num_stages=3,
-            num_warps=16
-        )
-        dw = dws.sum(1, keepdim=True).to(weight.dtype)
+    # grid = (n_expert, triton.cdiv(max(splits), 128))
+    grid = (n_expert, triton.cdiv(max(splits), 128), N//256)
+    dws = torch.empty((M, N//256), device=device, dtype=torch.float32)
+    batch_weighted_silu_and_block_quant_backward_kernel[grid](
+        g,
+        x,
+        weight,
+        counts,
+        accums,
+        dx,
+        dx_scale,
+        transpose_dx,
+        transpose_dx_scale,
+        dws,
+        n,
+        n_expert,
+        round_scale,
+        num_stages=3,
+        num_warps=16
+    )
+    dw = dws.sum(1, keepdim=True).to(weight.dtype)
     return dx, dx_scale, dw, transpose_dx, transpose_dx_scale

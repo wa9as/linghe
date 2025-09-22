@@ -299,133 +299,143 @@ def rms_norm_and_block_quant_forward_t_kernel(x_ptr,
     tl.store(transpose_output_ptr + toffs, x, mask=indices[None, :] < M)
 
 
+
+
 # rms is used for moe routing, it is stored as 1/rms
-def triton_rms_norm_and_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
+def triton_rms_norm_and_smooth_quant_forward(x, weight, smooth_scale=None, eps=1e-6,
                                       out=None, scale=None, rms=None, calibrate=False,
+                                      output_rms=False, round_scale=False):
+    # row-wise read, row-wise write
+    M, N = x.shape
+    assert N <= 8192 and 8192 % N == 0
+    device = x.device
+
+    if out is None:
+        out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
+
+    if scale is None:
+        scale = torch.empty((M,), device=device, dtype=torch.float32)
+    W = 8192 // N
+    T = 8 if M // W >= 4096 else 4
+    assert M % (T * W) == 0
+    g = M // (T*W)
+    if calibrate:
+        maxs = torch.empty((g, N), dtype=torch.float32, device=device)
+    else:
+        maxs = None
+    if output_rms and rms is None:
+        rms = torch.empty((M,), dtype=torch.float32, device=device)
+    grid = (g,)
+    rms_norm_and_smooth_quant_forward_kernel[grid](
+        x,
+        weight,
+        smooth_scale,
+        out,
+        scale,
+        maxs,
+        rms,
+        eps,
+        M,
+        T,
+        N,
+        W,
+        calibrate,
+        output_rms,
+        round_scale,
+        num_stages=3,
+        num_warps=2 if N == 2048 else 4
+    )
+    if calibrate:
+        maxs = maxs.amax(0)
+    
+    return out, scale, maxs, rms
+
+
+def triton_rms_norm_and_block_quant_forward(x, weight, eps=1e-6,
+                                      out=None, scale=None, rms=None,
                                       output_rms=False, round_scale=False,
                                       output_mode=2):
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192 and 8192 % N == 0
     device = x.device
-    smooth = smooth_scale is not None
 
-    if out is None and (smooth or output_mode in (0, 2)):
+    if out is None and  output_mode in (0, 2):
         out = torch.empty((M, N), device=device, dtype=torch.float8_e4m3fn)
 
-    if smooth:
-        if scale is None:
-            scale = torch.empty((M,), device=device, dtype=torch.float32)
-        transpose_output = None 
-        transpose_scale = None
+    if scale is None and output_mode in (0, 2):
+        scale = torch.empty((M, N//128), device=device, dtype=torch.float32)
+    if rms is None:
+        rms = torch.empty((M,), dtype=torch.float32, device=device)
+    # transpose_output should be initialized, or else can not make splitted tensors
+    transpose_output = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
+    transpose_scale = torch.empty(((M+127)//128, N), device=device, dtype=torch.float32)
+    if output_mode == 0: # only output non-transpose tensor
         W = 8192 // N
-        T = 8 if M // W >= 4096 else 4
-        assert M % (T * W) == 0
-        g = M // (T*W)
-        if calibrate:
-            maxs = torch.empty((g, N), dtype=torch.float32, device=device)
-        else:
-            maxs = None
-        if output_rms and rms is None:
-            rms = torch.empty((M,), dtype=torch.float32, device=device)
-        grid = (g,)
-        rms_norm_and_smooth_quant_forward_kernel[grid](
+        T = 16 // W  
+        grid = (triton.cdiv(M, 16),)
+        rms_norm_and_block_quant_forward_n_kernel[grid](
             x,
             weight,
-            smooth_scale,
             out,
             scale,
-            maxs,
             rms,
             eps,
             M,
             T,
             N,
+            N//128,
             W,
-            calibrate,
-            output_rms,
             round_scale,
             num_stages=3,
-            num_warps=2 if N == 2048 else 4
+            num_warps=4
         )
-        if calibrate:
-            maxs = maxs.amax(0)
-    else:
-        if scale is None and output_mode in (0, 2):
-            scale = torch.empty((M, N//128), device=device, dtype=torch.float32)
-        if rms is None:
-            rms = torch.empty((M,), dtype=torch.float32, device=device)
-        maxs = None 
-        # transpose_output should be initialized, or else can not make splitted tensors
-        transpose_output = torch.empty((N, M), device=device, dtype=torch.float8_e4m3fn)
-        transpose_scale = torch.empty(((M+127)//128, N), device=device, dtype=torch.float32)
-        if output_mode == 0: # only output non-transpose tensor
-            W = 8192 // N
-            T = 16 // W  
-            grid = (triton.cdiv(M, 16),)
-            rms_norm_and_block_quant_forward_n_kernel[grid](
-                x,
-                weight,
-                out,
-                scale,
-                rms,
-                eps,
-                M,
-                T,
-                N,
-                N//128,
-                W,
-                round_scale,
-                num_stages=3,
-                num_warps=4
-            )
-            scale = scale.t().contiguous()
+        scale = scale.t().contiguous()
 
-        elif output_mode == 1:  # only output transposed tensor
-            # W = N//512
-            # grid = (512,)
-            W = 32 
-            grid = (triton.cdiv(M, 128), N//W)
-            rms_norm_and_block_quant_forward_t_kernel[grid](x, 
-                                      weight,
-                                      transpose_output, 
-                                      transpose_scale,
-                                      rms, 
-                                      M, 
-                                      N,
-                                      W, 
-                                      round_scale,
-                                      num_stages=3,
-                                      num_warps=4)
-        
-        elif output_mode == 2:  # output non-transposed and transposed tensor together
-            W = 8192 // N
-            T = 128 // W  # BLOCK SIZE
-            H = 64
-            grid = (triton.cdiv(M, 128),)
-            rms_norm_and_block_quant_forward_kernel[grid](
-                x,
-                weight,
-                out,
-                scale,
-                transpose_output,
-                transpose_scale,
-                rms,
-                eps,
-                M,
-                T,
-                N,
-                N//128,
-                W,
-                H,
-                round_scale,
-                num_stages=3,
-                num_warps=16
-            )
-            scale = scale.t().contiguous()
+    elif output_mode == 1:  # only output transposed tensor
+        # W = N//512
+        # grid = (512,)
+        W = 32 
+        grid = (triton.cdiv(M, 128), N//W)
+        rms_norm_and_block_quant_forward_t_kernel[grid](x, 
+                                    weight,
+                                    transpose_output, 
+                                    transpose_scale,
+                                    rms, 
+                                    M, 
+                                    N,
+                                    W, 
+                                    round_scale,
+                                    num_stages=3,
+                                    num_warps=4)
+    
+    elif output_mode == 2:  # output non-transposed and transposed tensor together
+        W = 8192 // N
+        T = 128 // W  # BLOCK SIZE
+        H = 64
+        grid = (triton.cdiv(M, 128),)
+        rms_norm_and_block_quant_forward_kernel[grid](
+            x,
+            weight,
+            out,
+            scale,
+            transpose_output,
+            transpose_scale,
+            rms,
+            eps,
+            M,
+            T,
+            N,
+            N//128,
+            W,
+            H,
+            round_scale,
+            num_stages=3,
+            num_warps=16
+        )
+        scale = scale.t().contiguous()
 
-    return out, scale, maxs, rms, transpose_output, transpose_scale
-
+    return out, scale, rms, transpose_output, transpose_scale
 
 
 # TOOD(nanxiao): opt performance
@@ -452,6 +462,7 @@ def group_norm_gate_forward_kernel(x_ptr, gate_ptr, weight_ptr, out_ptr, eps, bs
     x = (x / rms[:, None]) * weight * tl.sigmoid(g)
 
     tl.store(out_ptr + offs, x)
+
 
 """
 x: [bs, length, n_heads, head_dim], output of attn
