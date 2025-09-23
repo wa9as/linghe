@@ -1,10 +1,15 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import torch
 
 from flops.tools.benchmark import benchmark_func
+from flops.tools.util import output_check
 from flops.utils.reduce import (triton_abs_max,
                                 triton_batch_count_zero,
                                 triton_batch_sum_with_ord)
-from flops.tools.util import output_check
 
 
 def torch_sum(xs):

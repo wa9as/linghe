@@ -1,20 +1,26 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import random
 
 import torch
 
 from flops.tools.benchmark import benchmark_func
+from flops.tools.util import output_check
 from flops.utils.transpose import (round_up,
                                    triton_batch_transpose,
                                    triton_batch_transpose_and_pad,
                                    triton_transpose,
                                    triton_transpose_and_pad)
-from flops.tools.util import output_check
 
 
 # from torch.profiler import profile, record_function, ProfilerActivity
 
 def torch_nd_transpose(x, dim0, dim1):
     return x.transpose(dim0, dim1).contiguous()
+
 
 def triton_sequence_transpose(xs):
     outputs = []
@@ -56,6 +62,7 @@ def test_transpose(M=4096, N=4096, bench=False):
         benchmark_func(triton_transpose, x_q, n_repeat=n_repeat,
                        ref_bytes=M * N * 2)
 
+
 def test_nd_transpose(B=4096, M=4, N=4096, bench=False):
     # M, N, K = 8192, 4096, 13312
     # M, N, K = 4096, 4096, 6144
@@ -71,23 +78,24 @@ def test_nd_transpose(B=4096, M=4, N=4096, bench=False):
     t = triton_transpose(x, dim0=0, dim1=1)
     output_check(t_ref, t, '3d_transpose')
 
-    x = torch.randn(B, M, N, dtype=dtype, device=device)[:,:M//2]
+    x = torch.randn(B, M, N, dtype=dtype, device=device)[:, :M // 2]
     t_ref = torch_nd_transpose(x, 0, 1)
     t = triton_transpose(x, dim0=0, dim1=1)
     output_check(t_ref, t, '3d_transpose_stride')
 
-
-    x = torch.randn(B, M, N//128, 128, dtype=dtype, device=device)[:,:M//2]
+    x = torch.randn(B, M, N // 128, 128, dtype=dtype, device=device)[:, :M // 2]
     t_ref = torch_nd_transpose(x, 0, 1)
     t = triton_transpose(x, dim0=0, dim1=1)
     output_check(t_ref, t, '4d_transpose')
 
     if bench:
         x = torch.randn(B, M, N, dtype=dtype, device=device)
-        ref_time = benchmark_func(torch_nd_transpose, x, 0, 1, n_repeat=n_repeat,
-                       ref_bytes=B * M * N * 4)
+        ref_time = benchmark_func(torch_nd_transpose, x, 0, 1,
+                                  n_repeat=n_repeat,
+                                  ref_bytes=B * M * N * 4)
         benchmark_func(triton_transpose, x, dim0=0, dim1=1, n_repeat=n_repeat,
                        ref_bytes=B * M * N * 4, ref_time=ref_time)
+
 
 def test_transpose_and_pad(M=4095, N=4096, bench=False):
     # M, N, K = 8192, 4096, 13312
