@@ -26,10 +26,9 @@ def rope_freqs(length, dim, rope_theta=10000.0):
     freqs = torch.outer(t, inv_freq)
     return freqs
 
-def torch_half_rope(q,k, freqs, rope_theta=10000.0):
+def torch_half_rope(q, k, freqs, rope_theta=10000.0):
     L, B, H, D = q.shape 
     d = D//2
-    h = k.shape[2]
     cos = freqs.cos().to(q.dtype)
     sin = freqs.sin().to(q.dtype)
     position_ids = torch.arange(L, device='cuda:0')[:,None].expand(-1,B)
@@ -49,7 +48,7 @@ def torch_qk_norm(q,k, qw, kw, eps=1e-6):
     k = k*kw
     return q.to(dtype),k.to(dtype)
 
-def torch_qk_norm_and_half_rope(qkv,qw,kw,freqs, rope_theta=10000.0,H=32,h=4, eps=1e-6,interleave=True):
+def torch_qk_norm_and_half_rope(qkv,qw,kw,freqs, rope_theta=10000.0, H=32,h=4, eps=1e-6,interleave=True):
     length, bs, dim = qkv.shape
     qkv = qkv.float()
     qw = qw.float()
@@ -87,7 +86,7 @@ def test_half_rope(B=2,L=4096,H=32,h=8,D=128,rope_theta=10000.0, bench=False):
     k_grad = torch.randn(L,B,h,D,dtype=dtype,device=device)
     q_ref = q.detach().clone().requires_grad_()
     k_ref = k.detach().clone().requires_grad_()
-    qo_ref, ko_ref = torch_half_rope(q_ref,freqs,k_ref,rope_theta=rope_theta)
+    qo_ref, ko_ref = torch_half_rope(q_ref,k_ref,freqs,rope_theta=rope_theta)
     qo_ref.backward(gradient=q_grad)
     ko_ref.backward(gradient=k_grad)
     dq_ref = q_ref.grad 

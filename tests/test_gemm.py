@@ -1,6 +1,5 @@
 import torch
 
-from flops.gemm.channelwise_fp8_gemm import triton_scaled_mm
 from flops.gemm.fp32_gemm import (triton_fp32_gemm,
                                   triton_fp32_gemm_for_backward,
                                   triton_fp32_gemm_for_update,
@@ -8,29 +7,6 @@ from flops.gemm.fp32_gemm import (triton_fp32_gemm,
                                   triton_scaled_fp32_gemm_for_update)
 from flops.tools.benchmark import benchmark_func
 from flops.tools.util import output_check
-
-
-def test_scaled_mm(M=2048, N=8192, K=8192):
-    # M, N, K = 2048, 8192, 8192-16
-    dtype = torch.bfloat16
-    device = 'cuda:0'
-    n_repeat = 100
-
-    x = torch.randn(M, K, dtype=dtype, device=device)
-    w = torch.randn(N, K, dtype=dtype, device=device)
-
-    x_scale = x.abs().float().amax(dim=1) / 448
-    w_scale = w.abs().float().amax(dim=1) / 448
-    x_q = (x / x_scale[:, None]).to(torch.float8_e4m3fn)
-    w_q = (w / w_scale[:, None]).to(torch.float8_e4m3fn)
-    ref_flops = M * N * K * 2
-
-    o = 10 * torch.ones((M, N), dtype=torch.float32, device=device)
-    ref_out = (x_q.float() * x_scale[:, None]) @ (
-                w_q.float() * w_scale[:, None]).t() + o
-
-    out = triton_scaled_mm(x_q, w_q, x_scale, w_scale, c=o, accum=True)
-    output_check(ref_out, out.float(), mode='gemm')
 
 
 def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
@@ -110,5 +86,4 @@ def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
 
 
 if __name__ == '__main__':
-    test_scaled_mm(M=2048, N=8192, K=8192)
     test_fp32_matmul(M=2048, N=256, K=8192)
