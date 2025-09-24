@@ -1,9 +1,14 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import torch
 
 from flops.tools.benchmark import benchmark_func
+from flops.tools.util import output_check
 from flops.utils.dot import (triton_dot,
                              triton_mix_precise_dot)
-from flops.tools.util import output_check
 
 
 def torch_fp16_dot(x, y):
@@ -27,8 +32,8 @@ def test_dot(M=4096, N=4096, bench=False):
     output_check(sums_ref, sums, 'sum')
 
     sums_ref = (x.float() * (
-                q.to(torch.float32) * quant_scale[:, None] * smooth_scale[None,
-                                                             :])).sum(dim=1)
+            q.to(torch.float32) * quant_scale[:, None] * smooth_scale[None,
+                                                         :])).sum(dim=1)
     sums = triton_mix_precise_dot(x, q, smooth_scale, quant_scale, reverse=True)
     output_check(sums_ref, sums.float(), 'sum')
 
