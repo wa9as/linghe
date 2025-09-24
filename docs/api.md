@@ -1,4 +1,4 @@
-README.md# API Reference
+# API Reference
 
 
 ```
@@ -40,8 +40,9 @@ backward(grad_q, grad_k, grad_v)
 
 
 **`
-class flops.facade.fp32_linear.FusedFp32GEMM
+Class flops.facade.fp32_linear.FusedFp32GEMM
 `**
+
 Optimized fp32 gemm in router gate function. Convert bf16 input and weight to float32 during the gemm operation.
 
 ```
@@ -66,7 +67,7 @@ Permute the tokens and probs based on the routing_map. Index indicates row index
 **Parameters:**  
 - inp(*torch.Tensor*) - [num_tokens, hidden_size]
 - scale(*torch.Tensor*) - [num_tokens, scale_size] 
-- prob(*torch.Tensor*) - [num_tokens]-router prob
+- prob(*torch.Tensor*) - [num_tokens] router prob.
 - row_id_map(*torch.Tensor*) - [n_experts, num_tokens] 
 - num_out_tokens(int) - output token count, including padding tokens.
 - contiguous(bool) - whether indices in row_id_map is contiguous, should be False if padded.
@@ -126,7 +127,7 @@ flops.util.silu.triton_batch_weighted_silu_and_block_quant_backward(g, x, weight
 - splits[List] - list of tokens per expert. If compute in batch mode should not be None.
 
 **`
-class  flops.facade.loss.SoftmaxCrossEntropyFunction
+Class  flops.facade.loss.SoftmaxCrossEntropyFunction
 `**
 
 ```
