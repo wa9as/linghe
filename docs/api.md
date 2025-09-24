@@ -1,4 +1,4 @@
-# API Reference
+README.md# API Reference
 
 
 ```
@@ -11,9 +11,9 @@ Computes the forward pass of RMSNorm and block quantization.
 - x(*torch.Tensor*) - Input tensor. [M, N]
 - weight(*torch.Tensor*) - RMSNorm weight. [N]
 - eps(float, default = 1e-6) -  epsilon value for L2 normalization.
-- round_scale(bool) - Set whether to force power of 2 scales.
+- round_scale(*bool*) - Set whether to force power of 2 scales.
 - rms(*torch.Tensor*) - Reciprocal of the root mean square of the input calculated over the last dimension.[N]
-- output_mode - (int,  {0, 1, 2}, default = 2) 0 only output non-transpose tensor, 1 only output transposed tensor, 2 return both.
+- output_mode - (*int*,  {0, 1, 2}, default = 2) 0 only output non-transpose tensor, 1 only output transposed tensor, 2 return both.
 
 **`
 Class flops.facade.rope.QkNormHalfRopeFunction

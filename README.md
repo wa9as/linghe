@@ -23,9 +23,9 @@
 
 Our repo, FLOPS, is designed for LLM training, especially for MoE training with fp8 quantizaiton. It provides 3 main categories of kernels:
 
-- ** Fused quantization kernels **: fuse quantization with previous layer, e.g., RMS norm and Silu.
-- ** Memory-friendly kernels **: use dtype cast in kernels instead of casting out kernels, e.g., softmax cross entropy and moe router gemm.
-- ** Other fused kernels **: fuse multiple IO-itensive operations, e.g., ROPE with qk-norm and transpose, permute and padding, group RMS norm with sigmoid gate.
+- **Fused quantization kernels**: fuse quantization with previous layer, e.g., RMS norm and Silu.
+- **Memory-friendly kernels**: use dtype cast in kernels instead of casting out kernels, e.g., softmax cross entropy and moe router gemm.
+- **Other fused kernels**: fuse multiple IO-itensive operations, e.g., ROPE with qk-norm and transpose, permute and padding, group RMS norm with sigmoid gate.
 
 
 ## Benchmark
@@ -53,6 +53,10 @@ We benchmark on H800 with batch size 8192, hidden size 2048, num experts 256, ac
 | Batch count zero | 4997.9 us | 746.8 us | 6.69 | 
 
 
-## examples
+## Examples
 
 Examples can be found in tests.
+
+## Api Reference
+
+Please refer to [API doc](docs/api.md)
