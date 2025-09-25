@@ -149,8 +149,7 @@ def silu_and_block_quant_backward_kernel(g_ptr, x_ptr,
 
 
 # used in shared expert
-def triton_silu_and_block_quant_backward(g, x, 
-                                   round_scale=False):
+def triton_silu_and_block_quant_backward(g, x, round_scale=False):
     # row-wise read, row-wise write
     M, N = x.shape
     n = N // 2

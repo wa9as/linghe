@@ -258,7 +258,7 @@ def rms_norm_and_block_quant_forward_t_kernel(x_ptr,
 
 def triton_rms_norm_and_block_quant_forward(x, weight, eps=1e-6,
                                       out=None, scale=None, rms=None,
-                                      output_rms=False, round_scale=False,
+                                      round_scale=False,
                                       output_mode=2):
     # row-wise read, row-wise write
     M, N = x.shape
