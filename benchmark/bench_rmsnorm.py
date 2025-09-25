@@ -1,7 +1,7 @@
 import torch
 import transformer_engine as te
 
-from flops.facade.rmsnorm import RMSNormFunction
+from flops.facade.norm import RMSNormFunction
 from flops.tools.benchmark import benchmark_func
 
 
@@ -28,7 +28,7 @@ def bench_rmsnorm(M=4096, N=4096):
 
     rmsnorm_torch = torch.compile(rmsnorm_torch)
 
-    te_norm = te.pytorch.RMSNorm(hidden_size=N, eps=1e-6)
+    te_norm = te.pytorch.RMSNorm(normalized_shape=N, eps=1e-6)
 
     def torch_forward_backward(x_torch_back, dy):
         y_torch_back = rmsnorm_torch(x_torch_back)

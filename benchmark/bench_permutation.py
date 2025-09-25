@@ -1,12 +1,15 @@
 import torch
+import random
 import transformer_engine.pytorch.triton.permutation as triton_permutation
 
+
 from flops.tools.benchmark import benchmark_func
-from flops.utils.gather import triton_permute_with_mask_map
+from flops.utils.gather import triton_permute_with_mask_map, triton_make_row_id_map
 from flops.utils.scatter import (triton_scatter_add,
                                  triton_unpermute_with_mask_map,
-                                 triton_make_row_id_map)
+                                 )
 from flops.tools.util import torch_make_indices
+import transformer_engine_torch as tex
 
 
 def torch_index_select(y, indices):
@@ -39,14 +42,18 @@ def bench_triton_permute_with_mask_map(M=4096, N=4096, n_experts=256, topk=8):
         logits, topk=topk, bias=0.0)
     out_tokens = sum(token_count_per_expert.tolist())
 
+    mega_row_id_map = triton_permutation.make_row_id_map(mask_map, M, n_experts)
+
     n_repeat = 100
     ref_time = benchmark_func(torch_fp16_index_select, x, scales, indices,
                               n_repeat=n_repeat)
     benchmark_func(triton_permute_with_mask_map, x, scales, probs, row_id_map,
                    out_tokens, n_repeat=n_repeat, ref_time=ref_time)
 
+    scales_m = torch.randn((M,1), dtype=dtype, device=device)
+
     benchmark_func(triton_permutation.permute_with_mask_map, x,
-                   row_id_map.T.contiguous(), probs, scales.view(-1, 1), M,
+                   mega_row_id_map, probs, scales_m, M,
                    n_experts, out_tokens, N, 1, n_repeat=n_repeat,
                    ref_time=ref_time)
 
@@ -66,22 +73,24 @@ def bench_triton_unpermute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2):
     x = torch.randn(out_tokens, N, dtype=dtype, device=device)
 
     outputs = torch.zeros((M, N), dtype=dtype, device=device)
-    counts = mask_map.sum(1)
+    
+    mega_row_id_map = triton_permutation.make_row_id_map(mask_map, M, n_experts)
 
     n_repeat = 100
     ref_time = benchmark_func(triton_scatter_add, x, outputs, indices,
                               n_repeat=n_repeat)
     benchmark_func(triton_unpermute_with_mask_map, x, row_id_map,
                    probs, n_repeat=n_repeat, ref_time=ref_time)
-    benchmark_func(triton_permutation.make_row_id_map, mask_map.T.contiguous(),
-                   M, n_experts, n_repeat=n_repeat, ref_time=ref_time)
+    benchmark_func(triton_permutation.unpermute_with_mask_map, x, mega_row_id_map,
+                probs, None , M, n_experts, N)
+
+    ref_time = benchmark_func(triton_permutation.make_row_id_map, mask_map,
+                   M, n_experts, n_repeat=n_repeat)
     benchmark_func(triton_make_row_id_map, mask_map, n_repeat=n_repeat,
                    ref_time=ref_time)
-
-    benchmark_func(triton_permutation.unpermute_with_mask_map, x, row_id_map,
-                   probs, None, M, n_experts, N)
-
+    
 
 if __name__ == '__main__':
-    # bench_triton_permute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2)
-    bench_triton_unpermute_with_mask_map(M=4098, N=4096, n_experts=32, topk=2)
+    bench_triton_permute_with_mask_map(M=8192, N=2048, n_experts=32, topk=2)
+    bench_triton_unpermute_with_mask_map(M=2048*32, N=2048, n_experts=32, topk=2) 
+
