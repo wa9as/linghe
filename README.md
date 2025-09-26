@@ -2,6 +2,11 @@
 
 <h1 align="center">FLood OPS(FLOPS) </h1>
 
+
+<!-- ![](docs/flops.png){ align="center",width="60%" } -->
+<div style="text-align: center;">
+<img src="docs/flops.png" alt="项目Logo" width="200">
+</div>
   
 <p align="center">
    A collection of high-performance kernels for LLM training.
