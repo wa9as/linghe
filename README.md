@@ -1,11 +1,10 @@
 
 
-<h1 align="center">FLood OPS(FLOPS) </h1>
-
+<h1 align="center"> FLOPS </h1>
 
 <!-- ![](docs/flops.png){ align="center",width="60%" } -->
 <div style="text-align: center;">
-<img src="docs/flops.png" alt="项目Logo" width="200">
+<img src="docs/flops_or.png" alt="Logo" width="200">
 </div>
   
 <p align="center">
@@ -15,17 +14,18 @@
 
 
 ## Roadmap ##
+---
 
 - Support more shapes and various GPU archs.
 - Release our fp8 training kernels beyond blockwise quantization.
 
 ## *News or Update* 🔥
-
+---
 - [2025/07] We implement multiple kernels for fp8 training with `Megatron-LM` blockwise quantization. 
 
 
 ## Introduction
-
+---
 Our repo, FLOPS, is designed for LLM training, especially for MoE training with fp8 quantizaiton. It provides 3 main categories of kernels:
 
 - **Fused quantization kernels**: fuse quantization with previous layer, e.g., RMS norm and Silu.
@@ -34,7 +34,7 @@ Our repo, FLOPS, is designed for LLM training, especially for MoE training with 
 
 
 ## Benchmark
-
+---
 We benchmark on H800 with batch size 8192, hidden size 2048, num experts 256, activation experts 8.
 
 | kernel | baseline(us) | flops(us) | speedup |
@@ -59,9 +59,11 @@ We benchmark on H800 with batch size 8192, hidden size 2048, num experts 256, ac
 
 
 ## Examples
+---
 
 Examples can be found in tests.
 
 ## Api Reference
+---
 
 Please refer to [API doc](docs/api.md)
