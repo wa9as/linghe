@@ -1,14 +1,13 @@
 
 
-<h1 align="center"> FLOPS </h1>
+<h1 align="center"> Linghe </h1>
 
-<!-- ![](docs/linghe.png){ align="center",width="60%" } -->
 <div style="text-align: center;">
-<img src="docs/linghe_or.png" alt="Logo" width="200">
+<img src="docs/linghe.png" alt="Logo" width="200">
 </div>
   
 <p align="center">
-   A collection of high-performance kernels for LLM training.
+   A library of high-performance kernels for LLM training.
 </p>
 
 
