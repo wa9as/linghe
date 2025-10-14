@@ -10,7 +10,7 @@ import triton
 import triton.language as tl
 from triton import Config
 
-from flops.tools.util import round_up
+from linghe.tools.util import round_up
 
 
 # os.environ["TRITON_PRINT_AUTOTUNING"] = "1"

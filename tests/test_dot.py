@@ -5,9 +5,9 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.dot import (triton_dot,
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.dot import (triton_dot,
                              triton_mix_precise_dot)
 
 

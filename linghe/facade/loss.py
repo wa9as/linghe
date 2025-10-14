@@ -5,7 +5,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.utils.loss import triton_softmax_cross_entropy_forward, \
+from linghe.utils.loss import triton_softmax_cross_entropy_forward, \
     triton_softmax_cross_entropy_backward
 
 

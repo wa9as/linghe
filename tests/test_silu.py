@@ -9,13 +9,13 @@ random.seed(7)
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.utils.silu import (
+from linghe.tools.benchmark import benchmark_func
+from linghe.utils.silu import (
     triton_batch_weighted_silu_and_block_quant_backward,
     triton_batch_weighted_silu_and_block_quant_forward,
     triton_silu_and_block_quant_backward,
     triton_silu_and_block_quant_forward)
-from flops.tools.util import output_check, torch_group_quant
+from linghe.tools.util import output_check, torch_group_quant
 
 
 def torch_silu(x):

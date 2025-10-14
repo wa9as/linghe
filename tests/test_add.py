@@ -5,9 +5,9 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.add import triton_inplace_add
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.add import triton_inplace_add
 
 
 def torch_add(x, outputs, accum=True):

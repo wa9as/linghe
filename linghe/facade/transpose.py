@@ -5,7 +5,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.utils.transpose import triton_transpose
+from linghe.utils.transpose import triton_transpose
 
 
 class TransposeDim01Function(torch.autograd.Function):

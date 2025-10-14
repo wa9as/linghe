@@ -13,12 +13,12 @@ with pathlib.Path("requirements.txt").open() as f:
                         pkg_resources.parse_requirements(f)]
 
 setup(
-    name="tflops",
+    name="tlinghe",
     version="0.0.2",
     license="MIT",
     license_files=("LICENSE",),
     description="flood ops",
-    URL="https://code.alipay.com/pia/flops",
+    URL="https://code.alipay.com/pia/linghe",
     packages=find_packages(),
     install_requires=[],
     python_requires=">=3.8",

@@ -7,9 +7,9 @@ import random
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.loss import triton_softmax_cross_entropy_forward, \
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.loss import triton_softmax_cross_entropy_forward, \
     triton_softmax_cross_entropy_backward
 
 

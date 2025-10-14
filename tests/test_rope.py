@@ -5,9 +5,9 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.rope import triton_half_rope_forward, \
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.rope import triton_half_rope_forward, \
     triton_half_rope_backward, triton_qk_norm_and_half_rope_forward, \
     triton_qk_norm_and_half_rope_backward
 

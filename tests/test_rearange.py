@@ -5,9 +5,9 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.rearange import triton_split_and_cat
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.rearange import triton_split_and_cat
 
 
 def torch_split_and_cat(x, scales, counts, indices):

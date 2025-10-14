@@ -7,7 +7,6 @@ import torch
 import triton
 import triton.language as tl
 
-
 @triton.jit
 def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
                                          sum_exp_ptr, max_logit_ptr, N,
@@ -41,7 +40,9 @@ def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
     tl.store(max_logit_ptr + pid, max_logit)
 
 
-# loss is tokenwise instead of reduced
+"""
+TODO: support distributed loss with pytorch ongoing nvshmem feature
+"""
 def triton_softmax_cross_entropy_forward(logits, labels):
     M, N = logits.shape
     device = logits.device

@@ -5,10 +5,10 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import (output_check,
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import (output_check,
                               torch_make_indices)
-from flops.utils.gather import (triton_make_row_id_map,
+from linghe.utils.gather import (triton_make_row_id_map,
                                 triton_make_row_id_map_and_indices,
                                 triton_index_select,
                                 triton_permute_with_mask_map)

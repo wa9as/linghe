@@ -6,10 +6,10 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 import torch
 import torch.nn.functional as F
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import (output_check,
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import (output_check,
                               torch_group_quant)
-from flops.utils.norm import (triton_rms_norm_and_block_quant_forward,
+from linghe.utils.norm import (triton_rms_norm_and_block_quant_forward,
                               triton_rms_norm_backward,
                               triton_rms_norm_forward,
                               triton_group_norm_gate_forward,

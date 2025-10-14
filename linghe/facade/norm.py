@@ -5,7 +5,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.utils.norm import triton_rms_norm_forward, triton_rms_norm_backward, \
+from linghe.utils.norm import triton_rms_norm_forward, triton_rms_norm_backward, \
     triton_group_norm_gate_forward, triton_group_norm_gate_backward
 
 

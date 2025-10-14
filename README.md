@@ -2,9 +2,9 @@
 
 <h1 align="center"> FLOPS </h1>
 
-<!-- ![](docs/flops.png){ align="center",width="60%" } -->
+<!-- ![](docs/linghe.png){ align="center",width="60%" } -->
 <div style="text-align: center;">
-<img src="docs/flops_or.png" alt="Logo" width="200">
+<img src="docs/linghe_or.png" alt="Logo" width="200">
 </div>
   
 <p align="center">
@@ -37,7 +37,7 @@ Our repo, FLOPS, is designed for LLM training, especially for MoE training with 
 ---
 We benchmark on H800 with batch size 8192, hidden size 2048, num experts 256, activation experts 8.
 
-| kernel | baseline(us) | flops(us) | speedup |
+| kernel | baseline(us) | linghe(us) | speedup |
 |--------|--------------|-----------|---------|
 | RMSNorm+Quantization(forward) | 159.3 us | 72.4 us | 2.2 |
 | Split+qk-norm+rope+transpose(forward) | 472 us | 59.1 us | 7.99 |

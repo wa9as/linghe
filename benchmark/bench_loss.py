@@ -11,9 +11,9 @@ from megatron.core.fusions.fused_cross_entropy import \
     fused_vocab_parallel_cross_entropy
 from transformer_engine.pytorch.cross_entropy import parallel_cross_entropy
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.loss import (triton_softmax_cross_entropy_backward,
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.loss import (triton_softmax_cross_entropy_backward,
                               triton_softmax_cross_entropy_forward)
 
 

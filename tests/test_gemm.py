@@ -5,13 +5,13 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.gemm.fp32_gemm import (triton_fp32_gemm,
+from linghe.gemm.fp32_gemm import (triton_fp32_gemm,
                                   triton_fp32_gemm_for_backward,
                                   triton_fp32_gemm_for_update,
                                   triton_scaled_fp32_gemm,
                                   triton_scaled_fp32_gemm_for_update)
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
 
 
 def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
@@ -60,34 +60,34 @@ def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
         print('\nbenchmark\n')
         ref_time = benchmark_func(torch_fp32_matmul, x, w, n_repeat=n_repeat,
                                   ref_bytes=M * K * 6 + N * K * 6 + M * N * 4,
-                                  ref_flops=2 * M * N * K)
+                                  ref_linghe=2 * M * N * K)
         benchmark_func(triton_fp32_gemm, x, w, n_repeat=n_repeat,
                        ref_bytes=M * K * 6 + N * K * 6 + M * N * 4,
-                       ref_flops=2 * M * N * K, ref_time=ref_time)
+                       ref_linghe=2 * M * N * K, ref_time=ref_time)
         benchmark_func(triton_scaled_fp32_gemm, x, w, scale, n_repeat=n_repeat,
                        ref_bytes=M * K * 6 + N * K * 6 + M * N * 4,
-                       ref_flops=2 * M * N * K, ref_time=ref_time)
+                       ref_linghe=2 * M * N * K, ref_time=ref_time)
 
         ref_time = benchmark_func(torch_fp32_matmul_backward, dy, w.float(),
                                   n_repeat=n_repeat,
                                   ref_bytes=M * K * 10 + N * K * 4 + M * N * 4,
-                                  ref_flops=2 * M * N * K)
+                                  ref_linghe=2 * M * N * K)
         benchmark_func(triton_fp32_gemm_for_backward, dy, w, dx_clone,
                        accum=True, n_repeat=n_repeat,
                        ref_bytes=M * K * 2 + N * K * 2 + M * N * 4,
-                       ref_flops=2 * M * N * K, ref_time=ref_time)
+                       ref_linghe=2 * M * N * K, ref_time=ref_time)
 
         ref_time = benchmark_func(torch_fp32_matmul_update, dy, x.float(),
                                   n_repeat=n_repeat,
                                   ref_bytes=M * K * 4 + N * K * 12 + M * N * 4,
-                                  ref_flops=2 * M * N * K)
+                                  ref_linghe=2 * M * N * K)
         benchmark_func(triton_fp32_gemm_for_update, dy, x, n_repeat=n_repeat,
                        ref_bytes=M * K * 2 + N * K * 8 + M * N * 4,
-                       ref_flops=2 * M * N * K, ref_time=ref_time)
+                       ref_linghe=2 * M * N * K, ref_time=ref_time)
         benchmark_func(triton_scaled_fp32_gemm_for_update, dy, x, scale,
                        n_repeat=n_repeat,
                        ref_bytes=M * K * 2 + N * K * 8 + M * N * 4,
-                       ref_flops=2 * M * N * K, ref_time=ref_time)
+                       ref_linghe=2 * M * N * K, ref_time=ref_time)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.utils.add import triton_inplace_add
+from linghe.utils.add import triton_inplace_add
 
 
 class InplaceAddFunction(torch.autograd.Function):

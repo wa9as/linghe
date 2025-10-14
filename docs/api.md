@@ -2,7 +2,7 @@
 
 
 ```
-flops.utils.norm.triton_rms_norm_and_block_quant_forward(x, weight, eps:Optional[float]=1e-6, out:Optional[torch.Tensor]=None, scale:Optional[torch.Tensor]=None, rms:Optional[torch.Tensor]=None, round_scale: Optional[bool]=False, output_mode:Optional[int]=2)
+linghe.utils.norm.triton_rms_norm_and_block_quant_forward(x, weight, eps:Optional[float]=1e-6, out:Optional[torch.Tensor]=None, scale:Optional[torch.Tensor]=None, rms:Optional[torch.Tensor]=None, round_scale: Optional[bool]=False, output_mode:Optional[int]=2)
 ```
 
 Computes the forward pass of RMSNorm and block quantization.
@@ -18,7 +18,7 @@ Computes the forward pass of RMSNorm and block quantization.
 ---
 
 **`
-Class flops.facade.rope.QkNormHalfRopeFunction
+Class linghe.facade.rope.QkNormHalfRopeFunction
 `**
 
 ```
@@ -44,7 +44,7 @@ backward(grad_q, grad_k, grad_v)
 ---
 
 **`
-Class flops.facade.fp32_linear.FusedFp32GEMM
+Class linghe.facade.fp32_linear.FusedFp32GEMM
 `**
 
 Optimized fp32 gemm in router gate function. Convert bf16 input and weight to float32 during the gemm operation.
@@ -65,7 +65,7 @@ backward(grad_output)
 ---
 
 ```
-flops.utils.gather.triton_permute_with_mask_map(inp, scale, probs, row_id_map, num_out_tokens, contiguous, tokens_per_expert)
+linghe.utils.gather.triton_permute_with_mask_map(inp, scale, probs, row_id_map, num_out_tokens, contiguous, tokens_per_expert)
 ```
 Permute the tokens and probs based on the routing map. Index indicates row index of the output tensor(-1 means not selected). Perform well even when inp.size(0) < expert padding number, do not need extra explict padding.
 
@@ -81,7 +81,7 @@ Permute the tokens and probs based on the routing map. Index indicates row index
 ---
 
 ```
-flops.utils.scatter.triton_unpermute_with_mask_map(grad, row_id_map, probs)
+linghe.utils.scatter.triton_unpermute_with_mask_map(grad, row_id_map, probs)
 ```
 Unpermute a tensor with permuted tokens with router mapping.
 
@@ -93,7 +93,7 @@ Unpermute a tensor with permuted tokens with router mapping.
 ---
 
 ```
-flops.util.silu.triton_silu_and_block_quant_forward(x, out:Optional[torch.Tensor]=None, scale:Optional[torch.Tensor]=None, round_scale:Optional[bool]=False, output_mode:Optional[int]=2)
+linghe.util.silu.triton_silu_and_block_quant_forward(x, out:Optional[torch.Tensor]=None, scale:Optional[torch.Tensor]=None, round_scale:Optional[bool]=False, output_mode:Optional[int]=2)
 ```
 
 Applies the forward pass of Sigmoid Linear Unit(SiLU) element-wise and block quant.(used in shared expert layers.)
@@ -106,7 +106,7 @@ Applies the forward pass of Sigmoid Linear Unit(SiLU) element-wise and block qua
 ---
 
 ```
-flops.util.silu.triton_silu_and_block_quant_backward(g, x, round_scale:Optional[bool]=False)
+linghe.util.silu.triton_silu_and_block_quant_backward(g, x, round_scale:Optional[bool]=False)
 ```
 **Parameters:**  
 - g(*torch.Tensor*) - Gradient tensor to be quanted.
@@ -116,7 +116,7 @@ flops.util.silu.triton_silu_and_block_quant_backward(g, x, round_scale:Optional[
 ---
 
 ```
-flops.util.silu.triton_batch_weighted_silu_and_block_quant_forward(x, weight, counts, splits:Optional[List]=None ,out:Optional[torch.Tensor]=None, scale:Optional[torch.Tensor]=None, round_scale:Optional[bool]=False, output_mode:Optional[int]=2)
+linghe.util.silu.triton_batch_weighted_silu_and_block_quant_forward(x, weight, counts, splits:Optional[List]=None ,out:Optional[torch.Tensor]=None, scale:Optional[torch.Tensor]=None, round_scale:Optional[bool]=False, output_mode:Optional[int]=2)
 ```
 
 Fused op for batched weighted SiLU and block quant.
@@ -131,7 +131,7 @@ Fused op for batched weighted SiLU and block quant.
 ---
 
 ```
-flops.util.silu.triton_batch_weighted_silu_and_block_quant_backward(g, x, weight, counts, splits:Optional[List]=None, round_scale:Optional[bool]=False)
+linghe.util.silu.triton_batch_weighted_silu_and_block_quant_backward(g, x, weight, counts, splits:Optional[List]=None, round_scale:Optional[bool]=False)
 ```
 **Parameters:**  
 - g(*torch.Tensor*) - Input gradient tensor.
@@ -143,7 +143,7 @@ flops.util.silu.triton_batch_weighted_silu_and_block_quant_backward(g, x, weight
 ---
 
 **`
-Class  flops.facade.loss.SoftmaxCrossEntropyFunction
+Class  linghe.facade.loss.SoftmaxCrossEntropyFunction
 `**
 
 Prallel version of SoftmaxCrossEntropy.
@@ -169,7 +169,7 @@ backward(grad_output)
 ---
 
 ```
-flops.util.reduce.triton_batch_sum_with_ord(xs, ord:Optional[int]=2) 
+linghe.util.reduce.triton_batch_sum_with_ord(xs, ord:Optional[int]=2) 
 ```
 Square sum the gards of all the experts. All the experts grads are applied simultaneously.
 
@@ -180,7 +180,7 @@ Square sum the gards of all the experts. All the experts grads are applied simul
 --- 
 
 ```
-flops.util.reduce.triton_batch_count_zero(xs) 
+linghe.util.reduce.triton_batch_count_zero(xs) 
 ```
 Prallel cout zeros in all the given grads lists.
 
@@ -190,7 +190,7 @@ Prallel cout zeros in all the given grads lists.
 --- 
 
 **`
-Class flops.facade.norm.GroupNormGateFunction
+Class linghe.facade.norm.GroupNormGateFunction
 `**
 Fused operation of group RMSNorm and sigmoid gate function.
 

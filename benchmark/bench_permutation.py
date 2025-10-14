@@ -3,12 +3,12 @@ import random
 import transformer_engine.pytorch.triton.permutation as triton_permutation
 
 
-from flops.tools.benchmark import benchmark_func
-from flops.utils.gather import triton_permute_with_mask_map, triton_make_row_id_map
-from flops.utils.scatter import (triton_scatter_add,
+from linghe.tools.benchmark import benchmark_func
+from linghe.utils.gather import triton_permute_with_mask_map, triton_make_row_id_map
+from linghe.utils.scatter import (triton_scatter_add,
                                  triton_unpermute_with_mask_map,
                                  )
-from flops.tools.util import torch_make_indices
+from linghe.tools.util import torch_make_indices
 import transformer_engine_torch as tex
 
 

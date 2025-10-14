@@ -5,7 +5,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.utils.rope import triton_qk_norm_and_half_rope_forward, \
+from linghe.utils.rope import triton_qk_norm_and_half_rope_forward, \
     triton_qk_norm_and_half_rope_backward
 
 

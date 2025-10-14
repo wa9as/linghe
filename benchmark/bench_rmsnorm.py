@@ -1,8 +1,8 @@
 import torch
 import transformer_engine as te
 
-from flops.facade.norm import RMSNormFunction
-from flops.tools.benchmark import benchmark_func
+from linghe.facade.norm import RMSNormFunction
+from linghe.tools.benchmark import benchmark_func
 
 
 def bench_rmsnorm(M=4096, N=4096):

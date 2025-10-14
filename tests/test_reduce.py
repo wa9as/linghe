@@ -5,9 +5,9 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from flops.tools.benchmark import benchmark_func
-from flops.tools.util import output_check
-from flops.utils.reduce import (triton_abs_max,
+from linghe.tools.benchmark import benchmark_func
+from linghe.tools.util import output_check
+from linghe.utils.reduce import (triton_abs_max,
                                 triton_batch_count_zero,
                                 triton_batch_sum_with_ord)
 
