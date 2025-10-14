@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import torch
 
 from flops.utils.loss import triton_softmax_cross_entropy_forward, \
@@ -10,7 +15,8 @@ class SoftmaxCrossEntropyFunction(torch.autograd.Function):
         shape = logits.shape
         if len(shape) == 3:
             logits = logits.view(-1, shape[-1])
-        loss, sum_exp, max_logit = triton_softmax_cross_entropy_forward(logits, labels)
+        loss, sum_exp, max_logit = triton_softmax_cross_entropy_forward(logits,
+                                                                        labels)
         ctx.save_for_backward(logits, labels, sum_exp, max_logit)
         ctx.inplace = inplace
         ctx.shape = shape
@@ -23,7 +29,8 @@ class SoftmaxCrossEntropyFunction(torch.autograd.Function):
         logits, labels, sum_exp, max_logit = ctx.saved_tensors
         shape = ctx.shape
         grad = logits if ctx.inplace else None
-        grad = triton_softmax_cross_entropy_backward(logits, labels, sum_exp, max_logit,
+        grad = triton_softmax_cross_entropy_backward(logits, labels, sum_exp,
+                                                     max_logit,
                                                      grad_output,
                                                      output_grad=grad)
         if len(shape) == 3:

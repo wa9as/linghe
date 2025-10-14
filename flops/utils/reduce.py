@@ -1,18 +1,23 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import torch
 import triton
 import triton.language as tl
 
 
 @triton.jit
-def abs_max_kernel(x_ptr, 
-                   scale_ptr, 
-                   smooth_scale_ptr, 
+def abs_max_kernel(x_ptr,
+                   scale_ptr,
+                   smooth_scale_ptr,
                    output_ptr,
                    min_value,
-                   M, N, 
+                   M, N,
                    H: tl.constexpr,
-                   W: tl.constexpr, 
-                   EVEN: tl.constexpr, 
+                   W: tl.constexpr,
+                   EVEN: tl.constexpr,
                    QUANTIZED: tl.constexpr):
     pid = tl.program_id(axis=0)
     # col-wise read, col-wise write
@@ -20,7 +25,8 @@ def abs_max_kernel(x_ptr,
     m = tl.cdiv(M, H)
     offs = pid * W + tl.arange(0, H)[:, None] * N + tl.arange(0, W)
     if QUANTIZED:
-        smooth_scale = tl.load(smooth_scale_ptr + pid * W + tl.arange(0, W))[None, :]
+        smooth_scale = tl.load(smooth_scale_ptr + pid * W + tl.arange(0, W))[
+                       None, :]
     for i in range(m):
         if EVEN:
             x = tl.load(x_ptr + offs).to(tl.float32)
@@ -31,7 +37,7 @@ def abs_max_kernel(x_ptr,
         if QUANTIZED:
             scale = tl.load(scale_ptr + i * H + tl.arange(0, H),
                             mask=i * H + tl.arange(0, H) < M)
-            x = x * scale[:,None] * smooth_scale
+            x = x * scale[:, None] * smooth_scale
         x_max = tl.maximum(x_max, tl.max(tl.abs(x), axis=0))
         offs += H * N
 
@@ -67,10 +73,6 @@ def triton_abs_max(x, scale=None, smooth_scale=None, min_value=1e-30, axis=0):
         num_warps=4
     )
     return maxs
-
-
-
-
 
 
 @triton.jit

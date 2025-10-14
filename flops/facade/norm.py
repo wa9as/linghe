@@ -1,13 +1,17 @@
-import torch
-import triton
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
 
-from flops.utils.norm import triton_rms_norm_forward, triton_rms_norm_backward, triton_group_norm_gate_forward, triton_group_norm_gate_backward
+import torch
+
+from flops.utils.norm import triton_rms_norm_forward, triton_rms_norm_backward, \
+    triton_group_norm_gate_forward, triton_group_norm_gate_backward
 
 
 class RMSNormFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, eps=1e-6):
-        
         output = triton_rms_norm_forward(
             x,
             weight,
@@ -33,12 +37,9 @@ class RMSNormFunction(torch.autograd.Function):
         return dx, dw, None
 
 
-
-
 class GroupNormGateFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, gate, weight, eps=1e-6, group_size=4):
-        
         output = triton_group_norm_gate_forward(
             x,
             gate,

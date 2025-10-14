@@ -1,7 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 from typing import Optional
 
 import torch
-
 from flops.quant.smooth.naive_smooth import smooth_quant_forward, \
     smooth_quant_backward, smooth_quant_update
 from flops.quant.smooth.reused_smooth import reused_smooth_quant_forward, \

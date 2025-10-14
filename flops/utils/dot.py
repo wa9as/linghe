@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import torch
 import triton
 import triton.language as tl
@@ -24,7 +29,7 @@ def triton_dot(x, y):
     M, N = x.shape
     H = 128
     W = 16
-    assert M%W == 0
+    assert M % W == 0
 
     num_stages = 5
     num_warps = 8

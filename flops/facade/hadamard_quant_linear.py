@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import math
 from typing import Optional
 
 import torch
-
 from flops.quant.hadamard import bit_hadamard_quant_forward, \
     bit_hadamard_quant_update, bit_hadamard_quant_backward
 from flops.quant.hadamard import fused_hadamard_quant_forward, \

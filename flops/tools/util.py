@@ -1,4 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import math
+
 import torch
 
 
@@ -44,10 +50,11 @@ def torch_group_quant(x, B=128, dtype=torch.float8_e4m3fn, round_scale=False):
     if K % B != 0:
         x = torch.nn.functional.pad(x, (0, B - K % B))
         P = x.shape[1]
-    
+
     xp = torch.reshape(x.contiguous(), (M, P // B, B))
-    scale = torch.amax(torch.abs(xp).float(), dim=2) / fmax 
-    scaoe = torch.maximum(scale, 1e-30*torch.ones((1,),dtype=torch.float32,device=x.device))
+    scale = torch.amax(torch.abs(xp).float(), dim=2) / fmax
+    scaoe = torch.maximum(scale, 1e-30 * torch.ones((1,), dtype=torch.float32,
+                                                    device=x.device))
     if round_scale:
         scale = torch.exp2(torch.ceil(torch.log2(scale)))
     xq = (xp / scale[:, :, None]).to(dtype)
@@ -71,7 +78,6 @@ def torch_block_quant(w, B=128, dtype=torch.float8_e4m3fn, round_scale=False):
     wq = torch.reshape(wq, (K, N)).t().contiguous()
 
     return wq, scale
-
 
 
 def torch_make_indices(logits, topk=8, bias=-0.01):
@@ -131,7 +137,7 @@ def output_check(org_out, opt_out, mode='', rtol=None, atol=None):
     dtype = org_out.dtype
     assert opt_out.dtype == dtype or dtype == torch.float32, f"ref:{dtype} != out:{opt_out.dtype}"
     if org_out.numel() == 0:
-        return 
+        return
 
     if dtype != torch.float32:
         org_out = org_out.float()

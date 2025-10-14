@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Ant Financial Service Group and its affiliates.
+"""
+
 import time
 
 import torch
@@ -5,7 +10,7 @@ from torch.profiler import profile, ProfilerActivity
 
 
 def benchmark_func(fn, *args, n_warmup=10, n_repeat=100, ref_flops=None,
-                   ref_bytes=None, ref_time=None, 
+                   ref_bytes=None, ref_time=None,
                    n_profile=0, trace_dir=None,
                    name='', **kwargs):
     func_name = getattr(fn, '__name__', None)
@@ -27,18 +32,17 @@ def benchmark_func(fn, *args, n_warmup=10, n_repeat=100, ref_flops=None,
     torch.cuda.synchronize()
 
     if n_profile > 0:
-        with profile(activities=[ProfilerActivity.CPU, 
+        with profile(activities=[ProfilerActivity.CPU,
                                  ProfilerActivity.CUDA,
                                  ProfilerActivity.XPU]) as prof:
             for i in range(n_profile):
                 fn(*args, **kwargs)
-        print(prof.key_averages().table(sort_by="cuda_time_total", 
+        print(prof.key_averages().table(sort_by="cuda_time_total",
                                         top_level_events_only=True,
                                         row_limit=100))
         if trace_dir is not None:
             assert trace_dir.endswith('.json')
             prof.export_chrome_trace(trace_dir)
-
 
     times = [s.elapsed_time(e) for s, e in zip(start_events, end_events)]
     times = sorted(times)
