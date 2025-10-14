@@ -18,7 +18,7 @@ setup(
     license="MIT",
     license_files=("LICENSE",),
     description="flood ops",
-    URL="https://code.alibaba-inc.com/infer/flops",
+    URL="https://code.alipay.com/pia/flops",
     packages=find_packages(),
     install_requires=[],
     python_requires=">=3.8",

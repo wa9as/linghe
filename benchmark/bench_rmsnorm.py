@@ -1,12 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-Copyright (c) Ant Financial Service Group and its affiliates.
-"""
-
 import torch
 import transformer_engine as te
-from flops.facade.rmsnorm import RMSNormFunction
 
+from flops.facade.norm import RMSNormFunction
 from flops.tools.benchmark import benchmark_func
 
 
@@ -33,7 +28,7 @@ def bench_rmsnorm(M=4096, N=4096):
 
     rmsnorm_torch = torch.compile(rmsnorm_torch)
 
-    te_norm = te.pytorch.RMSNorm(hidden_size=N, eps=1e-6)
+    te_norm = te.pytorch.RMSNorm(normalized_shape=N, eps=1e-6)
 
     def torch_forward_backward(x_torch_back, dy):
         y_torch_back = rmsnorm_torch(x_torch_back)
@@ -59,12 +54,11 @@ def bench_rmsnorm(M=4096, N=4096):
 
     ref_time = benchmark_func(torch_forward_backward, x, dy, n_repeat=n_repeat)
 
-    benchmark_func(te_forward_backward, x, dy, n_repeat=n_repeat,
-                   ref_time=ref_time)
+    benchmark_func(te_forward_backward, x, dy, n_repeat=n_repeat, 
+                    ref_time = ref_time)
 
     benchmark_func(triton_forward_backward, x, weight, dy, n_repeat=n_repeat,
                    ref_time=ref_time)
-
 
 if __name__ == '__main__':
     bench_rmsnorm(4096, 4096)

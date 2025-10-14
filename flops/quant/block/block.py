@@ -8,10 +8,6 @@ import triton
 import triton.language as tl
 
 
-# Some triton kernels for tilewise and blockwise quantization are from the link below with modification:
-# https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/kernel.py
-
-
 @triton.jit
 def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
                        ROUND: tl.constexpr):
@@ -32,14 +28,14 @@ def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
     tl.store(s_ptr + pid_m * n + pid_n, s)
 
 
-def block_quant(x, dtype=torch.float8_e4m3fn, block_size=128,
+def block_quant(x, 
+                block_size=128,
                 round_scale=False):
     M, N = x.size()
-    y = torch.empty_like(x, dtype=dtype)
+    y = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=x.device)
     s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size,
                     dtype=torch.float32)
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE"]),
-                         triton.cdiv(N, META["BLOCK_SIZE"]))  # noqa
+    grid = (triton.cdiv(M, block_size), triton.cdiv(N, block_size))
     block_quant_kernel[grid](x,
                              y,
                              s,
