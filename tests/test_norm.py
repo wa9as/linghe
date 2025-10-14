@@ -168,7 +168,6 @@ def test_rmsnorm_and_block_quant(M=4096, N=4096, bench=False):
     q, scale, rms, q_t, scale_t = triton_rms_norm_and_block_quant_forward(x,
                                                                           weight,
                                                                           round_scale=True,
-                                                                          output_rms=True,
                                                                           output_mode=2)
     output_check(q_ref, q, mode="2.block.data")
     output_check(scale_ref.t(), scale, mode='2.block.scale')
@@ -177,7 +176,6 @@ def test_rmsnorm_and_block_quant(M=4096, N=4096, bench=False):
 
     q, scale, _, _, _ = triton_rms_norm_and_block_quant_forward(x, weight,
                                                                 round_scale=True,
-                                                                output_rms=True,
                                                                 output_mode=0)
     output_check(q_ref, q, mode="0.block.data")
     output_check(scale_ref.t(), scale, mode='0.block.scale')
@@ -185,7 +183,6 @@ def test_rmsnorm_and_block_quant(M=4096, N=4096, bench=False):
     _, _, _, q_t, scale_t = triton_rms_norm_and_block_quant_forward(x, weight,
                                                                     round_scale=True,
                                                                     rms=rms,
-                                                                    output_rms=True,
                                                                     output_mode=1)
     output_check(qt_ref, q_t, mode='0.block.t_data')
     output_check(scale_t_ref.t(), scale_t, mode="0.block.t_scale")
@@ -193,19 +190,16 @@ def test_rmsnorm_and_block_quant(M=4096, N=4096, bench=False):
     if bench:
         benchmark_func(triton_rms_norm_and_block_quant_forward, x, weight,
                        round_scale=True,
-                       output_rms=True,
                        output_mode=0,
                        ref_bytes=M * N * 3)
 
         benchmark_func(triton_rms_norm_and_block_quant_forward, x, weight,
                        round_scale=True,
-                       output_rms=True,
                        output_mode=1,
                        ref_bytes=M * N * 3)
 
         benchmark_func(triton_rms_norm_and_block_quant_forward, x, weight,
                        round_scale=True,
-                       output_rms=True,
                        output_mode=2,
                        ref_bytes=M * N * 4)
 

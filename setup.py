@@ -13,11 +13,11 @@ with pathlib.Path("requirements.txt").open() as f:
                         pkg_resources.parse_requirements(f)]
 
 setup(
-    name="tlinghe",
+    name="linghe",
     version="0.0.2",
     license="MIT",
     license_files=("LICENSE",),
-    description="flood ops",
+    description="LLM traning kernels",
     URL="https://code.alipay.com/pia/linghe",
     packages=find_packages(),
     install_requires=[],

@@ -175,8 +175,8 @@ def test_batch_transpose_and_pad(M=4096, N=4096, k=32, bench=False):
 
 
 if __name__ == '__main__':
-    # test_transpose(M=4096, N=4096)
+    test_transpose(M=4096, N=4096)
     test_transpose_and_pad(M=4095, N=4096)
-    # test_nd_transpose(B=4096, M=4, N=4096)
-    # test_batch_transpose(M=4096,N=4096,k=32)
-    # test_batch_transpose_and_pad(M=4096,N=4096,k=32)
+    test_nd_transpose(B=4096, M=4, N=4096)
+    test_batch_transpose(M=4096,N=4096,k=32)
+    test_batch_transpose_and_pad(M=4096,N=4096,k=32)
