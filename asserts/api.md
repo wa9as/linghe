@@ -133,23 +133,25 @@ Fused op for batched weighted SiLU and block quant.
 ```
 linghe.util.silu.triton_batch_weighted_silu_and_block_quant_backward(g, x, weight, counts, splits:Optional[List]=None, round_scale:Optional[bool]=False)
 ```
+Return blockwise quantized gradient of silu backward.
+Quantized tensor is A tuple of ()
 **Parameters:**  
 - g(*torch.Tensor*) - Input gradient tensor.
 - x(*torch.Tensor*) - Input tensor.
-- weight(*torch.Tensor*)  - Permuted probs
-- couts(*torch.Tensor*)  - Tokens per expert cuda tensor.
-- splits(*List[int]*) - List of tokens per expert. If compute in batch mode should not be None.
-
+- weight(*torch.Tensor*)  - Permuted probs, 
+- counts(*torch.Tensor*)  - Tokens per expert, it is a CUDA tensor.
+- splits(*List[int]*) - Tokens per expert, it is a list of int.
+- round_scale(bool) - round  scale to integer pow of 2
 ---
 
 **`
 Class  linghe.facade.loss.SoftmaxCrossEntropyFunction
 `**
 
-Prallel version of SoftmaxCrossEntropy.
+SoftmaxCrossEntropy.
 
 ```
-forward(logits, labels, inplace:Optional[bool]=False) 
+forward(logits, labels, inplace: Optional[bool]=False) 
 ```
 
 Fast impl of softmax cross entropy.
@@ -157,35 +159,29 @@ Fast impl of softmax cross entropy.
 **Parameters:**  
 - logits(*torch.Tensor*) - Input logits.
 - labels(*torch.Tensor*) - Input labels.
-- inplace(*bool*) - Flag save for backward, whether logits ptr should replaced by grads tensor ptr.
+- inplace(*bool*) - reuse the `logits` tensor as gradient tensor if inplace=True, else allocate a new tensor.
 
 ```
-backward(grad_output) 
-```
 
-**Parameters:**  
-- grad_output(*torch.Tensor*) - Gradients tensor.
-
----
 
 ```
 linghe.util.reduce.triton_batch_sum_with_ord(xs, ord:Optional[int]=2) 
 ```
-Square sum the gards of all the experts. All the experts grads are applied simultaneously.
+return sum(abs(x)**ord).
 
 **Parameters:**  
-- xs(*List[torch.Tensor]*) - Grads lists.
-- ord(*int*) - Sum type. 1 for abs add and 2 for square add.
+- xs(*List[torch.Tensor]*) - Tensor lists.
+- ord(*int*) - the order of tensor.
 
 --- 
 
 ```
 linghe.util.reduce.triton_batch_count_zero(xs) 
 ```
-Prallel cout zeros in all the given grads lists.
+Parallel count zeros in the given tensor lists, return the total zero number.
 
 **Parameters:**  
-- xs(*List[torch.Tensor]*) - Grads lists.
+- xs(*List[torch.Tensor]*) - Tensor lists.
 
 --- 
 
@@ -201,12 +197,8 @@ Note that the output shape is transposed [S, B, dim]
 
 **Parameters:**  
 
-- x(*torch.Tensor*) - [B, S, dim] Input tensor.
-- gate(*torch.Tensor*) - [S, B, dim] 
-- weight(*torch.Tensor*) - [dim]
-
+- x(*torch.Tensor*) - [B, S, dim], output tensor of attention kernel.
+- gate(*torch.Tensor*) - [S, B, dim], gate tensor. 
+- weight(*torch.Tensor*) - [dim], RMSNorm weight tensor.
+- group_size(int) - group size of RMSNorm
 ```
-backward(grad)
-```
-**Parameters:**  
-- grad(*torch.Tensor*) - [S, B, dim] Grads of input tensor.

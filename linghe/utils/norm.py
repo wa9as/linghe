@@ -2,7 +2,7 @@ from re import S
 import torch
 import triton
 import triton.language as tl
-
+from typing import Optional
 
 
 @triton.jit
@@ -256,10 +256,35 @@ def rms_norm_and_block_quant_forward_t_kernel(x_ptr,
 
 
 
-def triton_rms_norm_and_block_quant_forward(x, weight, eps=1e-6,
-                                      out=None, scale=None, rms=None,
-                                      round_scale=False,
-                                      output_mode=2):
+def triton_rms_norm_and_block_quant_forward(x: torch.Tensor,
+                                            weight: torch.Tensor,
+                                            eps: float = 1e-6,
+                                            out: Optional[torch.Tensor] = None,
+                                            scale: Optional[torch.Tensor] = None,
+                                            rms: Optional[torch.Tensor] = None,
+                                            round_scale: bool = False,
+                                            output_mode: int = 2):
+    """
+    Fused RMSNorm forward and block quantization.
+    Args:
+        x: Input tensor, shape [M, N]
+        weight: RMSNorm weight,  shape [N]
+        eps: epsilon value for L2 normalization.
+        out: output of quantization data
+        scale: output of quantization scale.
+        rms: output of rms
+        round_scale: Set whether to force power of 2 scales.
+        output_mode: one of {0, 1, 2}.
+            0: only output non-transpose tensor
+            1: only output transposed tensor
+            2: return both
+    Returns:
+        out: quantization data
+        scale: quantization scale
+        rms: Reciprocal of the root mean square of the input calculated over the last dimension.
+        transpose_output: quantization data of transposed gradient
+        transpose_scale: quantization scale of transposed gradient
+    """
     # row-wise read, row-wise write
     M, N = x.shape
     assert N <= 8192 and 8192 % N == 0
@@ -375,7 +400,19 @@ gate: [length, bs, dim]
 weight: [dim]
 output: [length, bs, dim]
 """
-def triton_group_norm_gate_forward(x, gate, weight, eps=1e-6, group_size=4):
+def triton_group_norm_gate_forward(x: torch.Tensor, gate, weight, eps=1e-6, group_size=4):
+    """
+    norm and gate in linear attention
+    Args:
+        x:
+        gate:
+        weight:
+        eps:
+        group_size:
+
+    Returns:
+
+    """
     # row-wise read, row-wise write
     length, bs, dim = gate.shape
     assert dim <= 8192 and triton.next_power_of_2(dim) == dim and triton.next_power_of_2(group_size) == group_size
