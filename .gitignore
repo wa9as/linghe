@@ -69,3 +69,4 @@ pip-delete-this-directory.txt
 *.json 
 *.jsonl
 *_ignore.py
+.idea
