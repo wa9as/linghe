@@ -3,12 +3,12 @@
 Copyright (c) Ant Financial Service Group and its affiliates.
 """
 
+from typing import Optional
 import torch
 import triton
 import triton.language as tl
 
 
-# for megatron 0.11 scatter_add
 
 @triton.jit
 def aligned_scatter_add_kernel(x_ptr, o_ptr, indices_ptr, weights_ptr, M,
@@ -30,7 +30,21 @@ def aligned_scatter_add_kernel(x_ptr, o_ptr, indices_ptr, weights_ptr, M,
     tl.store(o_ptr + pid * N + offs, sums)
 
 
-def triton_aligned_scatter_add(x, outputs, indices, weights=None):
+def triton_aligned_scatter_add(x: torch.Tensor,
+                               outputs: torch.Tensor,
+                               indices: torch.Tensor,
+                               weights: Optional[torch.Tensor] = None):
+    """
+    scatter_add for megatron 0.11
+    Args:
+        x: input tensor
+        outputs:  output tensor
+        indices:  gather indices
+        weights:  rowwise weight, it is router prob in MoE router
+
+    Returns:
+        output tensor
+    """
     M, N = x.shape
     m = outputs.size(0)
 
@@ -82,6 +96,16 @@ def fp32_to_bf16_kernel(x_ptr, o_ptr, M, T, N: tl.constexpr):
 
 
 def triton_scatter_add(x, outputs, indices):
+    """
+    naive version of scatter add, very slow
+    Args:
+        x: input tensor
+        outputs: output tensor
+        indices: indices
+
+    Returns:
+        outputs
+    """
     M, N = x.shape
 
     float_outputs = torch.zeros(outputs.shape, dtype=torch.float32,
@@ -149,18 +173,22 @@ def unpermute_with_mask_map_kernel(grads_ptr, probs_ptr, mask_map_ptr,
     tl.store(output_ptr + pid * N + tl.arange(0, N), sums)
 
 
-# """
-# gather and smooth quant
-# inp: [num_tokens, hidden_size], rowwise_data
-# row_id_map: [n_experts, num_tokens], indices
-# prob: [num_out_tokens], rowwise_scale_inv
-# """
-
 def triton_unpermute_with_mask_map(
         grad: torch.Tensor,
         row_id_map: torch.Tensor,
         probs: torch.Tensor,
 ):
+    """
+    scatter add with row id map
+    Args:
+        grad: gradient tensor, [num_out_tokens, hidden_size]
+        row_id_map: row id map, [n_experts, num_tokens]
+        probs: [num_out_tokens]
+
+    Returns:
+        output: [num_tokens, hidden_size]
+        restore_probs: [num_tokens, num_experts]
+    """
     hidden_size = grad.shape[1]
     num_tokens, num_experts = row_id_map.shape  # not transposed
 

@@ -32,15 +32,20 @@ def split_and_cat_kernel(x_ptr, y_ptr, scale_ptr, scale_output_ptr, count_ptr,
                      mask=i * K + tl.arange(0, K) < count)
 
 
-"""
-select and smooth and quant
-x: [bs, dim]
-counts: [n_split]
-indices: [n_split]
-"""
-
-
 def triton_split_and_cat(x, counts, indices, scales=None):
+    """
+    split x to multiple tensors and cat with indices,
+    it is used for permutation in moe
+    Args:
+        x: [bs, dim]
+        counts: [n_split]
+        indices: [n_split]
+        scales: [bs]
+
+    Returns:
+        y: output tensor
+        output_scales: output scales if scales is not None
+    """
     M, N = x.shape
     n_split = counts.shape[0]
     device = x.device

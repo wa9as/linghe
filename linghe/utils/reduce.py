@@ -46,8 +46,19 @@ def abs_max_kernel(x_ptr,
     tl.store(output_ptr + pid * W + tl.arange(0, W), scale)
 
 
-# update weight smooth scale for next step with x input
 def triton_abs_max(x, scale=None, smooth_scale=None, min_value=1e-30, axis=0):
+    """
+    columnwise abs max of x, it is used in smooth quantization
+    Args:
+        x: input tensor, may be quantized tensor
+        scale: quantization scale if x is quantized
+        smooth_scale: optional smooth scale
+        min_value: output = max(max(abs(x,0)), min_value)
+        axis: reduce axis
+
+    Returns:
+        max tensor
+    """
     assert axis == 0
     N = x.size(-1)
     M = x.numel() // N
@@ -95,6 +106,14 @@ def batch_count_zero_kernel(input_ptrs, size_ptr, count_ptr, B: tl.constexpr):
 
 
 def triton_batch_count_zero(xs):
+    """
+    count zero in tensor list, it is used to monitor zeros in gradient tensor
+    Args:
+        xs: input tensors
+
+    Returns:
+        a single-value int64 tensor
+    """
     device = xs[0].device
     sizes = torch.tensor([x.numel() for x in xs], dtype=torch.int64,
                          device=device)
@@ -142,6 +161,15 @@ def batch_sum_with_ord_kernel(input_ptrs, size_ptr, count_ptr, B: tl.constexpr,
 
 
 def triton_batch_sum_with_ord(xs, ord=2):
+    """
+    return sum(abs(x)**ord).
+    Args:
+        xs: Tensor lists.
+        ord: the order of tensor.
+
+    Returns:
+        a single-value fp32 tensor
+    """
     assert ord in (1, 2)
     device = xs[0].device
     sizes = torch.tensor([x.numel() for x in xs], dtype=torch.int64,

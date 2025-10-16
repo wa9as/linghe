@@ -4,7 +4,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 """
 
 import itertools
-
+from typing import Optional
 import torch
 import triton
 import triton.language as tl
@@ -14,54 +14,6 @@ from linghe.tools.util import round_up
 
 
 # os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
-
-@triton.jit
-def deprecated_transpose_kernel(x_ptr, t_ptr, M, N, H: tl.constexpr,
-                                W: tl.constexpr, EVEN: tl.constexpr):
-    pid = tl.program_id(axis=0)
-    # col-wise read, row-wise write
-    offs = pid * W + tl.arange(0, H)[:, None] * N + tl.arange(0, W)[None, :]
-    toffs = pid * W * M + tl.arange(0, W)[:, None] * M + tl.arange(0, H)[None,
-                                                         :]
-    m = tl.cdiv(M, H)
-    for i in range(m):
-        if EVEN:
-            y = tl.trans(tl.load(x_ptr + offs))
-            tl.store(t_ptr + toffs, y)
-        else:
-            y = tl.trans(tl.load(x_ptr + offs, mask=(pid * W + tl.arange(0, W)[
-                                                               None, :] < N) & (
-                                                            i * H + tl.arange(
-                                                        0, H)[:,
-                                                                    None] < M)))
-            tl.store(t_ptr + toffs, y,
-                     mask=(pid * W + tl.arange(0, W)[:, None] < N) & (
-                             i * H + tl.arange(0, H)[None, :] < M))
-        offs += H * N
-        toffs += H
-
-
-def triton_depracated_transpose(x):
-    M, N = x.shape
-    device = x.device
-    t = torch.empty((N, M), device=device, dtype=x.dtype)
-
-    H = 512
-    W = 32 if x.dtype.itemsize == 1 else 16
-    EVEN = M % H == 0 and N % W == 0
-    num_stages = 3
-    num_warps = 8
-
-    grid = (triton.cdiv(N, W),)
-    deprecated_transpose_kernel[grid](
-        x, t,
-        M, N,
-        H, W,
-        EVEN,
-        num_stages=num_stages,
-        num_warps=num_warps
-    )
-    return t
 
 
 @triton.jit
@@ -99,7 +51,19 @@ def transpose_dim_0_1_kernel(x_ptr, t_ptr, B, M, b_stride, m_stride,
     tl.store(t_ptr + toffs, y)
 
 
-def triton_transpose(x, dim0=None, dim1=None):
+def triton_transpose(x: torch.Tensor,
+                     dim0: Optional[int] = None,
+                     dim1: Optional[int] = None):
+    """
+    transpose x with dim0 and dim1
+    Args:
+        x: input tensor
+        dim0: dim 0
+        dim1: dim 1
+
+    Returns:
+        transposed tensor
+    """
     shape = x.shape
     rank = len(shape)
     assert rank <= 4
@@ -180,13 +144,19 @@ def transpose_and_pad_kernel(x_ptr, t_ptr,
                  mask=(rid * H + tl.arange(0, H)[None, :] < P))
 
 
-"""
-pad: M will be padded to mutiplier of 32
-M is usually less than N without deepep
-"""
-
 
 def triton_transpose_and_pad(x, out=None, pad=True):
+    """
+    transpose x and padding the column size to be mutiplier of 32,
+    it is used for calculated gradient of weight with torch._scaled__mm
+    Args:
+        x: input tensor
+        out:
+        pad: whether need padding
+
+    Returns:
+        out: output tensor
+    """
     # fat block, shape:[H,W]
     M, N = x.shape
     P = round_up(M, b=32) if pad else M
@@ -228,14 +198,14 @@ def batch_transpose_kernel(xs_ptr, xts_ptr, M, N, H: tl.constexpr,
         toffs += H
 
 
-"""
-x: [M, N]*expert
-x_t: [N,M]*expert
-"""
-
-
 def triton_batch_transpose(xs, xts=None):
-    # block shape:[H,W]
+    """
+    batch transpose x
+    Args:
+        xs: input tensor list, [M, N]*expert
+    Returns:
+        xts: output tensor list, [N,M]*expert
+    """
     M, N = xs[0].shape
     n_experts = len(xs)
     if xts is None:
@@ -286,16 +256,18 @@ def batch_transpose_and_pad_kernel(x_ptr, t_ptr, count_ptr, accum_ptr,
         toffs += H
 
 
-"""
-pad: M will be padded to mutiplier of 32
-padding should be filled with 0
-M is usually less than N
-x: [sum(bs), N]
-x_t: [sum(pad(bs)*N)]
-"""
-
-
 def triton_batch_transpose_and_pad(x, count_list, x_t=None, pad=True):
+    """
+    transpose and pad each tensor stored in x
+    Args:
+        x: [sum(bs), N]
+        count_list: a python list of token count
+        pad: whether pad to mutiplier of 32,
+            padding value should be filled with 0 if padded
+
+    Returns:
+        x_t: output tensor
+    """
     assert pad
     # block shape:[H,W]
     M, N = x.shape
