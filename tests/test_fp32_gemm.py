@@ -14,6 +14,17 @@ from linghe.tools.benchmark import benchmark_func
 from linghe.tools.util import output_check
 
 
+
+def torch_fp32_matmul(x, w):
+    return torch.nn.functional.linear(x.float(), w.float())
+
+def torch_fp32_matmul_backward(dy, w):
+    return (dy @ w).to(torch.bfloat16)
+
+def torch_fp32_matmul_update(y, x):
+    return (y.t() @ x).to(torch.bfloat16)
+
+
 def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
     # M, N, K = 4096, 256, 8192
     dtype = torch.bfloat16
@@ -25,15 +36,6 @@ def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
     scale = torch.randn(M, dtype=torch.float32, device=device)
     dy = torch.randn(M, N, dtype=torch.float32, device=device)
 
-    def torch_fp32_matmul(x, w):
-        return torch.nn.functional.linear(x.float(), w.float())
-
-    def torch_fp32_matmul_backward(dy, w):
-        return (dy @ w).to(torch.bfloat16)
-
-    def torch_fp32_matmul_update(y, x):
-        return (y.t() @ x).to(torch.bfloat16)
-
     y_ref = torch_fp32_matmul(x, w)
     y = triton_fp32_gemm(x, w)
     output_check(y_ref, y.float(), mode='fp32_gemm')
@@ -43,10 +45,9 @@ def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
     output_check(y_ref, y.float(), mode='scaled_fp32_gemm')
 
     dx = torch.zeros(M, K, dtype=dtype, device=device)
-    dx_clone = dx.clone()
-    triton_fp32_gemm_for_backward(dy, w, dx_clone, accum=True)
-    dx_ref = dy @ w.float() + dx.float()
-    output_check(dx_ref, dx_clone.float(), mode='backward')
+    dx = triton_fp32_gemm_for_backward(dy, w)
+    dx_ref = dy @ w.float()
+    output_check(dx_ref, dx.float(), mode='backward')
 
     main_grad = triton_fp32_gemm_for_update(y, x)
     main_grad_ref = y.t() @ (x.float())
@@ -72,8 +73,8 @@ def test_fp32_matmul(M=2048, N=256, K=8192, bench=False):
                                   n_repeat=n_repeat,
                                   ref_bytes=M * K * 10 + N * K * 4 + M * N * 4,
                                   ref_linghe=2 * M * N * K)
-        benchmark_func(triton_fp32_gemm_for_backward, dy, w, dx_clone,
-                       accum=True, n_repeat=n_repeat,
+        benchmark_func(triton_fp32_gemm_for_backward, dy, w,
+                       n_repeat=n_repeat,
                        ref_bytes=M * K * 2 + N * K * 2 + M * N * 4,
                        ref_linghe=2 * M * N * K, ref_time=ref_time)
 

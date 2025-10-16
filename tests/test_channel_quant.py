@@ -5,7 +5,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from linghe.quant.channel.channel import (triton_deprecated_tokenwise_row_quant,
+from linghe.quant.channel import (triton_deprecated_tokenwise_row_quant,
                                          triton_row_quant,
                                          triton_tokenwise_row_quant)
 from linghe.tools.benchmark import benchmark_func

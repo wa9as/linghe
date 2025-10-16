@@ -147,38 +147,6 @@ def test_make_id_map(M=4098, n_experts=32, topk=2, bias=0.0, bench=False):
 
 
 
-def test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=256,
-                                            topk=8, bench=False):
-    device = 'cuda:0'
-    y = torch.randn((M, N), dtype=torch.bfloat16, device=device)
-    logits = torch.randn((M, n_experts), dtype=torch.float32, device=device)
-    smooth_scales = 1 + 10 * torch.rand((n_experts, N), device=device,
-                                        dtype=torch.float32)
-
-    probs, mask_map, token_count_per_expert, indices, row_id_map = torch_make_indices(
-        logits, topk=topk, bias=0.0)
-
-    y_q, y_scale = triton_smooth_permute_with_indices(y, smooth_scales,
-                                                      token_count_per_expert,
-                                                      indices, reverse=False,
-                                                      round_scale=False)
-
-    y_q_ref, y_scale_ref = torch_batch_smooth_quant(y, smooth_scales, indices,
-                                                    token_count_per_expert,
-                                                    reverse=False,
-                                                    round_scale=False)
-
-    output_check(y_q_ref.float(), y_q.float(), 'data')
-    output_check(y_scale_ref.float(), y_scale.float(), 'scale')
-
-    if bench:
-        n_repeat = 100
-        benchmark_func(torch_index_select, y, indices, n_repeat=n_repeat)
-        benchmark_func(triton_smooth_permute_with_indices, y, smooth_scales,
-                       token_count_per_expert, indices, reverse=False,
-                       round_scale=False, n_repeat=n_repeat)
-
-
 def test_triton_smooth_weighted_permute_with_indices(M=4096, N=4096,
                                                                 n_experts=256,
                                                                 topk=8,
@@ -423,8 +391,6 @@ def test_triton_batch_transpose_smooth_permute_with_indices(M=1024, N=2048, n_ex
 
 if __name__ == '__main__':
     test_make_id_map(M=4098, n_experts=32, topk=2, bias=0.0, bench=False)
-    test_triton_smooth_permute_with_indices(M=4096, N=4096, n_experts=32,
-                                            topk=8)
     test_triton_permute_with_mask_map(M=16384, N=2048, n_experts=32, topk=8, bench=False)
     test_triton_permute_with_mask_map(M=8192, N=4096, n_experts=32, topk=8, bench=False)
     test_triton_permute_with_mask_map(M=7628, N=2048, n_experts=32, topk=8, bench=False)

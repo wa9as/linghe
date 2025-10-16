@@ -7,8 +7,7 @@ import torch
 
 from linghe.tools.benchmark import benchmark_func
 from linghe.tools.util import output_check
-from linghe.utils.dot import (triton_dot,
-                             triton_mix_precise_dot)
+from linghe.utils.dot import triton_dot
 
 
 def torch_fp16_dot(x, y):
@@ -34,13 +33,9 @@ def test_dot(M=4096, N=4096, bench=False):
     sums_ref = (x.float() * (
             q.to(torch.float32) * quant_scale[:, None] * smooth_scale[None,
                                                          :])).sum(dim=1)
-    sums = triton_mix_precise_dot(x, q, smooth_scale, quant_scale, reverse=True)
-    output_check(sums_ref, sums.float(), 'sum')
 
     if bench:
         ref_time = benchmark_func(torch_fp16_dot, x, y, n_repeat=n_repeat)
-        benchmark_func(triton_mix_precise_dot, x, q, smooth_scale, quant_scale,
-                       reverse=True, n_repeat=n_repeat, ref_time=ref_time)
 
 
 if __name__ == '__main__':
