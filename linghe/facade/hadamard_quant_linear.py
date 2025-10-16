@@ -145,6 +145,7 @@ class HadamardQuantLinear(torch.nn.Module):
         return m
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """"""
         if self.training:
             return _HadamardQuantLinear.apply(input, self.weight, self.bias,
                                                   self.hadamard_matrix)
@@ -155,9 +156,11 @@ class HadamardQuantLinear(torch.nn.Module):
             return output
 
     def extra_repr(self) -> str:
+        """"""
         return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
 
     def reset_parameters(self):
+        """"""
         self.weight.data.normal_(mean=0.0, std=0.02)
         if self.bias is not None:
             self.bias.data.zero_()
