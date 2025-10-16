@@ -83,8 +83,10 @@
 <h6 id="returns">Returns:</h6>
 
 <blockquote>
-  <p>qo:
-  ko:</p>
+  <ul>
+  <li>qo: query output</li>
+  <li>ko: key output</li>
+  </ul>
 </blockquote>
 </div>
 
@@ -121,9 +123,11 @@ only support transpose format currently</li>
 <h6 id="returns">Returns:</h6>
 
 <blockquote>
-  <p>qo: shape [B, S, H, head_dim]
-  ko: shape [B, S, h, head_dim]
-  vo: shape [B, S, h, head_dim]</p>
+  <ul>
+  <li>qo: shape [B, S, H, head_dim]</li>
+  <li>ko: shape [B, S, h, head_dim]</li>
+  <li>vo: shape [B, S, h, head_dim]</li>
+  </ul>
 </blockquote>
 </div>
 
@@ -159,9 +163,11 @@ only support transpose format currently</li>
 <h6 id="returns">Returns:</h6>
 
 <blockquote>
-  <p>dqkv: gradient of qkv
-  dqw: gradient of q_norm_weight
-  dkw: gradient of k_norm_weight</p>
+  <ul>
+  <li>dqkv: gradient of qkv</li>
+  <li>dqw: gradient of q_norm_weight</li>
+  <li>dkw: gradient of k_norm_weight</li>
+  </ul>
 </blockquote>
 </div>
 

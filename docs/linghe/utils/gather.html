@@ -315,7 +315,7 @@ x is gathered, requantized, padded to multiple of 32 and tranposed</p>
     </div>
     <a class="headerlink" href="#triton_smooth_permute_with_mask_map"></a>
     
-            <div class="docstring"><p>gather and optional dequant and smooth quant</p>
+            <div class="docstring"><p>gather ( and optional dequant) and smooth quant</p>
 
 <h6 id="arguments">Arguments:</h6>
 
@@ -332,7 +332,14 @@ x is gathered, requantized, padded to multiple of 32 and tranposed</p>
 <li><strong>round_scale:</strong> </li>
 </ul>
 
-<p>Returns:</p>
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <ul>
+  <li>output: output tensor</li>
+  <li>permuted_scale: permuted scale if scale is not None</li>
+  </ul>
+</blockquote>
 </div>
 
 
