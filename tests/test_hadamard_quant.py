@@ -12,7 +12,7 @@ from linghe.tools.util import (output_check,
                               torch_hadamard_transform,
                               torch_row_quant,
                               )
-
+from linghe.facade.hadamard_quant_linear import HadamardQuantLinear
 
 
 
@@ -73,6 +73,28 @@ def test_hadamard_quant(M=8192, N=1024, K=2048, B=64, bench=False):
     output_check(dyst, dyt_scale, 'dyt.scale')
 
 
+def test_hadamard_quant_linear(M=8192, N=1024, K=2048, B=64):
+
+    dtype = torch.bfloat16 
+    device = 'cuda:0'
+    linear = HadamardQuantLinear(K, N, bias=False, dtype=dtype, device=device)
+    x = torch.randn((M, K), dtype=dtype, device=device).requires_grad_()
+    w = torch.randn((N, K), dtype=dtype, device=device)
+    dy = torch.randn((M, N), dtype=dtype, device=device)
+    linear.weight.data.copy_(w)
+
+    y_ref = x@w.t()
+    y = linear(x)
+    output_check(y_ref, y, mode='y')
+
+    dx_ref = dy@w 
+    dw_ref = dy.t()@x
+    y.backward(dy)
+    dw = linear.weight.grad 
+    dx = x.grad
+    output_check(dx_ref, dx, mode='dx')
+    output_check(dw_ref, dw, mode='dw')
 
 if __name__ == '__main__':
     test_hadamard_quant(M=8192, N=1024, K=2048, B=64, bench=False)
+    test_hadamard_quant_linear(M=8192, N=1024, K=2048, B=64)
