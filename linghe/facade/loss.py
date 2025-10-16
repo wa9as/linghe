@@ -10,9 +10,7 @@ from linghe.utils.loss import triton_softmax_cross_entropy_forward, \
 
 
 class SoftmaxCrossEntropyFunction(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, logits, labels, inplace=False):
         shape = logits.shape
@@ -48,9 +46,8 @@ def softmax_cross_entropy(logits: torch.Tensor, labels: torch.Tensor, inplace: b
         logits: logits tensor, shape [...,dim]
         labels: labels tensor, shape [...]
         inplace: update gradient in the `logits` tensor if True
-
     Returns:
-        per token loss
+        a tensor of per token loss
     """
     assert logits.is_contiguous()
     assert labels.is_contiguous()
@@ -58,9 +55,7 @@ def softmax_cross_entropy(logits: torch.Tensor, labels: torch.Tensor, inplace: b
 
 
 class GradScalingFunction(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, x, coef=0.2):
         ctx.coef = coef

@@ -10,9 +10,7 @@ from linghe.utils.rope import triton_qk_norm_and_half_rope_forward, \
 
 
 class QkNormHalfRopeFunction(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, qkv, q_norm_weight, k_norm_weight, freqs, H=32, h=4,
                 eps=1e-6):
@@ -71,9 +69,9 @@ def qk_norm_half_rope(qkv: torch.Tensor,
         eps: epsilon value for L2 normalization.
 
     Returns:
-        qo: shape [B, S, H, head_dim]
-        ko: shape [B, S, h, head_dim]
-        vo: shape [B, S, h, head_dim]
+        - qo: shape [B, S, H, head_dim]
+        - ko: shape [B, S, h, head_dim]
+        - vo: shape [B, S, h, head_dim]
     """
     return QkNormHalfRopeFunction.apply(qkv,
                                         q_norm_weight,

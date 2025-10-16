@@ -9,9 +9,7 @@ from linghe.utils.add import triton_inplace_add
 
 
 class InplaceAddFunction(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, x: torch.Tensor, y: torch.Tensor):
         return triton_inplace_add(x, y)
@@ -28,6 +26,6 @@ def inplace_add(x: torch.Tensor, y: torch.Tensor):
         x: to be updated
         y: add to x
     Returns:
-        return updated x tensor
+        updated x tensor
     """
     return InplaceAddFunction.apply(x, y)

@@ -150,9 +150,7 @@ def blockwise_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
 def triton_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
                                reverse=False, round_scale=False,
                                calibrate=False):
-    """
-
-    """
+    """"""
     M, N = x.shape
     device = x.device
     if x_q is None:
@@ -291,9 +289,7 @@ def subrow_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
 def triton_subrow_smooth_quant(x, smooth_scale, x_q, x_scale,
                                       subrow_scales, offset, size,
                                       reverse=False, round_scale=False):
-    """
-
-    """
+    """"""
     M, N = x_q.shape
     W = 128
     if offset % N == 0:
@@ -369,9 +365,7 @@ def depracated_tokenwise_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr,
 def triton_depracated_tokenwise_smooth_quant(x, smooth_scale, x_q=None,
                                                     x_scale=None, reverse=False,
                                                     round_scale=False):
-    """
-
-    """
+    """"""
     # row-wise read, row-wise write
     M, N = x.shape
     device = x.device
@@ -455,9 +449,7 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert,
                               x_q=None, x_scale=None, x_maxs=None,
                               reverse=False, round_scale=False,
                               calibrate=False):
-    """
-
-    """
+    """"""
     M, N = x.shape
     device = x.device
     n_expert = token_count_per_expert.shape[0]
@@ -578,9 +570,7 @@ def triton_batch_pad_transpose_smooth_quant(x,
                                             splits,
                                             x_q=None, x_scale=None, x_maxs=None,
                                             reverse=False, round_scale=False):
-    """
-
-    """
+    """"""
     M, N = x.shape
     device = x.device
     n_expert = token_count_per_expert.shape[0]
@@ -694,9 +684,7 @@ def triton_transpose_smooth_quant(x,
                                          round_scale=False):
     # col-wise read, row-wise write
     # M should be padded if M % 32 != 0
-    """
-
-    """
+    """"""
     M, N = x.shape
     device = x.device
     P = (M + 31) // 32 * 32 if pad else M
@@ -823,9 +811,7 @@ def triton_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
                                                  reverse=True,
                                                  pad=False,
                                                  round_scale=False):
-    """
-
-    """
+    """"""
     assert reverse
     M, N = x_q.shape
     device = x_q.device
@@ -886,9 +872,7 @@ pad: # pad M to be multiplier of 32, including quant scales and transposed x
 # dwT = yT @ x
 def triton_smooth_quant_input(x, smooth_scale, x_q=None, x_scale=None, xt_q=None,
                           transpose=True, pad=True, round_scale=False):
-    """
-
-    """
+    """"""
     x_q, x_scale, x_maxs = triton_smooth_quant(x, smooth_scale, x_q=x_q,
                                               x_scale=x_scale, reverse=False,
                                               round_scale=round_scale)
@@ -912,9 +896,7 @@ def triton_smooth_quant_gradient(y,
                                  transpose=True,
                                  pad=True,
                                  round_scale=False):
-    """
-
-    """
+    """"""
     assert reverse, ("args `smooth_scale` and/or `transpose_smooth_scale` "
                      "must be in reciprocal format in triton_smooth_quant_grad")
     y_q, y_scale, _ = triton_smooth_quant(y, smooth_scale, reverse=True,
@@ -937,9 +919,7 @@ def triton_smooth_quant_weight(w,
                                quant_scale,
                                subrow_scales, offset=0,
                                round_scale=False):
-    """
-
-    """
+    """"""
     assert w.ndim == 1
     assert w_q.size(1) == smooth_scale.size(0)
 

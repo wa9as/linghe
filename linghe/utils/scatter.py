@@ -104,7 +104,7 @@ def triton_scatter_add(x, outputs, indices):
         indices: indices
 
     Returns:
-        outputs
+        output tensor
     """
     M, N = x.shape
 
@@ -186,8 +186,8 @@ def triton_unpermute_with_mask_map(
         probs: [num_out_tokens]
 
     Returns:
-        output: [num_tokens, hidden_size]
-        restore_probs: [num_tokens, num_experts]
+        - output: [num_tokens, hidden_size]
+        - restore_probs: [num_tokens, num_experts]
     """
     hidden_size = grad.shape[1]
     num_tokens, num_experts = row_id_map.shape  # not transposed

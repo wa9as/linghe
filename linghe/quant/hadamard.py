@@ -125,10 +125,10 @@ def triton_hadamard_quant(x, hm):
         x: input tensor
         hm: hamadard matrix
     Returns:
-        x_q: rowwise quantized tensor of non-transposed x
-        x_scale: rowwise quantization scale of non-transposed x
-        xt_q: columnwise quantized tensor of transposed x
-        xt_scale: columnwise quantization scale of transposed x
+        - x_q: rowwise quantized tensor of non-transposed x
+        - x_scale: rowwise quantization scale of non-transposed x
+        - xt_q: columnwise quantized tensor of transposed x
+        - xt_scale: columnwise quantization scale of transposed x
     """
     M, N = x.shape
     device = x.device
