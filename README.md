@@ -25,7 +25,7 @@
 
 ## Introduction
 ---
-Our repo, Linghe, is designed for LLM training, especially for MoE training with FP8 quantizaiton. It provides 2 main categories of kernels:
+Our repo, linghe, is designed for LLM training, especially for MoE training with FP8 quantizaiton. It provides 2 main categories of kernels:
 
 - **Fused quantization kernels**: fuse quantization with previous layer, e.g., RMS norm and Silu.
 - **Memory-efficiency kernels**: fuse multiple IO-itensive operations, e.g., ROPE with qk-norm.
@@ -36,7 +36,7 @@ Our repo, Linghe, is designed for LLM training, especially for MoE training with
 ---
 We benchmark on H800 with batch size 8192, hidden size 2048, num experts 256, activation experts 8.
 
-| kernel | baseline(us) | Linghe(us) | speedup |
+| kernel | baseline(us) | linghe(us) | speedup |
 |--------|--------------|------------|---------|
 | RMSNorm+Quantization(forward) | 159.3 us | 72.4 us    | 2.2 |
 | Split+qk-norm+rope+transpose(forward) | 472 us | 59.1 us    | 7.99 |
