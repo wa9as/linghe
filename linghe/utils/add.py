@@ -51,9 +51,10 @@ def triton_inplace_add(x: torch.Tensor, y: torch.Tensor, accum : bool = True):
     Args:
         x: Tensor
         y: Tensor
-        accum: whether accum y to x
+        accum: x += y if accum=True else x.copy_(y)
 
-    Returns:  x += y if accum=True else x.copy_(y)
+    Returns:
+        updated x
     """
     N = x.shape[-1]
     M = x.numel() // N

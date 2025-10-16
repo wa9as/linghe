@@ -3,6 +3,7 @@
 Copyright (c) Ant Financial Service Group and its affiliates.
 """
 
+from typing import Optional
 import torch
 import triton
 import triton.language as tl
@@ -36,6 +37,16 @@ def row_quant_kernel(x_ptr, q_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
 
 
 def triton_row_quant(x, round_scale=False):
+    """
+    rowwise quantize x
+    Args:
+        x: input x
+        round_scale: whether round scale to power of 2
+
+    Returns:
+        x_q: quantized tensor
+        x_scale: quantization scale
+    """
     M, N = x.shape
     BLOCK_SIZE = max([N % x == 0 for x in [512, 1024, 2048, 4096, 8192]])
     x_q = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=x.device)
@@ -73,9 +84,10 @@ def deprecated_tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, M,
         offs += N
 
 
-def triton_deprecated_tokenwise_row_quant(x, out=None, scale=None,
-                                          round_scale=False):
-    # row-wise read, row-wise write
+def triton_deprecated_tokenwise_row_quant(x: torch.Tensor,
+                                          out: Optional[torch.Tensor] = None,
+                                          scale: Optional[torch.Tensor] = None,
+                                          round_scale: bool = False):
     M, N = x.shape
     device = x.device
     if out is None:
@@ -113,6 +125,16 @@ def tokenwise_row_quant_kernel(x_ptr, out_ptr, scale_ptr, N: tl.constexpr,
 
 
 def triton_tokenwise_row_quant(x, out=None, scale=None, round_scale=False):
+    """
+    rowwise quantize x with power of 2 dim size
+    Args:
+        x: input x
+        round_scale: whether round scale to power of 2
+
+    Returns:
+        out: quantized tensor
+        scale: quantization scale
+    """
     # row-wise read, row-wise write
     M, N = x.shape
     device = x.device
@@ -169,7 +191,18 @@ def transpose_row_quant_kernel(x_ptr, q_ptr, s_ptr, M, N, H: tl.constexpr,
         toffs += H
 
 
-def triton_transpose_row_quant(x, side=0, round_scale=False):
+def triton_transpose_row_quant(x, round_scale=False):
+    """
+    transpose x and row quantize x
+    Args:
+        x: input x
+        round_scale: whether round scale to power of 2
+
+    Returns:
+        x_q: quantized tensor
+        x_scale: quantization scale
+
+    """
     M, N = x.shape
     H = 1024
     W = 16
@@ -218,7 +251,6 @@ def channel_quant_forward(x, w):
 
 def channel_quant_backward(y, w):
     y_q, y_scale, w_q, w_scale = triton_channel_quant_nn(y, w)
-    # print(f'{y.shape=} {w.shape=} {y_q.shape=} {y_scale.shape=} {w_q.shape=} {w_scale.shape=}')
     output = torch._scaled_mm(y_q,
                               w_q.t(),
                               scale_a=y_scale,

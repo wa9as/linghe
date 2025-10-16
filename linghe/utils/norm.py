@@ -27,6 +27,15 @@ def rms_norm_forward_kernel(x_ptr, weight_ptr, out_ptr, eps, M, T,
 
 
 def triton_rms_norm_forward(x, weight, eps=1e-6, out=None):
+    """
+    rms norm
+    Args:
+        x: input tensor
+        weight: weight of rms norm
+        eps: epsilon of rms norm
+    Returns:
+        out: output tensor
+    """
     # row-wise read, row-wise write
     M, N = x.shape
     W = 8192 // N
@@ -394,24 +403,18 @@ def group_norm_gate_forward_kernel(x_ptr, gate_ptr, weight_ptr, out_ptr, eps, bs
     tl.store(out_ptr + offs, x)
 
 
-"""
-x: [bs, length, n_heads, head_dim], output of attn
-gate: [length, bs, dim]
-weight: [dim]
-output: [length, bs, dim]
-"""
 def triton_group_norm_gate_forward(x: torch.Tensor, gate, weight, eps=1e-6, group_size=4):
     """
     norm and gate in linear attention
     Args:
-        x:
-        gate:
-        weight:
-        eps:
-        group_size:
+        x: output of attn, [bs, length, n_heads, head_dim]
+        gate: gate tensor, [length, bs, dim]
+        weight: rms norm weight, [dim]
+        eps: epsilon of rms norm
+        group_size: group size of group rms norm
 
     Returns:
-
+        output tensor
     """
     # row-wise read, row-wise write
     length, bs, dim = gate.shape

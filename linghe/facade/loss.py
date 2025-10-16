@@ -38,6 +38,22 @@ class SoftmaxCrossEntropyFunction(torch.autograd.Function):
         return grad, None, None, None
 
 
+def softmax_cross_entropy(logits: torch.Tensor, labels: torch.Tensor, inplace: bool = False):
+    """
+    softmax cross entropy
+    Args:
+        logits: logits tensor, shape [...,dim]
+        labels: labels tensor, shape [...]
+        inplace: update gradient in the `logits` tensor if True
+
+    Returns:
+        per token loss
+    """
+    assert logits.is_contiguous()
+    assert labels.is_contiguous()
+    return SoftmaxCrossEntropyFunction.apply(logits, labels, inplace)
+
+
 class GradScalingFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, coef=0.2):

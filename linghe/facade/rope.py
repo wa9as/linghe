@@ -47,3 +47,35 @@ class QkNormHalfRopeFunction(torch.autograd.Function):
                                                                transpose=True,
                                                                interleave=True)
         return dqkv, dqw, dkw, None, None, None, None
+
+
+def qk_norm_half_rope(qkv: torch.Tensor,
+                      q_norm_weight: torch.Tensor,
+                      k_norm_weight: torch.Tensor,
+                      freqs: torch.Tensor,
+                      H: int = 32,
+                      h: int = 4,
+                      eps: float = 1e-6):
+    """
+    split qkv to q/k/v, apply qk norm and half rope to q/k, transpose q/k/v to flash-attention layout
+    Args:
+        qkv: QKV tensor with size of [S, B, dim], heads are interleaved
+        q_norm_weight: rms norm weight for query
+        k_norm_weight: rms norm weight for key
+        freqs: Freqs tensor based on half dim.
+        H: Number of attention heads.
+        h: Number of key/value heads.
+        eps: epsilon value for L2 normalization.
+
+    Returns:
+        qo: shape [B, S, H, head_dim]
+        ko: shape [B, S, h, head_dim]
+        vo: shape [B, S, h, head_dim]
+    """
+    return QkNormHalfRopeFunction.apply(qkv,
+                                        q_norm_weight,
+                                        k_norm_weight,
+                                        freqs,
+                                        H,
+                                        h,
+                                        eps)

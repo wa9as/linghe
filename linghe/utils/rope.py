@@ -80,15 +80,18 @@ def half_rope_forward_kernel(q_ptr, k_ptr, freqs_ptr, qo_ptr, ko_ptr, B,
                 0, h)[:, None] + tl.arange(0, D)[None, :], k)
 
 
-"""
-apply norm to qk, then apply rope to qk, then transpose qkv
-q: [len, bs, q_head, head_dim]
-k: [len, bs, kv_head, head_dim]
-v: [len, bs, kv_head, head_dim]
-"""
-
-
 def triton_half_rope_forward(q, k, freqs):
+    """
+    apply norm to qk, then apply half rope to qk
+    Args:
+        q: query tensor, [len, bs, q_head, head_dim]
+        k: key tensor, [len, bs, kv_head, head_dim]
+        freqs: rope freqs
+
+    Returns:
+        qo:
+        ko:
+    """
     L, B, H, D = q.shape
     h = k.shape[2]
     assert freqs.shape[1] == D // 2
@@ -169,13 +172,6 @@ def half_rope_backward_kernel(q_ptr, k_ptr, freqs_ptr,
                                                                   None] + tl.arange(
                 0, D)[None, :], k)
 
-
-"""
-apply norm to qk, then apply rope to qk, then transpose qkv
-q: [len, bs, q_head, head_dim]
-k: [len, bs, kv_head, head_dim]
-v: [len, bs, kv_head, head_dim]
-"""
 
 
 def triton_half_rope_backward(q_grad, k_grad, freqs, inplace=False):
@@ -325,16 +321,30 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
                 0, D)[None, :], v1)
 
 
-"""
-use qkv as input, to reduce redundant gradient copy in backward
-split qkv, apply norm to qk, apply rope to qk
-qkv: [len, bs, kv_head*(q_head//kv_head + 2 ) * head_dim)]
-"""
-
-
 def triton_qk_norm_and_half_rope_forward(qkv, q_norm_weight, k_norm_weight,
                                          freqs, H=32, h=4, eps=1e-6,
                                          interleave=True, transpose=False):
+
+    """
+    split qkv to q/k/v, apply qk norm and half rope to q/k,
+        transpose q/k/v to flash-attention layout
+    Args:
+        qkv: QKV tensor with size of [S, B, dim], heads are interleaved
+        q_norm_weight: rms norm weight for query
+        k_norm_weight: rms norm weight for key
+        freqs: Freqs tensor based on half dim.
+        H: Number of attention heads.
+        h: Number of key/value heads.
+        eps: epsilon value for L2 normalization.
+        interleave: whether head of qkv is interleaved, i.e., [qqkvqqkv]
+        transpose: whether qkv is tranposed, i.e., [S, B, dim],
+            only support transpose format currently
+    Returns:
+        qo: shape [B, S, H, head_dim]
+        ko: shape [B, S, h, head_dim]
+        vo: shape [B, S, h, head_dim]
+    """
+
     assert transpose
     L, B, Dim = qkv.shape
     stride = qkv.stride(1)  # qkv may be a slice of a tensor
@@ -532,17 +542,28 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
             0, D)[None, :], v1)
 
 
-"""
-apply norm to qk, then apply rope to qk
-q: [len, bs, q_head, head_dim]
-k: [len, bs, kv_head, head_dim]
-v: [len, bs, kv_head, head_dim]
-"""
-
-
 def triton_qk_norm_and_half_rope_backward(gq, gk, gv, qkv, q_norm_weight,
                                           k_norm_weight, freqs, eps=1e-6,
                                           transpose=False, interleave=True):
+    """
+    backward kernel of triton_qk_norm_and_half_rope_forward
+    Args:
+        gq: gradient of qo, [len, bs, q_head, head_dim]
+        gk: gradient of ko, [len, bs, q_head, head_dim]
+        gv: gradient of vo, [len, bs, q_head, head_dim]
+        qkv: input qkv
+        q_norm_weight:
+        k_norm_weight:
+        freqs:
+        eps:
+        transpose:
+        interleave:
+
+    Returns:
+        dqkv: gradient of qkv
+        dqw: gradient of q_norm_weight
+        dkw: gradient of k_norm_weight
+    """
     assert transpose
     B, L, H, D = gq.shape
     stride = qkv.stride(1)

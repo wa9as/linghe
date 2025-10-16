@@ -73,38 +73,8 @@
     </div>
     <a class="headerlink" href="#FusedFp32GEMM"></a>
     
-            <div class="docstring"><p>Base class to create custom <code>autograd.Function</code>.</p>
-
-<p>To create a custom <code>autograd.Function</code>, subclass this class and implement
-the <code><a href="#FusedFp32GEMM.forward">forward()</a></code> and <code><a href="#FusedFp32GEMM.backward">backward()</a></code> static methods. Then, to use your custom
-op in the forward pass, call the class method <code>apply</code>. Do not call
-<code><a href="#FusedFp32GEMM.forward">forward()</a></code> directly.</p>
-
-<p>To ensure correctness and best performance, make sure you are calling the
-correct methods on <code>ctx</code> and validating your backward function using
-<code>torch.autograd.gradcheck()</code>.</p>
-
-<p>See :ref:<code>extending-autograd</code> for more details on how to use this class.</p>
-
-<p>Examples::</p>
-
-<pre><code>&gt;&gt;&gt; # xdoctest: +REQUIRES(env:TORCH_DOCTEST_AUTOGRAD)
-&gt;&gt;&gt; class Exp(Function):
-&gt;&gt;&gt;     @staticmethod
-&gt;&gt;&gt;     def forward(ctx, i):
-&gt;&gt;&gt;         result = i.exp()
-&gt;&gt;&gt;         ctx.save_for_backward(result)
-&gt;&gt;&gt;         return result
-&gt;&gt;&gt;
-&gt;&gt;&gt;     @staticmethod
-&gt;&gt;&gt;     def backward(ctx, grad_output):
-&gt;&gt;&gt;         result, = ctx.saved_tensors
-&gt;&gt;&gt;         return grad_output * result
-&gt;&gt;&gt;
-&gt;&gt;&gt; # Use it by calling the apply method:
-&gt;&gt;&gt; # xdoctest: +SKIP
-&gt;&gt;&gt; output = Exp.apply(input)
-</code></pre>
+            <div class="docstring"><p>gemm with bf16/fp16 inputs and float32 output,
+currently used in MoE router gemm.</p>
 </div>
 
 
@@ -113,57 +83,27 @@ correct methods on <code>ctx</code> and validating your backward function using
                     <div class="decorator decorator-staticmethod">@staticmethod</div>
 
         <span class="def">def</span>
-        <span class="name">forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">ctx</span>, </span><span class="param"><span class="nb">input</span>, </span><span class="param"><span class="n">weight</span></span><span class="return-annotation">):</span></span>
+        <span class="name">forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">ctx</span>, </span><span class="param"><span class="nb">input</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span></span><span class="return-annotation">):</span></span>
 
         
     </div>
     <a class="headerlink" href="#FusedFp32GEMM.forward"></a>
     
-            <div class="docstring"><p>Define the forward of the custom autograd Function.</p>
+            <div class="docstring"><p>gemm forward with bf16/fp16 inputs and float32 output.</p>
 
-<p>This function is to be overridden by all subclasses.
-There are two ways to define forward:</p>
-
-<p>Usage 1 (Combined forward and ctx)::</p>
-
-<pre><code>@staticmethod
-def forward(ctx: Any, *args: Any, **kwargs: Any) -&gt; Any:
-    pass
-</code></pre>
+<h6 id="arguments">Arguments:</h6>
 
 <ul>
-<li>It must accept a context ctx as the first argument, followed by any
-number of arguments (tensors or other types).</li>
-<li>See :ref:<code>combining-forward-context</code> for more details</li>
+<li><strong>ctx:</strong> </li>
+<li><strong>input:</strong>  bf16/fp16 act tensor</li>
+<li><strong>weight:</strong>  bf16/fp16 weight tensor</li>
 </ul>
 
-<p>Usage 2 (Separate forward and ctx)::</p>
+<h6 id="returns">Returns:</h6>
 
-<pre><code>@staticmethod
-def forward(*args: Any, **kwargs: Any) -&gt; Any:
-    pass
-
-@staticmethod
-def setup_context(ctx: Any, inputs: Tuple[Any, ...], output: Any) -&gt; None:
-    pass
-</code></pre>
-
-<ul>
-<li>The forward no longer accepts a ctx argument.</li>
-<li>Instead, you must also override the <code>torch.autograd.Function.setup_context()</code>
-staticmethod to handle setting up the <code>ctx</code> object.
-<code>output</code> is the output of the forward, <code>inputs</code> are a Tuple of inputs
-to the forward.</li>
-<li>See :ref:<code>extending-autograd</code> for more details</li>
-</ul>
-
-<p>The context can be used to store arbitrary data that can be then
-retrieved during the backward pass. Tensors should not be stored
-directly on <code>ctx</code> (though this is not currently enforced for
-backward compatibility). Instead, tensors should be saved either with
-<code>ctx.save_for_backward()</code> if they are intended to be used in
-<code><a href="#FusedFp32GEMM.backward">backward</a></code> (equivalently, <code><a href="#FusedFp32GEMM.vjp">vjp</a></code>) or <code>ctx.save_for_forward()</code>
-if they are intended to be used for in <code><a href="#FusedFp32GEMM.jvp">jvp</a></code>.</p>
+<blockquote>
+  <p>output of gemm</p>
+</blockquote>
 </div>
 
 
@@ -179,26 +119,7 @@ if they are intended to be used for in <code><a href="#FusedFp32GEMM.jvp">jvp</a
     </div>
     <a class="headerlink" href="#FusedFp32GEMM.backward"></a>
     
-            <div class="docstring"><p>Define a formula for differentiating the operation with backward mode automatic differentiation.</p>
-
-<p>This function is to be overridden by all subclasses.
-(Defining this function is equivalent to defining the <code><a href="#FusedFp32GEMM.vjp">vjp</a></code> function.)</p>
-
-<p>It must accept a context <code>ctx</code> as the first argument, followed by
-as many outputs as the <code><a href="#FusedFp32GEMM.forward">forward()</a></code> returned (None will be passed in
-for non tensor outputs of the forward function),
-and it should return as many tensors, as there were inputs to
-<code><a href="#FusedFp32GEMM.forward">forward()</a></code>. Each argument is the gradient w.r.t the given output,
-and each returned value should be the gradient w.r.t. the
-corresponding input. If an input is not a Tensor or is a Tensor not
-requiring grads, you can just pass None as a gradient for that input.</p>
-
-<p>The context can be used to retrieve tensors saved during the forward
-pass. It also has an attribute <code>ctx.needs_input_grad</code> as a tuple
-of booleans representing whether each input needs gradient. E.g.,
-<code><a href="#FusedFp32GEMM.backward">backward()</a></code> will have <code>ctx.needs_input_grad[0] = True</code> if the
-first input to <code><a href="#FusedFp32GEMM.forward">forward()</a></code> needs gradient computed w.r.t. the
-output.</p>
+            <div class="docstring"><p>backward</p>
 </div>
 
 

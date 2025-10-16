@@ -64,11 +64,27 @@ def silu_and_block_quant_forward_kernel(x_ptr,
                  tl.trans(xq), mask=indices[None, :] < M)
 
 
-# used in shared expert
-def triton_silu_and_block_quant_forward(x, out=None, scale=None,
+def triton_silu_and_block_quant_forward(x,
+                                        out=None,
+                                        scale=None,
                                         round_scale=False,
                                         output_mode=2):
-    # row-wise read, row-wise write
+    """
+    fused silu and blockwise quantization, used in shared expert
+    Args:
+        x: input tensor
+        round_scale: whether round scale to power of 2
+        output_mode: one of {0, 1, 2}
+            0: only output non-transposed quantized tensor
+            1: only output transposed quantized tensor
+            2: output both
+
+    Returns:
+        out: quantized tensor
+        scale: quantization scale
+        transpose_output: quantized tensor of transposed output
+        transpose_scale: quantization scale of transposed output
+    """
     M, N = x.shape
     n = N // 2
     device = x.device
@@ -177,7 +193,19 @@ def silu_and_block_quant_backward_kernel(g_ptr, x_ptr,
 # used in shared expert
 def triton_silu_and_block_quant_backward(g, x,
                                          round_scale=False):
-    # row-wise read, row-wise write
+    """
+    backward of triton_silu_and_block_quant_forward
+    Args:
+        g: gradient
+        x: input tensor
+        round_scale: whether round to power of 2
+
+    Returns:
+        dx: quantized non-transposed gradient
+        dx_scale: scales of quantization non-transposed gradient
+        transpose_dx: quantized transposed gradient
+        transpose_dx_scale: scales of quantization transposed gradient
+    """
     M, N = x.shape
     n = N // 2
     device = x.device
@@ -281,7 +309,7 @@ def batch_weighted_silu_and_block_quant_forward_kernel(x_ptr, weight_ptr,
                  mask=indices[None, :] < count)
 
 
-# used in routed experts
+
 def triton_batch_weighted_silu_and_block_quant_forward(x,
                                                        weight,
                                                        counts,
@@ -290,7 +318,25 @@ def triton_batch_weighted_silu_and_block_quant_forward(x,
                                                        scale=None,
                                                        round_scale=False,
                                                        output_mode=2):
-    # row-wise read, row-wise write
+    """
+    silu and blockwise quantize activation in routed experts
+    Args:
+        x: activation tensor in routed experts
+        weight: router prob tensor
+        counts: cuda tensor of token count per expert
+        splits: python int list of token count per expert
+        round_scale: whether round scale to power of 2
+        output_mode: one of {0, 1, 2}
+            0: only output non-transposed quantized tensor
+            1: only output transposed quantized tensor
+            2: output both
+
+    Returns:
+        out: quantized tensor
+        scale: quantization scale
+        transpose_output: quantized tensor of transposed output
+        transpose_scale: quantization scale of transposed output
+    """
     M, N = x.shape
     n = N // 2
     n_experts = counts.shape[0]
@@ -307,7 +353,8 @@ def triton_batch_weighted_silu_and_block_quant_forward(x,
                                   dtype=torch.float32)
     # intra layout and inner layput are not consist,
     # tensors will be viewed after splitting
-    scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
+    if scale is None:
+        scale = torch.empty((M * n // 128,), device=device, dtype=torch.float32)
 
     if M == 0:
         return out, scale, transpose_output, transpose_scale
@@ -437,6 +484,22 @@ def triton_batch_weighted_silu_and_block_quant_backward(g, x, weight,
                                                         counts,
                                                         splits=None,
                                                         round_scale=False):
+    """
+    backward of triton_batch_weighted_silu_and_block_quant_forward
+    Args:
+        g: gradient
+        x: input tensor
+        weight: router prob tensor
+        counts: cuda tensor of token count per expert
+        splits: python int list of token count per expert
+        round_scale: whether round scale to power of 2
+    Returns:
+        dx: quantized non-transposed gradient
+        dx_scale: scales of quantization non-transposed gradient
+        dw: gradient of weight
+        transpose_dx: quantized transposed gradient
+        transpose_dx_scale: scales of quantization transposed gradient
+    """
     # row-wise read, row-wise write
     M, N = x.shape
     n = N // 2

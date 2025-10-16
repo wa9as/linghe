@@ -44,6 +44,15 @@ def softmax_cross_entropy_forward_kernel(logit_ptr, label_ptr, loss_ptr,
 TODO: support distributed loss with pytorch ongoing nvshmem feature
 """
 def triton_softmax_cross_entropy_forward(logits, labels):
+    """
+    compute token-wise softmax cross entropy loss
+    Args:
+        logits: logits tensor
+        labels: labels tensor
+
+    Returns:
+        loss of each token
+    """
     M, N = logits.shape
     device = logits.device
     loss = torch.empty((M,), device=device, dtype=torch.float32)
@@ -93,6 +102,18 @@ def softmax_cross_entropy_backward_kernel(logit_ptr, label_ptr, sum_exp_ptr,
 def triton_softmax_cross_entropy_backward(logits, labels, sum_exp, max_logit,
                                           input_grad,
                                           output_grad=None):
+    """
+    backward of softmax cross entropy loss
+    Args:
+        logits: logit tensor, [bs, dim]
+        labels: label tensor, [bs]
+        sum_exp:  [bs]
+        max_logit: [bs]
+        input_grad: gradient, [bs, dim]
+
+    Returns:
+        output_grad: [bs, dim]
+    """
     M, N = logits.shape
     device = logits.device
     if output_grad is None:

@@ -5,8 +5,8 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from linghe.quant.block.group import (triton_group_quant,
-                                     triton_persist_group_quant)
+from linghe.quant.group import (triton_group_quant,
+                                triton_persist_group_quant)
 from linghe.tools.benchmark import benchmark_func
 from linghe.tools.util import (output_check,
                               torch_group_quant)

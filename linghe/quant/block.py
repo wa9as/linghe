@@ -28,9 +28,20 @@ def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
     tl.store(s_ptr + pid_m * n + pid_n, s)
 
 
-def block_quant(x, 
+def triton_block_quant(x,
                 block_size=128,
                 round_scale=False):
+    """
+    blockwise quantize x
+    Args:
+        x: input tensor
+        block_size: block wise
+        round_scale: whether round scale to power of 2
+
+    Returns:
+        y: quantized tensor, float8_e4m3fn
+        s: quantization scale, float32
+    """
     M, N = x.size()
     y = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=x.device)
     s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size,

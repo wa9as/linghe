@@ -1,6 +1,6 @@
 
 
-<h1 align="center"> Linghe </h1>
+<h1 align="center"> linghe </h1>
 
 <div style="text-align: center;">
 <img src="docs/linghe.png" alt="Logo" width="200">
@@ -66,4 +66,4 @@ Examples can be found in tests.
 ## Api Reference
 ---
 
-Please refer to [API doc](asserts/api.md)
+Please refer to [API](https://inclusionai.github.io/linghe/)
