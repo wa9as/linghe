@@ -102,7 +102,9 @@ class _SmoothQuantLinear(torch.autograd.Function):
 
 
 class SmoothQuantLinear(torch.nn.Module):
-    """"""
+    """
+    a naive implementation of smooth quantization linear
+    """
     def __init__(
             self,
             in_features: int,
@@ -111,7 +113,14 @@ class SmoothQuantLinear(torch.nn.Module):
             device=None,
             dtype=None
     ):
-        """"""
+        """
+        Args:
+            in_features: in feature number
+            out_features: out feature number
+            bias: whether use bias
+            device: weight device
+            dtype: weight dtype
+        """
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features

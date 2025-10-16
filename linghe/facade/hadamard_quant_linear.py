@@ -92,7 +92,9 @@ class _HadamardQuantLinear(torch.autograd.Function):
 
 
 class HadamardQuantLinear(torch.nn.Module):
-    """"""
+    """
+    a naive implementation of hadamard transformation and quantization
+    """
     def __init__(
             self,
             in_features: int,
@@ -102,14 +104,12 @@ class HadamardQuantLinear(torch.nn.Module):
             dtype=None
     ):
         """
-        a naive implementation of hadamard transformation and quantization
         Args:
             in_features: in feature number
             out_features: out feature number
             bias: whether use bias
             device: weight device
             dtype: weight dtype
-            impl: implementation of hadamard quantization
         """
         super().__init__()
         self.in_features = in_features
