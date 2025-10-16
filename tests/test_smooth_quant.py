@@ -15,7 +15,7 @@ from linghe.tools.util import (output_check,
                                torch_make_indices,
                                torch_smooth_quant,
                                round_up)
-
+from linghe.facade.smooth_quant_linear import SmoothQuantLinear
 
 def torch_split_smooth_quant(x_split, smooth_scales, round_scale=False):
     x_qs = []
@@ -294,35 +294,62 @@ def test_triton_batch_smooth_quant(M=4096, N=4096, n_experts=32, topk=8,
                        n_repeat=n_repeat, ref_time=ref_time)
 
 
+
+
+def test_smooth_quant_linear(M=8192, N=1024, K=2048):
+
+    dtype = torch.bfloat16 
+    device = 'cuda:0'
+    linear = SmoothQuantLinear(K, N, bias=False, dtype=dtype, device=device)
+    x = (10*torch.randn((M, K), dtype=dtype, device=device)).requires_grad_()
+    w = 0.1*torch.randn((N, K), dtype=dtype, device=device)
+    dy = 1e-6*torch.randn((M, N), dtype=dtype, device=device)
+    linear.weight.data.copy_(w)
+
+    y_ref = x@w.t()
+    y = linear(x)
+    output_check(y_ref, y, mode='y')
+
+    dx_ref = dy@w 
+    dw_ref = dy.t()@x
+    y.backward(dy)
+    dw = linear.weight.grad 
+    dx = x.grad
+    output_check(dx_ref, dx, mode='dx')
+    output_check(dw_ref, dw, mode='dw')
+
+
+
 if __name__ == '__main__':
-    test_triton_smooth_quant(M=16384, N=2048, bench=False)
-    test_triton_smooth_quant(M=8192, N=4096, bench=False)
-    test_triton_smooth_quant(M=4096, N=8192, bench=False)
-    test_triton_smooth_quant(M=8192, N=3072, bench=False)
-    test_triton_smooth_quant(M=8192, N=6144, bench=False)
-    test_triton_smooth_quant(M=16384, N=512, bench=False)
-    test_triton_smooth_quant(M=3457, N=512, bench=False)
+    # test_triton_smooth_quant(M=16384, N=2048, bench=False)
+    # test_triton_smooth_quant(M=8192, N=4096, bench=False)
+    # test_triton_smooth_quant(M=4096, N=8192, bench=False)
+    # test_triton_smooth_quant(M=8192, N=3072, bench=False)
+    # test_triton_smooth_quant(M=8192, N=6144, bench=False)
+    # test_triton_smooth_quant(M=16384, N=512, bench=False)
+    # test_triton_smooth_quant(M=3457, N=512, bench=False)
 
-    test_triton_subrow_smooth_quant(M=4096, N=5120, offset=5120,
-                                           size=2048)
-    test_triton_subrow_smooth_quant(M=4096, N=5120, offset=4096,
-                                           size=5120)
-    test_triton_subrow_smooth_quant(M=4096, N=5120, offset=5120,
-                                           size=5120 * 10 - 1024)
+    # test_triton_subrow_smooth_quant(M=4096, N=5120, offset=5120,
+    #                                        size=2048)
+    # test_triton_subrow_smooth_quant(M=4096, N=5120, offset=4096,
+    #                                        size=5120)
+    # test_triton_subrow_smooth_quant(M=4096, N=5120, offset=5120,
+    #                                        size=5120 * 10 - 1024)
 
-    test_triton_transpose_smooth_quant(M=16384, N=2048, bench=False)
-    test_triton_transpose_smooth_quant(M=8192, N=4096, bench=False)
-    test_triton_transpose_smooth_quant(M=4096, N=8192, bench=False)
-    test_triton_transpose_smooth_quant(M=4096, N=3072, bench=False)
+    # test_triton_transpose_smooth_quant(M=16384, N=2048, bench=False)
+    # test_triton_transpose_smooth_quant(M=8192, N=4096, bench=False)
+    # test_triton_transpose_smooth_quant(M=4096, N=8192, bench=False)
+    # test_triton_transpose_smooth_quant(M=4096, N=3072, bench=False)
 
-    test_triton_transpose_rescale_smooth_quant(M=4096, N=4096,
-                                                      round_scale=True)
-    test_triton_transpose_rescale_smooth_quant(M=3895, N=4096,
-                                                      round_scale=True)
-    test_triton_transpose_rescale_smooth_quant(M=4096, N=3072,
-                                                      round_scale=True)
-    test_triton_transpose_rescale_smooth_quant(M=395, N=2048,
-                                                      round_scale=True)
+    # test_triton_transpose_rescale_smooth_quant(M=4096, N=4096,
+    #                                                   round_scale=True)
+    # test_triton_transpose_rescale_smooth_quant(M=3895, N=4096,
+    #                                                   round_scale=True)
+    # test_triton_transpose_rescale_smooth_quant(M=4096, N=3072,
+    #                                                   round_scale=True)
+    # test_triton_transpose_rescale_smooth_quant(M=395, N=2048,
+    #                                                   round_scale=True)
 
-    test_triton_batch_smooth_quant(M=4096, N=4096, n_experts=32, topk=8,
-                                   round_scale=False)
+    # test_triton_batch_smooth_quant(M=4096, N=4096, n_experts=32, topk=8,
+    #                                round_scale=False)
+    test_smooth_quant_linear(M=8192, N=1024, K=2048)

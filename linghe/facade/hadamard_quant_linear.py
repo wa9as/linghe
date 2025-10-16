@@ -34,8 +34,8 @@ class _HadamardQuantLinear(torch.autograd.Function):
 
         output = torch._scaled_mm(x_q,
                                   w_q.t(),
-                                  scale_a=x_scale,
-                                  scale_b=w_scale,
+                                  scale_a=x_scale.view(-1,1),
+                                  scale_b=w_scale.view(1,-1),
                                   out_dtype=ctx.out_dtype,
                                   use_fast_accum=True
                                   )
@@ -61,7 +61,6 @@ class _HadamardQuantLinear(torch.autograd.Function):
             output_grad: torch.Tensor,
     ):
         xt_q, xt_scale, wt_q, wt_scale, hadamard_matrix = ctx.saved_tensors
-        results = [None, None, None, None]
 
         output_grad = output_grad.view(-1, output_grad.shape[-1])
 
@@ -69,30 +68,28 @@ class _HadamardQuantLinear(torch.autograd.Function):
 
         dx = torch._scaled_mm(y_q,
                                   wt_q.t(),
-                                  scale_a=y_scale,
-                                  scale_b=wt_scale,
+                                  scale_a=y_scale.view(-1,1),
+                                  scale_b=wt_scale.view(1,-1),
                                   out_dtype=ctx.out_dtype,
                                   use_fast_accum=True
                                   )
 
-        # calculate input grad and assign to results[0]
-        results[0] = dx.view(ctx.input_shape)
+        dx = dx.view(ctx.input_shape)
 
-        # calculate weight grad and assign to results[1]
         dw = torch._scaled_mm(yt_q,
                                   xt_q.t(),
-                                  scale_a=yt_scale,
-                                  scale_b=xt_scale,
+                                  scale_a=yt_scale.view(-1,1),
+                                  scale_b=xt_scale.view(1,-1),
                                   out_dtype=ctx.out_dtype,
                                   use_fast_accum=True
                                   )
-        results[1] = dw
 
+        db = None
         if ctx.bias_requires_grad:
-            # calculate bias grad and assign to results[2]
-            results[2] = torch.sum(output_grad, dim=0)
+            db = torch.sum(output_grad, dim=0)
 
-        return tuple(results)
+        return dx, dw, db, None
+
 
 class HadamardQuantLinear(torch.nn.Module):
     """"""
