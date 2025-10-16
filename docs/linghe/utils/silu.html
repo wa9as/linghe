@@ -29,6 +29,12 @@
             <h2>API Documentation</h2>
                 <ul class="memberlist">
             <li>
+                    <a class="function" href="#triton_weighted_silu_forward">triton_weighted_silu_forward</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_weighted_silu_backward">triton_weighted_silu_backward</a>
+            </li>
+            <li>
                     <a class="function" href="#triton_silu_and_block_quant_forward">triton_silu_and_block_quant_forward</a>
             </li>
             <li>
@@ -63,6 +69,64 @@
                 
                 
             </section>
+                <section id="triton_weighted_silu_forward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_weighted_silu_forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">weight</span><span class="o">=</span><span class="kc">None</span>, </span><span class="param"><span class="n">out</span><span class="o">=</span><span class="kc">None</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_weighted_silu_forward"></a>
+    
+            <div class="docstring"><p>compute silu(x)*weight, used in bf16/fp16 training with MoE</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>weight:</strong>  tokenwise weight</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>out: output tensor</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_weighted_silu_backward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_weighted_silu_backward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">g</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">weight</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_weighted_silu_backward"></a>
+    
+            <div class="docstring"><p>backward of triton_weighted_silu_forward</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>g:</strong>  gradient tensor</li>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>weight:</strong>  weight tensor</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>dx: gradient of x
+  dw: gradient of weight</p>
+</blockquote>
+</div>
+
+
+                </section>
                 <section id="triton_silu_and_block_quant_forward">
                     <div class="attr function">
             
