@@ -95,6 +95,7 @@ class _HadamardQuantLinear(torch.autograd.Function):
         return tuple(results)
 
 class HadamardQuantLinear(torch.nn.Module):
+    """"""
     def __init__(
             self,
             in_features: int,
