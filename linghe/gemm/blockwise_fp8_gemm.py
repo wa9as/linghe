@@ -72,6 +72,7 @@ def triton_bb_fp8_gemm(a: torch.Tensor,
                        b_s: torch.Tensor,
                        out_dtype=torch.bfloat16,
                        block_size=128):
+    """"""
     assert a.is_contiguous() and b.is_contiguous()
     assert a_s.is_contiguous() and b_s.is_contiguous()
     K = a.size(-1)
@@ -155,6 +156,7 @@ def triton_tb_fp8_gemm(a: torch.Tensor,
                        b_s: torch.Tensor,
                        out_dtype=torch.bfloat16,
                        block_size=128):
+    """"""
     assert a.is_contiguous() and b.is_contiguous()
     assert a_s.is_contiguous() and b_s.is_contiguous()
     K = a.size(-1)
@@ -227,6 +229,7 @@ def triton_tt_fp8_gemm(a: torch.Tensor,
                        b_s: torch.Tensor,
                        out_dtype=torch.bfloat16,
                        block_size=128):
+    """"""
     assert a.is_contiguous() and b.is_contiguous()
     assert a_s.is_contiguous() and b_s.is_contiguous()
     K = a.size(-1)

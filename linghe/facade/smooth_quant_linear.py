@@ -98,7 +98,8 @@ class _SmoothQuantLinear(torch.autograd.Function):
         return tuple(results)
 
 
-class QuantLinear(torch.nn.Module):
+class SmoothQuantLinear(torch.nn.Module):
+    """"""
     def __init__(
             self,
             in_features: int,
@@ -107,6 +108,7 @@ class QuantLinear(torch.nn.Module):
             device=None,
             dtype=None
     ):
+        """"""
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -127,6 +129,7 @@ class QuantLinear(torch.nn.Module):
         self.reset_parameters()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """"""
         if self.training:
 
             if self.smooth_update_step % self.gap_step == 0:
@@ -146,9 +149,11 @@ class QuantLinear(torch.nn.Module):
         return output
 
     def extra_repr(self) -> str:
+        """"""
         return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
 
     def reset_parameters(self):
+        """"""
         self.weight.data.normal_(mean=0.0, std=0.02)
         if self.bias is not None:
             self.bias.data.zero_()

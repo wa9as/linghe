@@ -843,8 +843,7 @@ def triton_smooth_permute_with_mask_map(
         round_scale=False
 ):
     """
-    gather and optional dequant and smooth quant
-
+    gather ( and optional dequant) and smooth quant
     Args:
         inp: [num_tokens, hidden_size], rowwise quantized tensor
         row_id_map: [n_experts, num_tokens], indices
@@ -858,7 +857,8 @@ def triton_smooth_permute_with_mask_map(
         round_scale:
 
     Returns:
-
+        - output: output tensor
+        - permuted_scale: permuted scale if scale is not None
     """
     assert row_id_map.shape[1] == num_experts
     output = torch.empty((num_out_tokens, hidden_size),

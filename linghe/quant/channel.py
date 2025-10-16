@@ -199,8 +199,8 @@ def triton_transpose_row_quant(x, round_scale=False):
         round_scale: whether round scale to power of 2
 
     Returns:
-        x_q: quantized tensor
-        x_scale: quantization scale
+        - x_q: quantized tensor
+        - x_scale: quantization scale
 
     """
     M, N = x.shape
@@ -270,8 +270,3 @@ def channel_quant_update(y, x):
                               use_fast_accum=True)
     return output, y_q, x_q, y_scale, x_scale
 
-
-def fp8_channel_f_and_b(x, w, y):
-    channel_quant_forward(x, w)
-    channel_quant_backward(y, w)
-    channel_quant_update(y, x)

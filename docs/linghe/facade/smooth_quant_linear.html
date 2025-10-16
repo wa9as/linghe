@@ -28,21 +28,6 @@
 
             <h2>API Documentation</h2>
                 <ul class="memberlist">
-            <li>
-                    <a class="class" href="#QuantLinear">QuantLinear</a>
-                            <ul class="memberlist">
-                        <li>
-                                <a class="function" href="#QuantLinear.__init__">QuantLinear</a>
-                        </li>
-                        <li>
-                                <a class="function" href="#QuantLinear.forward">forward</a>
-                        </li>
-                        <li>
-                                <a class="function" href="#QuantLinear.extra_repr">extra_repr</a>
-                        </li>
-                </ul>
-
-            </li>
     </ul>
 
 
@@ -66,114 +51,6 @@
                 
                 
             </section>
-                <section id="QuantLinear">
-                    <div class="attr class">
-            
-    <span class="def">class</span>
-    <span class="name">QuantLinear</span><wbr>(<span class="base">torch.nn.modules.module.Module</span>):
-
-        
-    </div>
-    <a class="headerlink" href="#QuantLinear"></a>
-    
-            <div class="docstring"><p>Base class for all neural network modules.</p>
-
-<p>Your models should also subclass this class.</p>
-
-<p>Modules can also contain other Modules, allowing them to be nested in
-a tree structure. You can assign the submodules as regular attributes::</p>
-
-<pre><code>import torch.nn as nn
-import torch.nn.functional as F
-
-
-class Model(nn.Module):
-    def __init__(self) -&gt; None:
-        super().__init__()
-        self.conv1 = nn.Conv2d(1, 20, 5)
-        self.conv2 = nn.Conv2d(20, 20, 5)
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        return F.relu(self.conv2(x))
-</code></pre>
-
-<p>Submodules assigned in this way will be registered, and will also have their
-parameters converted when you call <code><a href="#QuantLinear.to">to()</a></code>, etc.</p>
-
-<div class="alert note">
-
-<p>As per the example above, an <code><a href="#QuantLinear.__init__">__init__()</a></code> call to the parent class
-must be made before assignment on the child.</p>
-
-</div>
-
-<p>:ivar training: Boolean represents whether this module is in training or
-                evaluation mode.
-:vartype training: bool</p>
-</div>
-
-
-                            <div id="QuantLinear.__init__" class="classattr">
-                                <div class="attr function">
-            
-        <span class="name">QuantLinear</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">in_features</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">out_features</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">bias</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>,</span><span class="param">	<span class="n">device</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">dtype</span><span class="o">=</span><span class="kc">None</span></span>)</span>
-
-        
-    </div>
-    <a class="headerlink" href="#QuantLinear.__init__"></a>
-    
-            <div class="docstring"><p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p>
-</div>
-
-
-                            </div>
-                            <div id="QuantLinear.forward" class="classattr">
-                                <div class="attr function">
-            
-        <span class="def">def</span>
-        <span class="name">forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="bp">self</span>, </span><span class="param"><span class="nb">input</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span></span><span class="return-annotation">) -> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>:</span></span>
-
-        
-    </div>
-    <a class="headerlink" href="#QuantLinear.forward"></a>
-    
-            <div class="docstring"><p>Define the computation performed at every call.</p>
-
-<p>Should be overridden by all subclasses.</p>
-
-<div class="alert note">
-
-<p>Although the recipe for forward pass needs to be defined within
-this function, one should call the <code>Module</code> instance afterwards
-instead of this since the former takes care of running the
-registered hooks while the latter silently ignores them.</p>
-
-</div>
-</div>
-
-
-                            </div>
-                            <div id="QuantLinear.extra_repr" class="classattr">
-                                <div class="attr function">
-            
-        <span class="def">def</span>
-        <span class="name">extra_repr</span><span class="signature pdoc-code condensed">(<span class="param"><span class="bp">self</span></span><span class="return-annotation">) -> <span class="nb">str</span>:</span></span>
-
-        
-    </div>
-    <a class="headerlink" href="#QuantLinear.extra_repr"></a>
-    
-            <div class="docstring"><p>Return the extra representation of the module.</p>
-
-<p>To print customized extra information, you should re-implement
-this method in your own modules. Both single-line and multi-line
-strings are acceptable.</p>
-</div>
-
-
-                            </div>
-                </section>
     </main>
 </body>
 </html>

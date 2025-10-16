@@ -39,8 +39,8 @@ def triton_block_quant(x,
         round_scale: whether round scale to power of 2
 
     Returns:
-        y: quantized tensor, float8_e4m3fn
-        s: quantization scale, float32
+        - y: quantized tensor, float8_e4m3fn
+        - s: quantization scale, float32
     """
     M, N = x.size()
     y = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=x.device)

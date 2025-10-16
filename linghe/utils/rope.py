@@ -89,8 +89,8 @@ def triton_half_rope_forward(q, k, freqs):
         freqs: rope freqs
 
     Returns:
-        qo:
-        ko:
+        - qo: query output
+        - ko: key output
     """
     L, B, H, D = q.shape
     h = k.shape[2]
@@ -340,9 +340,9 @@ def triton_qk_norm_and_half_rope_forward(qkv, q_norm_weight, k_norm_weight,
         transpose: whether qkv is tranposed, i.e., [S, B, dim],
             only support transpose format currently
     Returns:
-        qo: shape [B, S, H, head_dim]
-        ko: shape [B, S, h, head_dim]
-        vo: shape [B, S, h, head_dim]
+        - qo: shape [B, S, H, head_dim]
+        - ko: shape [B, S, h, head_dim]
+        - vo: shape [B, S, h, head_dim]
     """
 
     assert transpose
@@ -560,9 +560,9 @@ def triton_qk_norm_and_half_rope_backward(gq, gk, gv, qkv, q_norm_weight,
         interleave:
 
     Returns:
-        dqkv: gradient of qkv
-        dqw: gradient of q_norm_weight
-        dkw: gradient of k_norm_weight
+        - dqkv: gradient of qkv
+        - dqw: gradient of q_norm_weight
+        - dkw: gradient of k_norm_weight
     """
     assert transpose
     B, L, H, D = gq.shape

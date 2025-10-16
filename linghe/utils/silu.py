@@ -122,8 +122,8 @@ def triton_weighted_silu_backward(g: torch.Tensor,
         weight: weight tensor
 
     Returns:
-        dx: gradient of x
-        dw: gradient of weight
+        - dx: gradient of x
+        - dw: gradient of weight
     """
     # row-wise read, row-wise write
     M, N = x.shape
@@ -228,10 +228,10 @@ def triton_silu_and_block_quant_forward(x,
             2: output both
 
     Returns:
-        out: quantized tensor
-        scale: quantization scale
-        transpose_output: quantized tensor of transposed output
-        transpose_scale: quantization scale of transposed output
+        - out: quantized tensor
+        - scale: quantization scale
+        - transpose_output: quantized tensor of transposed output
+        - transpose_scale: quantization scale of transposed output
     """
     M, N = x.shape
     n = N // 2
@@ -349,10 +349,10 @@ def triton_silu_and_block_quant_backward(g, x,
         round_scale: whether round to power of 2
 
     Returns:
-        dx: quantized non-transposed gradient
-        dx_scale: scales of quantization non-transposed gradient
-        transpose_dx: quantized transposed gradient
-        transpose_dx_scale: scales of quantization transposed gradient
+        - dx: quantized non-transposed gradient
+        - dx_scale: scales of quantization non-transposed gradient
+        - transpose_dx: quantized transposed gradient
+        - transpose_dx_scale: scales of quantization transposed gradient
     """
     M, N = x.shape
     n = N // 2
@@ -480,10 +480,10 @@ def triton_batch_weighted_silu_and_block_quant_forward(x,
             2: output both
 
     Returns:
-        out: quantized tensor
-        scale: quantization scale
-        transpose_output: quantized tensor of transposed output
-        transpose_scale: quantization scale of transposed output
+        - out: quantized tensor
+        - scale: quantization scale
+        - transpose_output: quantized tensor of transposed output
+        - transpose_scale: quantization scale of transposed output
     """
     M, N = x.shape
     n = N // 2
@@ -642,11 +642,11 @@ def triton_batch_weighted_silu_and_block_quant_backward(g, x, weight,
         splits: python int list of token count per expert
         round_scale: whether round scale to power of 2
     Returns:
-        dx: quantized non-transposed gradient
-        dx_scale: scales of quantization non-transposed gradient
-        dw: gradient of weight
-        transpose_dx: quantized transposed gradient
-        transpose_dx_scale: scales of quantization transposed gradient
+        - dx: quantized non-transposed gradient
+        - dx_scale: scales of quantization non-transposed gradient
+        - dw: gradient of weight
+        - transpose_dx: quantized transposed gradient
+        - transpose_dx_scale: scales of quantization transposed gradient
     """
     # row-wise read, row-wise write
     M, N = x.shape
@@ -793,9 +793,7 @@ def compatible_silu_and_smooth_quant_forward_kernel(x_ptr, smooth_scale_ptr, out
 def triton_silu_and_smooth_quant_forward(x, smooth_scale=None, out=None, scale=None,
                                   maxs=None, round_scale=False,
                                   calibrate=False):
-    """
-
-    """
+    """"""
     M, N = x.shape
     n = N // 2
     device = x.device
@@ -995,9 +993,7 @@ def triton_silu_and_smooth_quant_backward(g, x,
                                    transpose_smooth_scale=None,
                                    reverse=True,
                                    round_scale=False):
-    """
-
-    """
+    """"""
     assert round_scale
     M, N = x.shape
     n = N // 2
@@ -1112,9 +1108,7 @@ def triton_batch_weighted_silu_and_smooth_quant_forward(x,
                                                         round_scale=False,
                                                         reverse=False,
                                                         calibrate=False):
-    """
-
-    """
+    """"""
     M, N = x.shape
     n = N // 2
     n_experts = counts.shape[0]
@@ -1365,9 +1359,7 @@ def triton_batch_weighted_silu_and_smooth_quant_backward(g, x, weight,
                                                          splits=None,
                                                          reverse=True,
                                                          round_scale=False):
-    """
-
-    """
+    """"""
     assert round_scale
     M, N = x.shape
     n = N // 2

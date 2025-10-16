@@ -11,9 +11,7 @@ from linghe.gemm.fp32_gemm import (triton_fp32_gemm,
 
 
 class Fp32GEMM(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, input: torch.Tensor, weight: torch.Tensor):
         shape = input.shape

@@ -297,7 +297,7 @@ def triton_scaled_fp32_gemm(a: torch.Tensor,
         scale: scale for activation tensor, 1/rms
 
     Returns:
-
+        output tensor
     """
     assert a.is_contiguous() and b.is_contiguous()
     M, K = a.size()

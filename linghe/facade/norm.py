@@ -10,9 +10,7 @@ from linghe.utils.norm import triton_rms_norm_forward, triton_rms_norm_backward,
 
 
 class RMSNormFunction(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, x, weight, eps=1e-6):
         output = triton_rms_norm_forward(
@@ -56,9 +54,7 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6):
     return RMSNormFunction.apply(x, weight, eps)
 
 class GroupNormGateFunction(torch.autograd.Function):
-    """
-
-    """
+    """"""
     @staticmethod
     def forward(ctx, attn_output, gate, weight, eps=1e-6, group_size=4):
         output = triton_group_norm_gate_forward(

@@ -288,11 +288,12 @@ def triton_rms_norm_and_block_quant_forward(x: torch.Tensor,
             1: only output transposed tensor
             2: return both
     Returns:
-        out: quantization data
-        scale: quantization scale
-        rms: Reciprocal of the root mean square of the input calculated over the last dimension.
-        transpose_output: quantization data of transposed gradient
-        transpose_scale: quantization scale of transposed gradient
+        - out: quantization data.
+        - scale: quantization scale.
+        - rms: Reciprocal of the root mean square of the
+            input calculated over the last dimension.
+        - transpose_output: quantization data of transposed gradient.
+        - transpose_scale: quantization scale of transposed gradient.
     """
     # row-wise read, row-wise write
     M, N = x.shape
@@ -581,9 +582,7 @@ def triton_rms_norm_and_smooth_quant_forward(x, weight, smooth_scale=None,
                                              calibrate=False,
                                              output_rms=False,
                                              round_scale=False):
-    """
-
-    """
+    """"""
     M, N = x.shape
     assert N <= 8192 and 8192 % N == 0
     device = x.device

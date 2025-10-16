@@ -43,8 +43,8 @@ def triton_split_and_cat(x, counts, indices, scales=None):
         scales: [bs]
 
     Returns:
-        y: output tensor
-        output_scales: output scales if scales is not None
+        - y: output tensor
+        - output_scales: output scales if scales is not None
     """
     M, N = x.shape
     n_split = counts.shape[0]
