@@ -28,6 +28,30 @@
 
             <h2>API Documentation</h2>
                 <ul class="memberlist">
+            <li>
+                    <a class="function" href="#triton_make_row_id_map">triton_make_row_id_map</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_make_row_id_map_and_indices">triton_make_row_id_map_and_indices</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_index_select">triton_index_select</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_permute_with_mask_map">triton_permute_with_mask_map</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_batch_transpose_smooth_permute_with_indices">triton_batch_transpose_smooth_permute_with_indices</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_smooth_weighted_permute_with_indices">triton_smooth_weighted_permute_with_indices</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_smooth_permute_with_indices">triton_smooth_permute_with_indices</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_smooth_permute_with_mask_map">triton_smooth_permute_with_mask_map</a>
+            </li>
     </ul>
 
 
@@ -51,6 +75,268 @@
                 
                 
             </section>
+                <section id="triton_make_row_id_map">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_make_row_id_map</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">routing_map</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">multiple_of</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_make_row_id_map"></a>
+    
+            <div class="docstring"><p>make row id map, values in the tensor are the row indices</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>routing_map:</strong>  a tensor of 0/1 values, 1 indicates routed</li>
+<li><strong>multiple_of:</strong>  padding the tokens of each expert to multiple of this value</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>row id map with shape [n_tokens, n_experts]</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_make_row_id_map_and_indices">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_make_row_id_map_and_indices</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">routing_map</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">num_out_tokens</span><span class="p">:</span> <span class="nb">int</span>, </span><span class="param"><span class="n">multiple_of</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_make_row_id_map_and_indices"></a>
+    
+            <div class="docstring"><p>similar with triton_make_row_id_map, but output an indices tensor as well</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>routing_map:</strong>  [n_tokens, n_experts]</li>
+<li><strong>num_out_tokens:</strong>  sum(round_up_to(n_tokens, multiple_of))</li>
+<li><strong>multiple_of:</strong>  padding the tokens of each expert to this value</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>row_in_map: [n_tokens, n_experts]
+  row_indices: [num_out_tokens]</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_index_select">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_index_select</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">indices</span>, </span><span class="param"><span class="n">scale</span><span class="o">=</span><span class="kc">None</span>, </span><span class="param"><span class="n">out</span><span class="o">=</span><span class="kc">None</span>, </span><span class="param"><span class="n">scale_out</span><span class="o">=</span><span class="kc">None</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_index_select"></a>
+    
+            <div class="docstring"><p>index select for quantized tensor</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  [bs, dim]</li>
+<li><strong>indices:</strong>  [K]</li>
+<li><strong>scale:</strong>  [bs]</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>out: output of selected x
+  scale_out: scale of selected scale</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_permute_with_mask_map">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_permute_with_mask_map</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">inp</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">scale</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">probs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">row_id_map</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">num_out_tokens</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">contiguous</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>,</span><span class="param">	<span class="n">tokens_per_expert</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_permute_with_mask_map"></a>
+    
+            <div class="docstring"><p>gather quantized tensor with row id map</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>inp:</strong>  [num_tokens, hidden_size], rowwise quantized tensor</li>
+<li><strong>scale:</strong>  [num_tokens], quantization scale</li>
+<li><strong>probs:</strong>  router prob, used as weight</li>
+<li><strong>row_id_map:</strong>  [n_experts, num_tokens]
+index &gt;= 0: row index of output tensor
+index == -1: ignore
+Note: index may not be contiguous</li>
+<li><strong>num_out_tokens:</strong>  output token count, including padding tokens</li>
+<li><strong>contiguous:</strong>  whether indices in row_id_map is contiguous,
+False means padded</li>
+<li><strong>tokens_per_expert:</strong>  [num_experts], token count per expert,
+non-blocking cuda tensor</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>output: permuted quantized tensor
+  permuted_scale: permuted quantization scale
+  permuted_probs: permuted router prob</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_batch_transpose_smooth_permute_with_indices">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_batch_transpose_smooth_permute_with_indices</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">x</span>,</span><span class="param">	<span class="n">scale</span>,</span><span class="param">	<span class="n">org_smooth_scale</span>,</span><span class="param">	<span class="n">smooth_scales</span>,</span><span class="param">	<span class="n">indices</span>,</span><span class="param">	<span class="n">token_count_per_expert</span>,</span><span class="param">	<span class="n">splits</span>,</span><span class="param">	<span class="n">x_q</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">x_scale</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_batch_transpose_smooth_permute_with_indices"></a>
+    
+            <div class="docstring"><p>used for smooth quantization backward in megatron 0.12,
+x is gathered, requantized, padded to multiple of 32 and tranposed</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  dy, [bs, dim], it is smooth quantized</li>
+<li><strong>scale:</strong>  [bs], quantized scale</li>
+<li><strong>org_smooth_scale:</strong>  [dim]</li>
+<li><strong>smooth_scales:</strong>  [n_experts, dim]</li>
+<li><strong>indices:</strong>  [sum(tokens_per_experts)]</li>
+<li><strong>token_count_per_expert:</strong>  [n_experts], tensor of token count per expert</li>
+<li><strong>splits:</strong>  [n_experts], list of token_count_per_expert</li>
+<li><strong>round_scale:</strong>  round quantization scale to power of 2</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>x_q: [sum(roundup(tokens_per_experts)) * dim]
+  x_scale: [sum(roundup(tokens_per_experts))]</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_smooth_weighted_permute_with_indices">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_smooth_weighted_permute_with_indices</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">grads</span>,</span><span class="param">	<span class="n">tokens</span>,</span><span class="param">	<span class="n">smooth_scales</span>,</span><span class="param">	<span class="n">token_count_per_expert</span>,</span><span class="param">	<span class="n">indices</span>,</span><span class="param">	<span class="n">x_q</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">x_scale</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">x_sum</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">reverse</span><span class="o">=</span><span class="kc">False</span>,</span><span class="param">	<span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_smooth_weighted_permute_with_indices"></a>
+    
+            <div class="docstring"><p>select and smooth and quant, used in megatron 0.11 all2all moe</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>grads:</strong>  [bs, dim]</li>
+<li><strong>tokens:</strong>  [bs, dim]</li>
+<li><strong>smooth_scales:</strong>  [n_experts, dim]</li>
+<li><strong>token_count_per_expert:</strong>  [n_experts]</li>
+<li><strong>indices:</strong>  [n_experts*topk]</li>
+<li><strong>reverse:</strong>  whether scale is 1/scale</li>
+<li><strong>round_scale:</strong>  whether round scale to power of 2</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>x_q: [bs*topk, dim]
+  x_scale: [bs<em>topk]
+  x_sum: [bs</em>topk]</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_smooth_permute_with_indices">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_smooth_permute_with_indices</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">grad_data</span>,</span><span class="param">	<span class="n">grad_scale</span>,</span><span class="param">	<span class="n">smooth_scales</span>,</span><span class="param">	<span class="n">token_count_per_expert</span>,</span><span class="param">	<span class="n">indices</span>,</span><span class="param">	<span class="n">x_q</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">x_scale</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">reverse</span><span class="o">=</span><span class="kc">False</span>,</span><span class="param">	<span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_smooth_permute_with_indices"></a>
+    
+            <div class="docstring"><p>select and smooth and quant</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>grad_data:</strong>  [bs, dim]</li>
+<li><strong>grad_scale:</strong>  [bs]</li>
+<li><strong>smooth_scales:</strong>  [n_experts, dim]</li>
+<li><strong>token_count_per_expert:</strong>  [n_experts]</li>
+<li><strong>indices:</strong>  [n_experts*topk]</li>
+<li><strong>x_q:</strong>  [bs*topk, dim]</li>
+<li><strong>x_scale:</strong>  [bs*topk]</li>
+<li><strong>reverse:</strong> </li>
+<li><strong>round_scale:</strong> </li>
+</ul>
+
+<p>Returns:</p>
+</div>
+
+
+                </section>
+                <section id="triton_smooth_permute_with_mask_map">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_smooth_permute_with_mask_map</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">inp</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">row_id_map</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">scale</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">num_tokens</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">num_experts</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">num_out_tokens</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">hidden_size</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">smooth_scales</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">reverse</span><span class="o">=</span><span class="kc">True</span>,</span><span class="param">	<span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_smooth_permute_with_mask_map"></a>
+    
+            <div class="docstring"><p>gather and optional dequant and smooth quant</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>inp:</strong>  [num_tokens, hidden_size], rowwise quantized tensor</li>
+<li><strong>row_id_map:</strong>  [n_experts, num_tokens], indices</li>
+<li><strong>scale:</strong>  [num_tokens, hs], rowwise_scale_inv, optional</li>
+<li><strong>num_tokens:</strong>  [n_experts]</li>
+<li><strong>num_experts:</strong> </li>
+<li><strong>num_out_tokens:</strong> </li>
+<li><strong>hidden_size:</strong> </li>
+<li><strong>smooth_scales:</strong>  [n_experts, hidden_size]</li>
+<li><strong>reverse:</strong> </li>
+<li><strong>round_scale:</strong> </li>
+</ul>
+
+<p>Returns:</p>
+</div>
+
+
+                </section>
     </main>
 </body>
 </html>

@@ -8,11 +8,11 @@ import triton
 import triton.language as tl
 
 from linghe.tools.util import round_up
+from linghe.utils.transpose import triton_transpose_and_pad
 
 
-# TODO(nanxiao): use max instead of sum
 @triton.jit
-def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
+def tokenwise_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
                                          M, T,
                                          N: tl.constexpr,
                                          W: tl.constexpr,
@@ -77,7 +77,7 @@ def tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
 
 
 @triton.jit
-def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
+def blockwise_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
                                          M,
                                          N,
                                          H: tl.constexpr,
@@ -147,10 +147,12 @@ def blockwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, max_ptr,
         soffs += H
 
 
-def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
+def triton_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
                                reverse=False, round_scale=False,
                                calibrate=False):
-    # row-wise read, row-wise write
+    """
+
+    """
     M, N = x.shape
     device = x.device
     if x_q is None:
@@ -168,7 +170,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
             x_maxs = torch.empty((g, N), device=device, dtype=torch.bfloat16)
         else:
             x_maxs = None
-        tokenwise_reused_smooth_quant_kernel[(g,)](
+        tokenwise_smooth_quant_kernel[(g,)](
             x,
             x_q,
             smooth_scale,
@@ -197,7 +199,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
         else:
             x_maxs = None
         grid = (T,)
-        blockwise_reused_smooth_quant_kernel[grid](
+        blockwise_smooth_quant_kernel[grid](
             x,
             x_q,
             smooth_scale,
@@ -221,7 +223,7 @@ def triton_reused_smooth_quant(x, smooth_scale, x_q=None, x_scale=None,
 
 
 @triton.jit
-def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
+def subrow_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
                                       subrow_scales_ptr,
                                       tail_ri,
                                       tail_si,
@@ -286,9 +288,12 @@ def subrow_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr,
                      xq.to(q_ptr.dtype.element_ty), mask=mask)
 
 
-def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale,
+def triton_subrow_smooth_quant(x, smooth_scale, x_q, x_scale,
                                       subrow_scales, offset, size,
                                       reverse=False, round_scale=False):
+    """
+
+    """
     M, N = x_q.shape
     W = 128
     if offset % N == 0:
@@ -310,7 +315,7 @@ def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale,
         HEAD = True
 
     grid = (1,)
-    subrow_reused_smooth_quant_kernel[grid](
+    subrow_smooth_quant_kernel[grid](
         x,
         x_q,
         smooth_scale,
@@ -333,7 +338,7 @@ def triton_subrow_reused_smooth_quant(x, smooth_scale, x_q, x_scale,
 
 
 @triton.jit
-def depracated_tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr,
+def depracated_tokenwise_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr,
                                                     qs_ptr, M, W,
                                                     N: tl.constexpr,
                                                     REVERSE: tl.constexpr,
@@ -361,9 +366,12 @@ def depracated_tokenwise_reused_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr,
                  mask=pid * W + i < M)
 
 
-def triton_depracated_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=None,
+def triton_depracated_tokenwise_smooth_quant(x, smooth_scale, x_q=None,
                                                     x_scale=None, reverse=False,
                                                     round_scale=False):
+    """
+
+    """
     # row-wise read, row-wise write
     M, N = x.shape
     device = x.device
@@ -374,7 +382,7 @@ def triton_depracated_tokenwise_reused_smooth_quant(x, smooth_scale, x_q=None,
     sm = torch.cuda.get_device_properties(device).multi_processor_count
     W = triton.cdiv(M, sm)
     grid = (sm,)
-    depracated_tokenwise_reused_smooth_quant_kernel[grid](
+    depracated_tokenwise_smooth_quant_kernel[grid](
         x,
         x_q,
         smooth_scale,
@@ -447,8 +455,9 @@ def triton_batch_smooth_quant(x, smooth_scales, token_count_per_expert,
                               x_q=None, x_scale=None, x_maxs=None,
                               reverse=False, round_scale=False,
                               calibrate=False):
-    # row-wise read, row-wise write
+    """
 
+    """
     M, N = x.shape
     device = x.device
     n_expert = token_count_per_expert.shape[0]
@@ -569,8 +578,9 @@ def triton_batch_pad_transpose_smooth_quant(x,
                                             splits,
                                             x_q=None, x_scale=None, x_maxs=None,
                                             reverse=False, round_scale=False):
-    # col-wise read, row-wise write
+    """
 
+    """
     M, N = x.shape
     device = x.device
     n_expert = token_count_per_expert.shape[0]
@@ -605,7 +615,7 @@ def triton_batch_pad_transpose_smooth_quant(x,
 
 
 @triton.jit
-def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
+def transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
                                          H: tl.constexpr, W: tl.constexpr,
                                          EVEN: tl.constexpr,
                                          REVERSE: tl.constexpr,
@@ -677,13 +687,16 @@ def reused_transpose_smooth_quant_kernel(x_ptr, q_ptr, ss_ptr, qs_ptr, M, N, P,
         soffs += H
 
 
-def triton_reused_transpose_smooth_quant(x,
+def triton_transpose_smooth_quant(x,
                                          smooth_scale,
                                          reverse=False,
                                          pad=False,
                                          round_scale=False):
     # col-wise read, row-wise write
     # M should be padded if M % 32 != 0
+    """
+
+    """
     M, N = x.shape
     device = x.device
     P = (M + 31) // 32 * 32 if pad else M
@@ -695,7 +708,7 @@ def triton_reused_transpose_smooth_quant(x,
     EVEN = P % H == 0 and M == P
 
     grid = (triton.cdiv(N, W),)
-    reused_transpose_smooth_quant_kernel[grid](
+    transpose_smooth_quant_kernel[grid](
         x,
         x_q,
         smooth_scale,
@@ -715,7 +728,7 @@ def triton_reused_transpose_smooth_quant(x,
 
 
 @triton.jit
-def reused_transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
+def transpose_rescale_smooth_quant_kernel(x_ptr, q_ptr,
                                                  org_smooth_scale_ptr,
                                                  org_quant_scale_ptr,
                                                  transpose_smooth_scale_ptr,
@@ -804,14 +817,15 @@ implement: x_q/org_smooth_scale*(org_quant_scale*smooth_scale) -> colwise quant 
 """
 
 
-def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
+def triton_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
                                                  org_quant_scale,
                                                  transpose_smooth_scale,
                                                  reverse=True,
                                                  pad=False,
                                                  round_scale=False):
-    # col-wise read, row-wise write
+    """
 
+    """
     assert reverse
     M, N = x_q.shape
     device = x_q.device
@@ -824,7 +838,7 @@ def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
     EVEN = P == M and M % H == 0
 
     grid = (triton.cdiv(N, W),)
-    reused_transpose_rescale_smooth_quant_kernel[grid](
+    transpose_rescale_smooth_quant_kernel[grid](
         x_q,
         xt_q,
         org_smooth_scale,
@@ -842,58 +856,133 @@ def triton_reused_transpose_rescale_smooth_quant(x_q, org_smooth_scale,
     return xt_q, x_scale
 
 
-def triton_reused_smooth_quant_nt(x, w, smooth_scale):
-    x_q, x_scale, x_maxs = triton_reused_smooth_quant(x, 1 / smooth_scale)
-    w_q, w_scale, x_maxs = triton_reused_smooth_quant(w, smooth_scale)
-    return x_q, x_scale, w_q, w_scale
+
+"""
+megatron fp8 training steps:
+step 0: init w smooth scale w_smooth
+step 1: smooth and quant w after w is updated by optimizer
+step 2: in forward step, columnwise smooth x and rowwise quant x, calc y=x@w; 
+            meanwhile, record the columnwise max of x, it is used to update w_smooth
+step 3: in dgrad step, columnwise smooth y and rowwise quant y, transpose x, calc dx=y@wT 
+step 4: in wgrad step, dequant then smooth an then quant y_q to get yt_q, calc dw=yT@x
+
+alternative (it's not suitable for fp8 combine):
+step 4: in wgrad step, rowwise smooth y and columnwise quant y and transpose to get yt_q, calc dw=yT@x
+
+"""
+
+"""
+divide x by smooth_scale and row-wise quantization
+smooth scale is updated by square root of x's column-wise maxs, and set in weight's x_maxs attr
+
+transpose: transpose quantized x for wgrad
+pad: # pad M to be multiplier of 32, including quant scales and transposed x
+
+"""
 
 
-def triton_reused_smooth_quant_nn(y, w, smooth_scale):
-    y_q, y_scale, x_maxs = triton_reused_smooth_quant(y, smooth_scale)
-    w_q, w_scale = triton_reused_transpose_smooth_quant(w, 1 / smooth_scale)
-    return y_q, y_scale, w_q, w_scale
+# y = x @ w
+# dx = y @ wT
+# dwT = yT @ x
+def triton_smooth_quant_input(x, smooth_scale, x_q=None, x_scale=None, xt_q=None,
+                          transpose=True, pad=True, round_scale=False):
+    """
+
+    """
+    x_q, x_scale, x_maxs = triton_smooth_quant(x, smooth_scale, x_q=x_q,
+                                              x_scale=x_scale, reverse=False,
+                                              round_scale=round_scale)
+
+    if transpose:
+        xt_q = triton_transpose_and_pad(x_q, out=xt_q, pad=pad)
+    else:
+        xt_q = None
+    xt_scale = smooth_scale
+
+    return x_q, xt_q, x_scale, xt_scale
 
 
-def triton_reused_smooth_quant_tn(y, x, smooth_scale):
-    y_q, y_scale = triton_reused_transpose_smooth_quant(y, smooth_scale)
-    x_q, x_scale = triton_reused_transpose_smooth_quant(x, 1 / smooth_scale)
-    return y_q, y_scale, x_q, x_scale
+# y = x @ w
+# dx = y @ wT
+# dwT = yT @ x
+def triton_smooth_quant_gradient(y,
+                                 smooth_scale,
+                                 transpose_smooth_scale,
+                                 reverse=True,
+                                 transpose=True,
+                                 pad=True,
+                                 round_scale=False):
+    """
+
+    """
+    assert reverse, ("args `smooth_scale` and/or `transpose_smooth_scale` "
+                     "must be in reciprocal format in triton_smooth_quant_grad")
+    y_q, y_scale, _ = triton_smooth_quant(y, smooth_scale, reverse=True,
+                                              round_scale=round_scale)
+    if transpose:
+        yt_q, yt_scale = triton_transpose_smooth_quant(y,
+                                                              transpose_smooth_scale,
+                                                              reverse=True,
+                                                              pad=pad,
+                                                              round_scale=round_scale)
+    else:
+        yt_q, yt_scale = None, None
+
+    return y_q, yt_q, y_scale, yt_scale
 
 
-def reused_smooth_quant_forward(x, w, smooth_scale):
-    x_q, x_s, w_q, w_s = triton_reused_smooth_quant_nt(x, w, smooth_scale)
-    output = torch._scaled_mm(x_q,
-                              w_q.t(),
-                              scale_a=x_s.view(-1, 1),
-                              scale_b=w_s.view(1, -1),
-                              out_dtype=x.dtype,
-                              use_fast_accum=True)
-    return output
+def triton_smooth_quant_weight(w,
+                               smooth_scale,
+                               w_q,
+                               quant_scale,
+                               subrow_scales, offset=0,
+                               round_scale=False):
+    """
 
+    """
+    assert w.ndim == 1
+    assert w_q.size(1) == smooth_scale.size(0)
 
-def reused_smooth_quant_backward(y, w, smooth_scale):
-    y_q, y_s, w_q, w_s = triton_reused_smooth_quant_nn(y, w, smooth_scale)
-    output = torch._scaled_mm(y_q,
-                              w_q.t(),
-                              scale_a=y_s.view(-1, 1),
-                              scale_b=w_s.view(1, -1),
-                              out_dtype=y.dtype,
-                              use_fast_accum=True)
-    return output
+    size = w.numel()
+    M, N = w_q.shape
 
+    if size == M * N:
+        triton_smooth_quant(w.view(M, N), smooth_scale, x_q=w_q,
+                                                x_scale=quant_scale,
+                                                round_scale=round_scale)
+    elif offset % N == 0 and size % N == 0:
+        n_row = size // N
+        row_id = offset // N
+        w_q_slice = w_q[row_id:row_id + n_row]
+        quant_scale_slice = quant_scale[row_id:row_id + n_row]
+        triton_smooth_quant(w.view(n_row,N), smooth_scale, x_q=w_q_slice,
+                                                x_scale=quant_scale_slice,
+                                                round_scale=round_scale)
+    else:
+        row_si = (offset - 1)//N + 1
+        row_ei = (offset + size) // N
+        col_si = offset % N
+        col_ei = (offset + size ) % N
+        n_row = row_ei - row_si
+        mw_offset = 0 if col_si == 0 else N - col_si
+        w_q_slice = w_q[row_si:row_ei]
+        quant_scale_slice = quant_scale[row_si:row_ei]
+        w_slice = w[mw_offset:mw_offset+n_row*N].view(n_row,N)
+        triton_smooth_quant(w_slice,
+                                   smooth_scale,
+                                   x_q=w_q_slice,
+                                   x_scale=quant_scale_slice,
+                                   round_scale=round_scale)
 
-def reused_smooth_quant_update(y, x, smooth_scale):
-    y_q, y_s, x_q, x_s = triton_reused_smooth_quant_tn(y, x, smooth_scale)
-    output = torch._scaled_mm(y_q,
-                              x_q.t(),
-                              scale_a=y_s.view(-1, 1),
-                              scale_b=x_s.view(1, -1),
-                              out_dtype=y.dtype,
-                              use_fast_accum=True)
-    return output
+        # subrow scale is writed by the row with leading master weights
+        if col_si > 0 or col_ei > 0:
+            triton_subrow_smooth_quant(w,
+                                              smooth_scale,
+                                              w_q,
+                                              quant_scale,
+                                              subrow_scales,
+                                              offset,
+                                              size,
+                                              reverse=False,
+                                              round_scale=round_scale)
 
-
-def reused_smooth_quant_f_and_b(x, w, y, smooth_scale):
-    reused_smooth_quant_forward(x, w, smooth_scale)
-    reused_smooth_quant_backward(y, w, smooth_scale)
-    reused_smooth_quant_update(y, x, smooth_scale)

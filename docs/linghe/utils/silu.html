@@ -28,6 +28,18 @@
 
             <h2>API Documentation</h2>
                 <ul class="memberlist">
+            <li>
+                    <a class="function" href="#triton_silu_and_block_quant_forward">triton_silu_and_block_quant_forward</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_silu_and_block_quant_backward">triton_silu_and_block_quant_backward</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_batch_weighted_silu_and_block_quant_forward">triton_batch_weighted_silu_and_block_quant_forward</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_batch_weighted_silu_and_block_quant_backward">triton_batch_weighted_silu_and_block_quant_backward</a>
+            </li>
     </ul>
 
 
@@ -51,6 +63,147 @@
                 
                 
             </section>
+                <section id="triton_silu_and_block_quant_forward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_silu_and_block_quant_forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">out</span><span class="o">=</span><span class="kc">None</span>, </span><span class="param"><span class="n">scale</span><span class="o">=</span><span class="kc">None</span>, </span><span class="param"><span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span>, </span><span class="param"><span class="n">output_mode</span><span class="o">=</span><span class="mi">2</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_silu_and_block_quant_forward"></a>
+    
+            <div class="docstring"><p>fused silu and blockwise quantization, used in shared expert</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>round_scale:</strong>  whether round scale to power of 2</li>
+<li><strong>output_mode:</strong>  one of {0, 1, 2}
+0: only output non-transposed quantized tensor
+1: only output transposed quantized tensor
+2: output both</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>out: quantized tensor
+  scale: quantization scale
+  transpose_output: quantized tensor of transposed output
+  transpose_scale: quantization scale of transposed output</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_silu_and_block_quant_backward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_silu_and_block_quant_backward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">g</span>, </span><span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_silu_and_block_quant_backward"></a>
+    
+            <div class="docstring"><p>backward of triton_silu_and_block_quant_forward</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>g:</strong>  gradient</li>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>round_scale:</strong>  whether round to power of 2</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>dx: quantized non-transposed gradient
+  dx_scale: scales of quantization non-transposed gradient
+  transpose_dx: quantized transposed gradient
+  transpose_dx_scale: scales of quantization transposed gradient</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_batch_weighted_silu_and_block_quant_forward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_batch_weighted_silu_and_block_quant_forward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">x</span>,</span><span class="param">	<span class="n">weight</span>,</span><span class="param">	<span class="n">counts</span>,</span><span class="param">	<span class="n">splits</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">out</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">scale</span><span class="o">=</span><span class="kc">None</span>,</span><span class="param">	<span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span>,</span><span class="param">	<span class="n">output_mode</span><span class="o">=</span><span class="mi">2</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_batch_weighted_silu_and_block_quant_forward"></a>
+    
+            <div class="docstring"><p>silu and blockwise quantize activation in routed experts</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  activation tensor in routed experts</li>
+<li><strong>weight:</strong>  router prob tensor</li>
+<li><strong>counts:</strong>  cuda tensor of token count per expert</li>
+<li><strong>splits:</strong>  python int list of token count per expert</li>
+<li><strong>round_scale:</strong>  whether round scale to power of 2</li>
+<li><strong>output_mode:</strong>  one of {0, 1, 2}
+0: only output non-transposed quantized tensor
+1: only output transposed quantized tensor
+2: output both</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>out: quantized tensor
+  scale: quantization scale
+  transpose_output: quantized tensor of transposed output
+  transpose_scale: quantization scale of transposed output</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_batch_weighted_silu_and_block_quant_backward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_batch_weighted_silu_and_block_quant_backward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">g</span>, </span><span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">weight</span>, </span><span class="param"><span class="n">counts</span>, </span><span class="param"><span class="n">splits</span><span class="o">=</span><span class="kc">None</span>, </span><span class="param"><span class="n">round_scale</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_batch_weighted_silu_and_block_quant_backward"></a>
+    
+            <div class="docstring"><p>backward of triton_batch_weighted_silu_and_block_quant_forward</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>g:</strong>  gradient</li>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>weight:</strong>  router prob tensor</li>
+<li><strong>counts:</strong>  cuda tensor of token count per expert</li>
+<li><strong>splits:</strong>  python int list of token count per expert</li>
+<li><strong>round_scale:</strong>  whether round scale to power of 2</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>dx: quantized non-transposed gradient
+  dx_scale: scales of quantization non-transposed gradient
+  dw: gradient of weight
+  transpose_dx: quantized transposed gradient
+  transpose_dx_scale: scales of quantization transposed gradient</p>
+</blockquote>
+</div>
+
+
+                </section>
     </main>
 </body>
 </html>

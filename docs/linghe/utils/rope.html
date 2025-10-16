@@ -28,6 +28,15 @@
 
             <h2>API Documentation</h2>
                 <ul class="memberlist">
+            <li>
+                    <a class="function" href="#triton_half_rope_forward">triton_half_rope_forward</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_qk_norm_and_half_rope_forward">triton_qk_norm_and_half_rope_forward</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_qk_norm_and_half_rope_backward">triton_qk_norm_and_half_rope_backward</a>
+            </li>
     </ul>
 
 
@@ -51,6 +60,113 @@
                 
                 
             </section>
+                <section id="triton_half_rope_forward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_half_rope_forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">q</span>, </span><span class="param"><span class="n">k</span>, </span><span class="param"><span class="n">freqs</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_half_rope_forward"></a>
+    
+            <div class="docstring"><p>apply norm to qk, then apply half rope to qk</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>q:</strong>  query tensor, [len, bs, q_head, head_dim]</li>
+<li><strong>k:</strong>  key tensor, [len, bs, kv_head, head_dim]</li>
+<li><strong>freqs:</strong>  rope freqs</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>qo:
+  ko:</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_qk_norm_and_half_rope_forward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_qk_norm_and_half_rope_forward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">qkv</span>,</span><span class="param">	<span class="n">q_norm_weight</span>,</span><span class="param">	<span class="n">k_norm_weight</span>,</span><span class="param">	<span class="n">freqs</span>,</span><span class="param">	<span class="n">H</span><span class="o">=</span><span class="mi">32</span>,</span><span class="param">	<span class="n">h</span><span class="o">=</span><span class="mi">4</span>,</span><span class="param">	<span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span>,</span><span class="param">	<span class="n">interleave</span><span class="o">=</span><span class="kc">True</span>,</span><span class="param">	<span class="n">transpose</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_qk_norm_and_half_rope_forward"></a>
+    
+            <div class="docstring"><p>split qkv to q/k/v, apply qk norm and half rope to q/k,
+    transpose q/k/v to flash-attention layout</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>qkv:</strong>  QKV tensor with size of [S, B, dim], heads are interleaved</li>
+<li><strong>q_norm_weight:</strong>  rms norm weight for query</li>
+<li><strong>k_norm_weight:</strong>  rms norm weight for key</li>
+<li><strong>freqs:</strong>  Freqs tensor based on half dim.</li>
+<li><strong>H:</strong>  Number of attention heads.</li>
+<li><strong>h:</strong>  Number of key/value heads.</li>
+<li><strong>eps:</strong>  epsilon value for L2 normalization.</li>
+<li><strong>interleave:</strong>  whether head of qkv is interleaved, i.e., [qqkvqqkv]</li>
+<li><strong>transpose:</strong>  whether qkv is tranposed, i.e., [S, B, dim],
+only support transpose format currently</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>qo: shape [B, S, H, head_dim]
+  ko: shape [B, S, h, head_dim]
+  vo: shape [B, S, h, head_dim]</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_qk_norm_and_half_rope_backward">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_qk_norm_and_half_rope_backward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">gq</span>,</span><span class="param">	<span class="n">gk</span>,</span><span class="param">	<span class="n">gv</span>,</span><span class="param">	<span class="n">qkv</span>,</span><span class="param">	<span class="n">q_norm_weight</span>,</span><span class="param">	<span class="n">k_norm_weight</span>,</span><span class="param">	<span class="n">freqs</span>,</span><span class="param">	<span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span>,</span><span class="param">	<span class="n">transpose</span><span class="o">=</span><span class="kc">False</span>,</span><span class="param">	<span class="n">interleave</span><span class="o">=</span><span class="kc">True</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_qk_norm_and_half_rope_backward"></a>
+    
+            <div class="docstring"><p>backward kernel of triton_qk_norm_and_half_rope_forward</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>gq:</strong>  gradient of qo, [len, bs, q_head, head_dim]</li>
+<li><strong>gk:</strong>  gradient of ko, [len, bs, q_head, head_dim]</li>
+<li><strong>gv:</strong>  gradient of vo, [len, bs, q_head, head_dim]</li>
+<li><strong>qkv:</strong>  input qkv</li>
+<li><strong>q_norm_weight:</strong> </li>
+<li><strong>k_norm_weight:</strong> </li>
+<li><strong>freqs:</strong> </li>
+<li><strong>eps:</strong> </li>
+<li><strong>transpose:</strong> </li>
+<li><strong>interleave:</strong> </li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>dqkv: gradient of qkv
+  dqw: gradient of q_norm_weight
+  dkw: gradient of k_norm_weight</p>
+</blockquote>
+</div>
+
+
+                </section>
     </main>
 </body>
 </html>

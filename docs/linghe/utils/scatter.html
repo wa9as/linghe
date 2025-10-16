@@ -28,6 +28,15 @@
 
             <h2>API Documentation</h2>
                 <ul class="memberlist">
+            <li>
+                    <a class="function" href="#triton_aligned_scatter_add">triton_aligned_scatter_add</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_scatter_add">triton_scatter_add</a>
+            </li>
+            <li>
+                    <a class="function" href="#triton_unpermute_with_mask_map">triton_unpermute_with_mask_map</a>
+            </li>
     </ul>
 
 
@@ -51,6 +60,95 @@
                 
                 
             </section>
+                <section id="triton_aligned_scatter_add">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_aligned_scatter_add</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">outputs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">indices</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">weights</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_aligned_scatter_add"></a>
+    
+            <div class="docstring"><p>scatter_add for megatron 0.11</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>outputs:</strong>   output tensor</li>
+<li><strong>indices:</strong>   gather indices</li>
+<li><strong>weights:</strong>   rowwise weight, it is router prob in MoE router</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>output tensor</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_scatter_add">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_scatter_add</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">outputs</span>, </span><span class="param"><span class="n">indices</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_scatter_add"></a>
+    
+            <div class="docstring"><p>naive version of scatter add, very slow</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  input tensor</li>
+<li><strong>outputs:</strong>  output tensor</li>
+<li><strong>indices:</strong>  indices</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>outputs</p>
+</blockquote>
+</div>
+
+
+                </section>
+                <section id="triton_unpermute_with_mask_map">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_unpermute_with_mask_map</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">row_id_map</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">probs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_unpermute_with_mask_map"></a>
+    
+            <div class="docstring"><p>scatter add with row id map</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>grad:</strong>  gradient tensor, [num_out_tokens, hidden_size]</li>
+<li><strong>row_id_map:</strong>  row id map, [n_experts, num_tokens]</li>
+<li><strong>probs:</strong>  [num_out_tokens]</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>output: [num_tokens, hidden_size]
+  restore_probs: [num_tokens, num_experts]</p>
+</blockquote>
+</div>
+
+
+                </section>
     </main>
 </body>
 </html>

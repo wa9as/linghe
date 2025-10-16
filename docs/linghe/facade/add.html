@@ -29,16 +29,7 @@
             <h2>API Documentation</h2>
                 <ul class="memberlist">
             <li>
-                    <a class="class" href="#InplaceAddFunction">InplaceAddFunction</a>
-                            <ul class="memberlist">
-                        <li>
-                                <a class="function" href="#InplaceAddFunction.forward">forward</a>
-                        </li>
-                        <li>
-                                <a class="function" href="#InplaceAddFunction.backward">backward</a>
-                        </li>
-                </ul>
-
+                    <a class="function" href="#inplace_add">inplace_add</a>
             </li>
     </ul>
 
@@ -63,37 +54,21 @@
                 
                 
             </section>
-                <section id="InplaceAddFunction">
-                    <div class="attr class">
+                <section id="inplace_add">
+                    <div class="attr function">
             
-    <span class="def">class</span>
-    <span class="name">InplaceAddFunction</span><wbr>(<span class="base">torch.autograd.function.Function</span>):
-
-        
-    </div>
-    <a class="headerlink" href="#InplaceAddFunction"></a>
-    
-            <div class="docstring"><p>inplace add with mix precision</p>
-</div>
-
-
-                            <div id="InplaceAddFunction.forward" class="classattr">
-                                <div class="attr function">
-                    <div class="decorator decorator-staticmethod">@staticmethod</div>
-
         <span class="def">def</span>
-        <span class="name">forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">ctx</span>, </span><span class="param"><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span></span><span class="return-annotation">):</span></span>
+        <span class="name">inplace_add</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>, </span><span class="param"><span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span></span><span class="return-annotation">):</span></span>
 
         
     </div>
-    <a class="headerlink" href="#InplaceAddFunction.forward"></a>
+    <a class="headerlink" href="#inplace_add"></a>
     
             <div class="docstring"><p>inplace add y to x with mix precise</p>
 
 <h6 id="arguments">Arguments:</h6>
 
 <ul>
-<li><strong>ctx:</strong>  autograd context</li>
 <li><strong>x:</strong>  to be updated</li>
 <li><strong>y:</strong>  add to x</li>
 </ul>
@@ -101,41 +76,11 @@
 <h6 id="returns">Returns:</h6>
 
 <blockquote>
-  <p>output: x</p>
+  <p>return updated x tensor</p>
 </blockquote>
 </div>
 
 
-                            </div>
-                            <div id="InplaceAddFunction.backward" class="classattr">
-                                <div class="attr function">
-                    <div class="decorator decorator-staticmethod">@staticmethod</div>
-
-        <span class="def">def</span>
-        <span class="name">backward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">ctx</span>, </span><span class="param"><span class="n">grad_output</span></span><span class="return-annotation">):</span></span>
-
-        
-    </div>
-    <a class="headerlink" href="#InplaceAddFunction.backward"></a>
-    
-            <div class="docstring"><p>backward of inplace add</p>
-
-<h6 id="arguments">Arguments:</h6>
-
-<ul>
-<li><strong>ctx:</strong>  autograd context</li>
-<li><strong>grad_output:</strong>  input gradient</li>
-</ul>
-
-<h6 id="returns">Returns:</h6>
-
-<blockquote>
-  <p>tuple of gradients</p>
-</blockquote>
-</div>
-
-
-                            </div>
                 </section>
     </main>
 </body>

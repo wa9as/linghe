@@ -71,10 +71,14 @@
 <ul>
 <li><strong>x:</strong>  Tensor</li>
 <li><strong>y:</strong>  Tensor</li>
-<li><strong>accum:</strong>  whether accum y to x</li>
+<li><strong>accum:</strong>  x += y if accum=True else x.copy_(y)</li>
 </ul>
 
-<p>Returns:  x += y if accum=True else x.copy_(y)</p>
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>updated x</p>
+</blockquote>
 </div>
 
 

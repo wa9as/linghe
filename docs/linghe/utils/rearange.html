@@ -28,6 +28,9 @@
 
             <h2>API Documentation</h2>
                 <ul class="memberlist">
+            <li>
+                    <a class="function" href="#triton_split_and_cat">triton_split_and_cat</a>
+            </li>
     </ul>
 
 
@@ -51,6 +54,38 @@
                 
                 
             </section>
+                <section id="triton_split_and_cat">
+                    <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">triton_split_and_cat</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">x</span>, </span><span class="param"><span class="n">counts</span>, </span><span class="param"><span class="n">indices</span>, </span><span class="param"><span class="n">scales</span><span class="o">=</span><span class="kc">None</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#triton_split_and_cat"></a>
+    
+            <div class="docstring"><p>split x to multiple tensors and cat with indices,
+it is used for permutation in moe</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>x:</strong>  [bs, dim]</li>
+<li><strong>counts:</strong>  [n_split]</li>
+<li><strong>indices:</strong>  [n_split]</li>
+<li><strong>scales:</strong>  [bs]</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>y: output tensor
+  output_scales: output scales if scales is not None</p>
+</blockquote>
+</div>
+
+
+                </section>
     </main>
 </body>
 </html>
