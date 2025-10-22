@@ -6,7 +6,7 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 import torch
 
 from linghe.utils.norm import triton_rms_norm_forward, triton_rms_norm_backward, \
-    triton_group_norm_gate_forward, triton_group_norm_gate_backward
+    triton_group_rms_norm_gate_forward, triton_group_rms_norm_gate_backward
 
 
 class RMSNormFunction(torch.autograd.Function):
@@ -53,11 +53,11 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6):
     assert weight.contiguous()
     return RMSNormFunction.apply(x, weight, eps)
 
-class GroupNormGateFunction(torch.autograd.Function):
+class GroupRMSNormGateFunction(torch.autograd.Function):
     """"""
     @staticmethod
     def forward(ctx, attn_output, gate, weight, eps=1e-6, group_size=4):
-        output = triton_group_norm_gate_forward(
+        output = triton_group_rms_norm_gate_forward(
             attn_output,
             gate,
             weight.data,
@@ -74,7 +74,7 @@ class GroupNormGateFunction(torch.autograd.Function):
     def backward(ctx, dy):
         attn_output, gate, weight = ctx.saved_tensors
 
-        dx, dg, dw = triton_group_norm_gate_backward(
+        dx, dg, dw = triton_group_rms_norm_gate_backward(
             dy,
             attn_output,
             gate,
@@ -87,7 +87,7 @@ class GroupNormGateFunction(torch.autograd.Function):
 
 
 
-def group_norm_gate(attn_output: torch.Tensor,
+def group_rms_norm_gate(attn_output: torch.Tensor,
                     gate: torch.Tensor,
                     weight: torch.Tensor,
                     eps: float = 1e-6,
@@ -103,4 +103,4 @@ def group_norm_gate(attn_output: torch.Tensor,
     Returns:
         output with shape [length, bs, dim]
     """
-    return GroupNormGateFunction.apply(attn_output, gate, weight, eps, group_size)
+    return GroupRMSNormGateFunction.apply(attn_output, gate, weight, eps, group_size)

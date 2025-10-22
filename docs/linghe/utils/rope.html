@@ -66,7 +66,7 @@
                     <div class="attr function">
             
         <span class="def">def</span>
-        <span class="name">triton_half_rope_forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">q</span>, </span><span class="param"><span class="n">k</span>, </span><span class="param"><span class="n">freqs</span></span><span class="return-annotation">):</span></span>
+        <span class="name">triton_half_rope_forward</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">q</span>, </span><span class="param"><span class="n">k</span>, </span><span class="param"><span class="n">freqs</span>, </span><span class="param"><span class="n">transposed</span><span class="o">=</span><span class="kc">True</span></span><span class="return-annotation">):</span></span>
 
         
     </div>
@@ -98,7 +98,7 @@
                     <div class="attr function">
             
         <span class="def">def</span>
-        <span class="name">triton_qk_norm_and_half_rope_forward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">qkv</span>,</span><span class="param">	<span class="n">q_norm_weight</span>,</span><span class="param">	<span class="n">k_norm_weight</span>,</span><span class="param">	<span class="n">freqs</span>,</span><span class="param">	<span class="n">H</span><span class="o">=</span><span class="mi">32</span>,</span><span class="param">	<span class="n">h</span><span class="o">=</span><span class="mi">4</span>,</span><span class="param">	<span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span>,</span><span class="param">	<span class="n">interleave</span><span class="o">=</span><span class="kc">True</span>,</span><span class="param">	<span class="n">transpose</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
+        <span class="name">triton_qk_norm_and_half_rope_forward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">qkv</span>,</span><span class="param">	<span class="n">q_norm_weight</span>,</span><span class="param">	<span class="n">k_norm_weight</span>,</span><span class="param">	<span class="n">freqs</span>,</span><span class="param">	<span class="n">H</span><span class="o">=</span><span class="mi">32</span>,</span><span class="param">	<span class="n">h</span><span class="o">=</span><span class="mi">4</span>,</span><span class="param">	<span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span>,</span><span class="param">	<span class="n">interleaved</span><span class="o">=</span><span class="kc">True</span>,</span><span class="param">	<span class="n">transposed</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
 
         
     </div>
@@ -117,8 +117,12 @@
 <li><strong>H:</strong>  Number of attention heads.</li>
 <li><strong>h:</strong>  Number of key/value heads.</li>
 <li><strong>eps:</strong>  epsilon value for L2 normalization.</li>
-<li><strong>interleave:</strong>  whether head of qkv is interleaved, i.e., [qqkvqqkv]</li>
-<li><strong>transpose:</strong>  whether qkv is tranposed, i.e., [S, B, dim],
+<li><strong>interleaved:</strong>  whether head of qkv is interleaved,
+interleaved: [q...qkvq...qkv]
+non-interleaved: [q...qk...kv...v]</li>
+<li><strong>transposed:</strong>  whether qkv is tranposed
+transposed: [S, B, dim]
+non-transposed: [B, S, dim]
 only support transpose format currently</li>
 </ul>
 
@@ -139,7 +143,7 @@ only support transpose format currently</li>
                     <div class="attr function">
             
         <span class="def">def</span>
-        <span class="name">triton_qk_norm_and_half_rope_backward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">gq</span>,</span><span class="param">	<span class="n">gk</span>,</span><span class="param">	<span class="n">gv</span>,</span><span class="param">	<span class="n">qkv</span>,</span><span class="param">	<span class="n">q_norm_weight</span>,</span><span class="param">	<span class="n">k_norm_weight</span>,</span><span class="param">	<span class="n">freqs</span>,</span><span class="param">	<span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span>,</span><span class="param">	<span class="n">transpose</span><span class="o">=</span><span class="kc">False</span>,</span><span class="param">	<span class="n">interleave</span><span class="o">=</span><span class="kc">True</span></span><span class="return-annotation">):</span></span>
+        <span class="name">triton_qk_norm_and_half_rope_backward</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">gq</span>,</span><span class="param">	<span class="n">gk</span>,</span><span class="param">	<span class="n">gv</span>,</span><span class="param">	<span class="n">qkv</span>,</span><span class="param">	<span class="n">q_norm_weight</span>,</span><span class="param">	<span class="n">k_norm_weight</span>,</span><span class="param">	<span class="n">freqs</span>,</span><span class="param">	<span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span>,</span><span class="param">	<span class="n">interleaved</span><span class="o">=</span><span class="kc">True</span>,</span><span class="param">	<span class="n">transposed</span><span class="o">=</span><span class="kc">False</span></span><span class="return-annotation">):</span></span>
 
         
     </div>
@@ -158,8 +162,8 @@ only support transpose format currently</li>
 <li><strong>k_norm_weight:</strong> </li>
 <li><strong>freqs:</strong> </li>
 <li><strong>eps:</strong> </li>
-<li><strong>transpose:</strong> </li>
-<li><strong>interleave:</strong> </li>
+<li><strong>interleaved:</strong> </li>
+<li><strong>transposed:</strong> </li>
 </ul>
 
 <h6 id="returns">Returns:</h6>

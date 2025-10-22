@@ -35,12 +35,18 @@ def rope_freqs(length, dim, rope_theta=10000.0):
     return freqs
 
 
-def torch_half_rope(q, k, freqs, rope_theta=10000.0):
-    L, B, H, D = q.shape
+def torch_half_rope(q, k, freqs, rope_theta=10000.0, transposed=True):
+    if transposed:
+        L, B, H, D = q.shape
+    else:
+        B, L, H, D = q.shape
     d = D // 2
     cos = freqs.cos().to(q.dtype)
     sin = freqs.sin().to(q.dtype)
-    position_ids = torch.arange(L, device='cuda:0')[:, None].expand(-1, B)
+    if transposed:
+        position_ids = torch.arange(L, device='cuda:0')[:, None].expand(-1, B)
+    else:
+        position_ids = torch.arange(L, device='cuda:0')[None, :].expand(B, -1)
     qr, kr = apply_rotary_pos_emb(q[:, :, :, :d], k[:, :, :, :d], cos, sin,
                                   position_ids)
     qo = torch.cat([qr, q[:, :, :, d:]], dim=-1)
@@ -48,9 +54,12 @@ def torch_half_rope(q, k, freqs, rope_theta=10000.0):
     return qo, ko
 
 
-def torch_qk_norm(q, k, qw, kw, eps=1e-6):
+def torch_qk_norm(q, k, qw, kw, eps=1e-6, transposed=True):
     dtype = q.dtype
-    L, B, H, D = q.shape
+    if transposed:
+        L, B, H, D = q.shape
+    else:
+        B, L, H, D = q.shape
     rms = torch.sqrt(q.float().square().mean(-1) + eps)
     q = q / rms[:, :, :, None]
     q = q * qw
@@ -61,28 +70,42 @@ def torch_qk_norm(q, k, qw, kw, eps=1e-6):
 
 
 def torch_qk_norm_and_half_rope(qkv, qw, kw, freqs, rope_theta=10000.0, H=32,
-                                h=4, eps=1e-6, interleave=True):
-    length, bs, dim = qkv.shape
+                                h=4, eps=1e-6, interleaved=True, transposed=True):
+    if transposed:
+        length, bs, dim = qkv.shape
+    else:
+        bs, length, dim = qkv.shape
     qkv = qkv.float()
     qw = qw.float()
     kw = kw.float()
     D = dim // (H + 2 * h)
-    if interleave:
-        qkv = qkv.view(length, bs, h, (2 + H // h) * D)
-        q, k, v = torch.split(qkv, [H // h * D, D, D], 3)
-        q = torch.reshape(q, (length, bs, H, D))
+    if interleaved:
+        if transposed:
+            qkv = qkv.view(length, bs, h, (2 + H // h) * D)
+            q, k, v = torch.split(qkv, [H // h * D, D, D], 3)
+            q = torch.reshape(q, (length, bs, H, D))
+        else:
+            qkv = qkv.view(bs, length, h, (2 + H // h) * D)
+            q, k, v = torch.split(qkv, [H // h * D, D, D], 3)
+            q = torch.reshape(q, (bs, length, H, D))
     else:
-        qkv = qkv.view(length, bs, H + 2 * h, D)
-        q, k, v = torch.split(qkv, [H, h, h], dim=2)
-    q, k = torch_qk_norm(q, k, qw, kw, eps=eps)
-    q, k = torch_half_rope(q, k, freqs, rope_theta=rope_theta)
-    q = q.transpose(0, 1)
-    k = k.transpose(0, 1)
-    v = v.transpose(0, 1)
+        if transposed:
+            qkv = qkv.view(length, bs, H + 2 * h, D)
+            q, k, v = torch.split(qkv, [H, h, h], dim=2)
+        else:
+            qkv = qkv.view(bs, length, H + 2 * h, D)
+            q, k, v = torch.split(qkv, [H, h, h], dim=2)
+    q, k = torch_qk_norm(q, k, qw, kw, eps=eps, transposed=transposed)
+    q, k = torch_half_rope(q, k, freqs, rope_theta=rope_theta, transposed=transposed)
+    if transposed:
+        q = q.transpose(0, 1)
+        k = k.transpose(0, 1)
+        v = v.transpose(0, 1)
     return q, k, v
 
 
 def test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0,
+                    transposed=True,
                    bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
@@ -91,8 +114,8 @@ def test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0,
     freqs = rope_freqs(L, D // 2, rope_theta=rope_theta)
     freqs = torch.cat([freqs, freqs], -1)
 
-    q_ref, k_ref = torch_half_rope(q, k, freqs, rope_theta=rope_theta)
-    qo, ko = triton_half_rope_forward(q, k, freqs)
+    q_ref, k_ref = torch_half_rope(q, k, freqs, rope_theta=rope_theta, transposed=transposed)
+    qo, ko = triton_half_rope_forward(q, k, freqs, transposed=transposed)
     output_check(q_ref, qo, mode='q')
     output_check(k_ref, ko, mode='k')
 
@@ -100,13 +123,13 @@ def test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0,
     k_grad = torch.randn(L, B, h, D, dtype=dtype, device=device)
     q_ref = q.detach().clone().requires_grad_()
     k_ref = k.detach().clone().requires_grad_()
-    qo_ref, ko_ref = torch_half_rope(q_ref, k_ref, freqs, rope_theta=rope_theta)
+    qo_ref, ko_ref = torch_half_rope(q_ref, k_ref, freqs, rope_theta=rope_theta, transposed=transposed)
     qo_ref.backward(gradient=q_grad)
     ko_ref.backward(gradient=k_grad)
     dq_ref = q_ref.grad
     dk_ref = k_ref.grad
 
-    dq, dk = triton_half_rope_backward(q_grad, k_grad, freqs, inplace=True)
+    dq, dk = triton_half_rope_backward(q_grad, k_grad, freqs, inplace=True, transposed=transposed)
     output_check(dq_ref, dq, mode='dq')
     output_check(dk_ref, dk, mode='dk')
 
@@ -117,11 +140,16 @@ def test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0,
 
 
 def test_qk_norm_and_half_rope(B=2, L=4096, H=32, h=8, D=128,
-                               rope_theta=10000.0, interleave=False,
+                               rope_theta=10000.0, 
+                               interleaved=True,
+                               transposed=True,
                                bench=False):
     dtype = torch.bfloat16
     device = 'cuda:0'
-    qkv = torch.randn(L, B, (H + 2 * h) * D, dtype=dtype, device=device)
+    if transposed:
+        qkv = torch.randn(L, B, (H + 2 * h) * D, dtype=dtype, device=device)
+    else:
+        qkv = torch.randn(B, L, (H + 2 * h) * D, dtype=dtype, device=device)
     qw = torch.randn(D, dtype=dtype, device=device)
     kw = torch.randn(D, dtype=dtype, device=device)
     freqs = rope_freqs(L, D // 2, rope_theta=rope_theta)
@@ -129,11 +157,12 @@ def test_qk_norm_and_half_rope(B=2, L=4096, H=32, h=8, D=128,
     q_ref, k_ref, v_ref = torch_qk_norm_and_half_rope(qkv, qw, kw, freqs,
                                                       rope_theta, H=H, h=h,
                                                       eps=1e-6,
-                                                      interleave=interleave)
+                                                      transposed=transposed,
+                                                      interleaved=interleaved)
     qo, ko, vo = triton_qk_norm_and_half_rope_forward(qkv, qw, kw, freqs, H=H,
                                                       h=h, eps=1e-6,
-                                                      transpose=True,
-                                                      interleave=interleave)
+                                                      transposed=transposed,
+                                                      interleaved=interleaved)
     output_check(q_ref, qo, mode='q')
     output_check(k_ref, ko, mode='k')
     output_check(v_ref, vo, mode='v')
@@ -147,7 +176,9 @@ def test_qk_norm_and_half_rope(B=2, L=4096, H=32, h=8, D=128,
     qo_ref, ko_ref, vo_ref = torch_qk_norm_and_half_rope(qkv_ref, qw_ref,
                                                          kw_ref, freqs,
                                                          rope_theta=rope_theta,
-                                                         H=H, h=h, eps=1e-6)
+                                                         H=H, h=h, eps=1e-6,
+                                                      transposed=transposed,
+                                                      interleaved=interleaved)
     qo_ref.backward(gradient=q_grad)
     ko_ref.backward(gradient=k_grad)
     vo_ref.backward(gradient=v_grad)
@@ -159,31 +190,38 @@ def test_qk_norm_and_half_rope(B=2, L=4096, H=32, h=8, D=128,
     dqkv, dqw, dkw = triton_qk_norm_and_half_rope_backward(q_grad, k_grad,
                                                            v_grad, qkv, qw, kw,
                                                            freqs, eps=1e-6,
-                                                           transpose=True)
+                                                           transposed=transposed,
+                                                           interleaved=interleaved)
     output_check(dqkv_ref, dqkv, mode='dqkv')
     output_check(dqw_ref, dqw, mode='dqw')
     output_check(dkw_ref, dkw, mode='dkw')
 
     if bench:
         benchmark_func(triton_qk_norm_and_half_rope_forward, qkv, qw, kw, freqs,
-                       H=H, h=h, eps=1e-6, transpose=True,
+                       H=H, h=h, eps=1e-6, transposed=transposed, interleaved=interleaved,
                        ref_bytes=L * B * (H + 2 * h) * D * 4,
                        n_profile=0)
         benchmark_func(triton_qk_norm_and_half_rope_backward, q_grad, k_grad,
-                       v_grad, qkv, qw, kw, freqs, eps=1e-6, transpose=True,
+                       v_grad, qkv, qw, kw, freqs, eps=1e-6, transpose=transposed, interleaved=interleaved,
                        ref_bytes=L * B * (H + 2 * h) * D * 6,
                        n_profile=0)
 
 
 if __name__ == '__main__':
-    test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0,
+    test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0, transposed=True,
                    bench=False)
-    test_qk_norm_and_half_rope(B=2, L=4096, H=16, h=16, D=128,
-                               rope_theta=10000.0, interleave=True, bench=False)
+    test_half_rope(B=2, L=4096, H=32, h=8, D=128, rope_theta=10000.0, transposed=False,
+                   bench=False)
+    test_qk_norm_and_half_rope(B=1, L=4096, H=16, h=16, D=128,
+                               rope_theta=10000.0, interleaved=False, transposed=True, bench=False)
+    test_qk_norm_and_half_rope(B=2, L=4096, H=16, h=4, D=128,
+                               rope_theta=10000.0, interleaved=False, transposed=True, bench=False)
+
+
     test_qk_norm_and_half_rope(B=4, L=4096, H=16, h=4, D=128,
-                               rope_theta=10000.0, interleave=True, bench=False)
+                               rope_theta=10000.0, interleaved=True, transposed=True, bench=False)
     test_qk_norm_and_half_rope(B=4, L=4096, H=32, h=8, D=128,
-                               rope_theta=10000.0, interleave=True, bench=False)
+                               rope_theta=10000.0, interleaved=True, transposed=True, bench=False)
     test_qk_norm_and_half_rope(B=4, L=4096, H=32, h=8, D=128,
-                               rope_theta=10000.0, interleave=False,
+                               rope_theta=10000.0, interleaved=False, transposed=True, 
                                bench=False)

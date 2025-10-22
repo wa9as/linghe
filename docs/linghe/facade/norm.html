@@ -34,7 +34,7 @@
                     <a class="function" href="#rms_norm">rms_norm</a>
             </li>
             <li>
-                    <a class="function" href="#group_norm_gate">group_norm_gate</a>
+                    <a class="function" href="#group_rms_norm_gate">group_rms_norm_gate</a>
             </li>
     </ul>
 
@@ -88,15 +88,15 @@
 
 
                 </section>
-                <section id="group_norm_gate">
+                <section id="group_rms_norm_gate">
                     <div class="attr function">
             
         <span class="def">def</span>
-        <span class="name">group_norm_gate</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">attn_output</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">gate</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-06</span>,</span><span class="param">	<span class="n">group_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span></span><span class="return-annotation">):</span></span>
+        <span class="name">group_rms_norm_gate</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">attn_output</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">gate</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>,</span><span class="param">	<span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-06</span>,</span><span class="param">	<span class="n">group_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span></span><span class="return-annotation">):</span></span>
 
         
     </div>
-    <a class="headerlink" href="#group_norm_gate"></a>
+    <a class="headerlink" href="#group_rms_norm_gate"></a>
     
             <div class="docstring"><p>return group_rms_norm(transpose(attn_output, [0,1]), weight) * sigmoid(gate)</p>
 
