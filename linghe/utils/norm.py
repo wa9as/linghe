@@ -380,7 +380,7 @@ def triton_rms_norm_and_block_quant_forward(x: torch.Tensor,
 
 # TOOD(nanxiao): opt performance
 @triton.jit
-def group_norm_gate_forward_kernel(x_ptr, gate_ptr, weight_ptr, out_ptr, eps, bs, length,
+def group_rms_norm_gate_forward_kernel(x_ptr, gate_ptr, weight_ptr, out_ptr, eps, bs, length,
                             DIM: tl.constexpr, 
                             D: tl.constexpr, 
                             GROUP_SIZE: tl.constexpr):
@@ -404,28 +404,40 @@ def group_norm_gate_forward_kernel(x_ptr, gate_ptr, weight_ptr, out_ptr, eps, bs
     tl.store(out_ptr + offs, x)
 
 
-def triton_group_norm_gate_forward(x: torch.Tensor, gate, weight, eps=1e-6, group_size=4):
+def triton_group_rms_norm_gate_forward(x: torch.Tensor, 
+                                       gate: torch.Tensor, 
+                                       weight: torch.Tensor, 
+                                       eps=1e-6, 
+                                       group_size=4,
+                                       transpose=True):
     """
     norm and gate in linear attention
     Args:
         x: output of attn, [bs, length, n_heads, head_dim]
-        gate: gate tensor, [length, bs, dim]
+        gate: gate tensor, [length, bs, dim] if transpose=True else [bs, length, dim]
         weight: rms norm weight, [dim]
         eps: epsilon of rms norm
         group_size: group size of group rms norm
+        transpose: whether gate is transposed and output will be transposed
 
     Returns:
-        output tensor
+        output tensor, [length, bs, dim] if transpose=True else [bs, length, dim]
     """
     # row-wise read, row-wise write
-    length, bs, dim = gate.shape
+    if transpose:
+        length, bs, dim = gate.shape
+    else:
+        bs, length, dim = gate.shape
     assert dim <= 8192 and triton.next_power_of_2(dim) == dim and triton.next_power_of_2(group_size) == group_size
     d = dim // group_size
     device = x.device
-    out = torch.empty((length, bs, dim), device=device, dtype=x.dtype)
+    if transpose:
+        out = torch.empty((length, bs, dim), device=device, dtype=x.dtype)
+    else:
+        out = torch.empty((bs, length, dim), device=device, dtype=x.dtype)
 
     grid = (bs*length,)
-    group_norm_gate_forward_kernel[grid](
+    group_rms_norm_gate_forward_kernel[grid](
         x,
         gate,
         weight.data,
@@ -495,8 +507,11 @@ def group_rms_gate_backward_kernel(
     tl.store(dw_ptr + pid * DIM + tl.arange(0, DIM), dw)
 
 
-def triton_group_norm_gate_backward(grad_output, x, gate, weight, eps=1e-6, group_size=4):
-    length, bs, dim = gate.shape
+def triton_group_rms_norm_gate_backward(grad_output, x, gate, weight, eps=1e-6, group_size=4, transpose=True):
+    if transpose:
+        length, bs, dim = gate.shape
+    else:
+        bs, length, dim = gate.shape
     assert dim <= 8192 and triton.next_power_of_2(dim) == dim and triton.next_power_of_2(group_size) == group_size
     d = dim // group_size
     device = x.device

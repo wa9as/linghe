@@ -16,71 +16,126 @@ def half_rope_forward_kernel(q_ptr, k_ptr, freqs_ptr, qo_ptr, ko_ptr, B,
                              h: tl.constexpr,
                              D: tl.constexpr,
                              d: tl.constexpr,
+                             TRANSPOSED: tl.constexpr
                              ):
     pid = tl.program_id(0)
+    L = tl.num_programs(0)
 
     freqs = tl.load(freqs_ptr + pid * D + tl.arange(0, D))
     cos = tl.cos(freqs)
     sin = tl.sin(freqs)
     signs = tl.arange(0, 2).to(tl.float32) * 2 - 1
 
-    # [len, bs, q_head, head_dim]
+    
     for i in range(B):
-        q = tl.load(
-            q_ptr + pid * B * q_stride + i * q_stride + 2 * D * tl.arange(0, H)[
-                                                                :,
-                                                                None] + tl.arange(
-                0, D)[None, :])
+        if TRANSPOSED:
+            # [len, bs, q_head, head_dim]
+            q = tl.load(
+                q_ptr + pid * B * q_stride + i * q_stride + 2 * D * tl.arange(0, H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            # [bs, len, q_head, head_dim]
+            q = tl.load(
+                q_ptr + pid * q_stride + i * L * q_stride + 2 * D * tl.arange(0, H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
         qr = tl.reshape(tl.permute(
             tl.flip(tl.permute(tl.reshape(q, (H, 2, d)), (0, 2, 1)),
                     dim=2) * signs, (0, 2, 1)), (H, D))
         q = q * cos + qr * sin
-        tl.store(
-            qo_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0,
-                                                                             H)[
-                                                                   :,
-                                                                   None] + tl.arange(
-                0, D)[None, :], q)
-
-        q = tl.load(
-            q_ptr + pid * B * q_stride + i * q_stride + D + 2 * D * tl.arange(0,
-                                                                              H)[
+        if TRANSPOSED:
+            tl.store(
+                qo_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0,
+                                                                                H)[
                                                                     :,
                                                                     None] + tl.arange(
-                0, D)[None, :])
-        tl.store(
-            qo_ptr + pid * B * H * D * 2 + i * H * D * 2 + D + 2 * D * tl.arange(
-                0, H)[:, None] + tl.arange(0, D)[None, :], q)
+                    0, D)[None, :], q)
+
+            q = tl.load(
+                q_ptr + pid * B * q_stride + i * q_stride + D + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                        :,
+                                                                        None] + tl.arange(
+                    0, D)[None, :])
+            tl.store(
+                qo_ptr + pid * B * H * D * 2 + i * H * D * 2 + D + 2 * D * tl.arange(
+                    0, H)[:, None] + tl.arange(0, D)[None, :], q)
+        else:
+            tl.store(
+                qo_ptr + pid * H * D * 2 + i * L * H * D * 2 + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :], q)
+
+            q = tl.load(
+                q_ptr + pid * q_stride + i * L * q_stride + D + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                        :,
+                                                                        None] + tl.arange(
+                    0, D)[None, :])
+            tl.store(
+                qo_ptr + pid * H * D * 2 + i * L * H * D * 2 + D + 2 * D * tl.arange(
+                    0, H)[:, None] + tl.arange(0, D)[None, :], q) 
+
 
     for i in range(B):
-        k = tl.load(
-            k_ptr + pid * B * k_stride + i * k_stride + 2 * D * tl.arange(0, h)[
-                                                                :,
-                                                                None] + tl.arange(
-                0, D)[None, :])
+        if TRANSPOSED:
+            k = tl.load(
+                k_ptr + pid * B * k_stride + i * k_stride + 2 * D * tl.arange(0, h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            k = tl.load(
+                k_ptr + pid * k_stride + i * L * k_stride + 2 * D * tl.arange(0, h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
         kr = tl.reshape(tl.permute(
             tl.flip(tl.permute(tl.reshape(k, (h, 2, d)), (0, 2, 1)),
                     dim=2) * signs, (0, 2, 1)), (h, D))
         k = k * cos + kr * sin
-        tl.store(
-            ko_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0,
-                                                                             h)[
-                                                                   :,
-                                                                   None] + tl.arange(
-                0, D)[None, :], k)
-
-        k = tl.load(
-            k_ptr + pid * B * k_stride + i * k_stride + D + 2 * D * tl.arange(0,
-                                                                              h)[
+        if TRANSPOSED:
+            tl.store(
+                ko_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0,
+                                                                                h)[
                                                                     :,
                                                                     None] + tl.arange(
-                0, D)[None, :])
-        tl.store(
-            ko_ptr + pid * B * h * D * 2 + i * h * D * 2 + D + 2 * D * tl.arange(
-                0, h)[:, None] + tl.arange(0, D)[None, :], k)
+                    0, D)[None, :], k)
+
+            k = tl.load(
+                k_ptr + pid * B * k_stride + i * k_stride + D + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                        :,
+                                                                        None] + tl.arange(
+                    0, D)[None, :])
+            tl.store(
+                ko_ptr + pid * B * h * D * 2 + i * h * D * 2 + D + 2 * D * tl.arange(
+                    0, h)[:, None] + tl.arange(0, D)[None, :], k)
+        else:
+            tl.store(
+                ko_ptr + pid * h * D * 2 + i * L * h * D * 2 + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :], k)
+
+            k = tl.load(
+                k_ptr + pid * k_stride + i * L * k_stride + D + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                        :,
+                                                                        None] + tl.arange(
+                    0, D)[None, :])
+            tl.store(
+                ko_ptr + pid * h * D * 2 + i * L * h * D * 2 + D + 2 * D * tl.arange(
+                    0, h)[:, None] + tl.arange(0, D)[None, :], k)
 
 
-def triton_half_rope_forward(q, k, freqs):
+def triton_half_rope_forward(q, k, freqs, transposed=True):
     """
     apply norm to qk, then apply half rope to qk
     Args:
@@ -92,7 +147,10 @@ def triton_half_rope_forward(q, k, freqs):
         - qo: query output
         - ko: key output
     """
-    L, B, H, D = q.shape
+    if transposed:
+        L, B, H, D = q.shape
+    else:
+        B, L, H, D = q.shape
     h = k.shape[2]
     assert freqs.shape[1] == D // 2
     num_stages = 3
@@ -100,8 +158,12 @@ def triton_half_rope_forward(q, k, freqs):
 
     q_stride = q.stride(1)
     k_stride = k.stride(1)
-    qo = torch.empty((L, B, H, D), dtype=q.dtype, device=q.device)
-    ko = torch.empty((L, B, h, D), dtype=q.dtype, device=q.device)
+    if transposed:
+        qo = torch.empty((L, B, H, D), dtype=q.dtype, device=q.device)
+        ko = torch.empty((L, B, h, D), dtype=q.dtype, device=q.device)
+    else:
+        qo = torch.empty((B, L, H, D), dtype=q.dtype, device=q.device)
+        ko = torch.empty((B, L, h, D), dtype=q.dtype, device=q.device)
     grid = (L,)
     half_rope_forward_kernel[grid](
         q, k,
@@ -114,6 +176,7 @@ def triton_half_rope_forward(q, k, freqs):
         h,
         D // 2,
         D // 4,
+        transposed,
         num_stages=num_stages,
         num_warps=num_warps
     )
@@ -127,8 +190,10 @@ def half_rope_backward_kernel(q_ptr, k_ptr, freqs_ptr,
                               h: tl.constexpr,
                               D: tl.constexpr,
                               d: tl.constexpr,
+                              TRANSPOSED: tl.constexpr
                               ):
     pid = tl.program_id(0)
+    L = tl.num_programs(0)
 
     freqs = tl.load(freqs_ptr + pid * D + tl.arange(0, D))
     cos = tl.cos(freqs)
@@ -137,46 +202,80 @@ def half_rope_backward_kernel(q_ptr, k_ptr, freqs_ptr,
 
     # [len, bs, q_head, head_dim]
     for i in range(B):
-        q = tl.load(
-            q_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0,
-                                                                            H)[
-                                                                  :,
-                                                                  None] + tl.arange(
-                0, D)[None, :])
+        if TRANSPOSED:
+            q = tl.load(
+                q_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            q = tl.load(
+                q_ptr + pid * H * D * 2 + i * L * H * D * 2 + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
         qr = tl.reshape(tl.permute(
             tl.flip(tl.permute(tl.reshape(q, (H, 2, d)), (0, 2, 1)),
                     dim=2) * signs, (0, 2, 1)), (H, D))
         q = q * cos + qr * sin
-        tl.store(
-            q_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0,
-                                                                            H)[
-                                                                  :,
-                                                                  None] + tl.arange(
-                0, D)[None, :], q)
+        if TRANSPOSED:
+            tl.store(
+                q_ptr + pid * B * H * D * 2 + i * H * D * 2 + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :], q)
+        else:
+            tl.store(
+                q_ptr + pid * H * D * 2 + i * L * H * D * 2 + 2 * D * tl.arange(0,
+                                                                                H)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :], q)  
 
     for i in range(B):
-        k = tl.load(
-            k_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0,
-                                                                            h)[
-                                                                  :,
-                                                                  None] + tl.arange(
-                0, D)[None, :])
+        if TRANSPOSED:
+            k = tl.load(
+                k_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            k = tl.load(
+                k_ptr + pid * h * D * 2 + i * L * h * D * 2 + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :])
         kr = tl.reshape(tl.permute(
             tl.flip(tl.permute(tl.reshape(k, (h, 2, d)), (0, 2, 1)),
                     dim=2) * signs, (0, 2, 1)), (h, D))
         k = k * cos + kr * sin
-        tl.store(
-            k_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0,
-                                                                            h)[
-                                                                  :,
-                                                                  None] + tl.arange(
-                0, D)[None, :], k)
+        if TRANSPOSED:
+            tl.store(
+                k_ptr + pid * B * h * D * 2 + i * h * D * 2 + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :], k)
+        else:
+            tl.store(
+                k_ptr + pid * h * D * 2 + i * L * h * D * 2 + 2 * D * tl.arange(0,
+                                                                                h)[
+                                                                    :,
+                                                                    None] + tl.arange(
+                    0, D)[None, :], k)
 
 
-
-def triton_half_rope_backward(q_grad, k_grad, freqs, inplace=False):
+def triton_half_rope_backward(q_grad, k_grad, freqs, inplace=False, transposed=True):
     assert inplace
-    L, B, H, D = q_grad.shape
+    if transposed:
+        L, B, H, D = q_grad.shape
+    else:
+        B, L, H, D = q_grad.shape
     h = k_grad.shape[2]
     assert freqs.shape[1] == D // 2
     num_stages = 3
@@ -191,6 +290,7 @@ def triton_half_rope_backward(q_grad, k_grad, freqs, inplace=False):
         h,
         D // 2,
         D // 4,
+        transposed,
         num_stages=num_stages,
         num_warps=num_warps
     )
@@ -209,7 +309,8 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
                                          h: tl.constexpr,
                                          D: tl.constexpr,
                                          d: tl.constexpr,
-                                         interleave: tl.constexpr):
+                                         INTERLEAVED: tl.constexpr,
+                                         TRANSPOSED: tl.constexpr):
     pid = tl.program_id(0)
     L = tl.num_programs(0)
     DD = D * 2
@@ -225,18 +326,26 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
     w = H // h
 
     # [len, bs, q_head, head_dim] -> [bs, len, q_head, head_dim]
-    if interleave:
+    if INTERLEAVED:
         row_offs = tl.arange(0, H) + tl.arange(0, H) // w * 2
     else:
         row_offs = tl.arange(0, H)
+
     for i in range(B):
-        q0 = tl.load(q_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                                  None] + tl.arange(
-            0, D)[None, :])
-        q1 = tl.load(
-            q_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                             None] + tl.arange(
+        if TRANSPOSED:
+            q0 = tl.load(q_ptr + pid * B * stride + i * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
                 0, D)[None, :])
+            q1 = tl.load(q_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            q0 = tl.load(q_ptr + i * L * stride + pid * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :])
+            q1 = tl.load(q_ptr + i * L * stride + pid * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
 
         rms = 1 / tl.sqrt((tl.sum(q0 * q0, 1) + tl.sum(q1 * q1, 1)) / DD + eps)
         q1 *= rms[:, None]
@@ -260,21 +369,29 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
 
     k_weight_0 = tl.load(k_norm_weight_ptr + tl.arange(0, D))
     k_weight_1 = tl.load(k_norm_weight_ptr + D + tl.arange(0, D))
-    if interleave:
+    if INTERLEAVED:
         row_offs = tl.arange(0, h) * (w + 2)
         k_ptr = qkv_ptr + DD * w
     else:
         row_offs = tl.arange(0, h)
         k_ptr = qkv_ptr + DD * H
     for i in range(B):
-        k0 = tl.load(k_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                                  None] + tl.arange(
-            0, D)[None, :])
-        k1 = tl.load(
-            k_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                             None] + tl.arange(
+        if TRANSPOSED:
+            k0 = tl.load(k_ptr + pid * B * stride + i * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
                 0, D)[None, :])
-
+            k1 = tl.load(
+                k_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            k0 = tl.load(k_ptr + i * L * stride + pid * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :])
+            k1 = tl.load(
+                k_ptr + i * L * stride + pid * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
         rms = 1 / tl.sqrt((tl.sum(k0 * k0, 1) + tl.sum(k1 * k1, 1)) / DD + eps)
         k1 *= rms[:, None]
         k1 *= k_weight_1
@@ -295,26 +412,37 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
                                                                             D)[
                                                                   None, :], k0)
 
-    if interleave:
+    if INTERLEAVED:
         row_offs = tl.arange(0, h) * (w + 2)
         v_ptr = qkv_ptr + DD * w + DD
     else:
         row_offs = tl.arange(0, h)
         v_ptr = qkv_ptr + DD * H + DD * h
     for i in range(B):
-        v0 = tl.load(v_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                                  None] + tl.arange(
-            0, D)[None, :])
+        if TRANSPOSED:
+            v0 = tl.load(v_ptr + pid * B * stride + i * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :])
+        else:
+            v0 = tl.load(v_ptr + i * L * stride + pid * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :])
         tl.store(
             vo_ptr + pid * h * DD + i * L * h * DD + DD * tl.arange(0, h)[:,
-                                                          None] + tl.arange(0,
+                                                        None] + tl.arange(0,
                                                                             D)[
-                                                                  None, :], v0)
-
-        v1 = tl.load(
-            v_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                             None] + tl.arange(
-                0, D)[None, :])
+                                                                None, :], v0)
+            
+        if TRANSPOSED:
+            v1 = tl.load(
+                v_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            v1 = tl.load(
+                v_ptr + i * L * stride + pid * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
         tl.store(
             vo_ptr + pid * h * DD + i * L * h * DD + D + DD * tl.arange(0, h)[:,
                                                               None] + tl.arange(
@@ -323,7 +451,7 @@ def qk_norm_and_half_rope_forward_kernel(qkv_ptr,
 
 def triton_qk_norm_and_half_rope_forward(qkv, q_norm_weight, k_norm_weight,
                                          freqs, H=32, h=4, eps=1e-6,
-                                         interleave=True, transpose=False):
+                                         interleaved=True, transposed=False):
 
     """
     split qkv to q/k/v, apply qk norm and half rope to q/k,
@@ -336,17 +464,22 @@ def triton_qk_norm_and_half_rope_forward(qkv, q_norm_weight, k_norm_weight,
         H: Number of attention heads.
         h: Number of key/value heads.
         eps: epsilon value for L2 normalization.
-        interleave: whether head of qkv is interleaved, i.e., [qqkvqqkv]
-        transpose: whether qkv is tranposed, i.e., [S, B, dim],
+        interleaved: whether head of qkv is interleaved,
+            interleaved: [q...qkvq...qkv]
+            non-interleaved: [q...qk...kv...v]
+        transposed: whether qkv is tranposed
+            transposed: [S, B, dim]
+            non-transposed: [B, S, dim]
             only support transpose format currently
     Returns:
         - qo: shape [B, S, H, head_dim]
         - ko: shape [B, S, h, head_dim]
         - vo: shape [B, S, h, head_dim]
     """
-
-    assert transpose
-    L, B, Dim = qkv.shape
+    if transposed:
+        L, B, Dim = qkv.shape
+    else:
+        B, L, Dim = qkv.shape
     stride = qkv.stride(1)  # qkv may be a slice of a tensor
     D = Dim // (H + 2 * h)
     dtype = qkv.dtype
@@ -370,7 +503,8 @@ def triton_qk_norm_and_half_rope_forward(qkv, q_norm_weight, k_norm_weight,
         h,
         D // 2,
         D // 4,
-        interleave,
+        interleaved,
+        transposed,
         num_stages=num_stages,
         num_warps=num_warps
     )
@@ -386,12 +520,15 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
                                           dqw_ptr, dkw_ptr,
                                           B,
                                           stride,
+                                          grad_stride,
                                           eps,
                                           H: tl.constexpr,
                                           h: tl.constexpr,
                                           D: tl.constexpr,
                                           d: tl.constexpr,
-                                          interleave: tl.constexpr):
+                                          INTERLEAVED: tl.constexpr,
+                                          TRANSPOSED: tl.constexpr
+                                          ):
     pid = tl.program_id(0)
     L = tl.num_programs(0)
     DD = 2 * D
@@ -410,10 +547,11 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
     q_ptr = qkv_ptr
     dq_ptr = dqkv_ptr
     # [bs, len, q_head, head_dim] -> [len, bs, q_head, head_dim]
-    if interleave:
+    if INTERLEAVED:
         row_offs = tl.arange(0, H) + tl.arange(0, H) // w * 2
     else:
         row_offs = tl.arange(0, H)
+
     for i in range(B):
         gq_0 = tl.load(
             gq_ptr + i * L * H * DD + pid * H * DD + DD * tl.arange(0, H)[:,
@@ -430,13 +568,22 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
                     dim=2) * signs, (0, 2, 1)), (H, D))
         gq_0 = gq_0 * cos + gq_r * sin
 
-        q0 = tl.load(q_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                                  None] + tl.arange(
-            0, D)[None, :])
-        q1 = tl.load(
-            q_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                             None] + tl.arange(
+        if TRANSPOSED:
+            q0 = tl.load(q_ptr + pid * B * stride + i * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
                 0, D)[None, :])
+            q1 = tl.load(
+                q_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            q0 = tl.load(q_ptr + pid * stride + i * L * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :])
+            q1 = tl.load(
+                q_ptr + pid * stride + i * L * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
 
         rms = tl.sqrt((tl.sum(q0 * q0, 1) + tl.sum(q1 * q1, 1)) / DD + eps)
         r = (1 / rms)[:, None]
@@ -449,12 +596,21 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
         dq_0 = r * gq_0 * q_w0 - r * r * r / DD * q0 * s[:, None]
         dq_1 = r * gq_1 * q_w1 - r * r * r / DD * q1 * s[:, None]
 
-        tl.store(dq_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                               None] + tl.arange(
-            0, D)[None, :], dq_0)
-        tl.store(dq_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                                   None] + tl.arange(
-            0, D)[None, :], dq_1)
+        if TRANSPOSED:
+            tl.store(dq_ptr + pid * B * grad_stride + i * grad_stride + DD * row_offs[:,
+                                                                None] + tl.arange(
+                0, D)[None, :], dq_0)
+            tl.store(dq_ptr + pid * B * grad_stride + i * grad_stride + D + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :], dq_1)
+        else:
+            tl.store(dq_ptr + pid * grad_stride + i * L * grad_stride + DD * row_offs[:,
+                                                                None] + tl.arange(
+                0, D)[None, :], dq_0)
+            tl.store(dq_ptr + pid * grad_stride + i * L * grad_stride + D + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :], dq_1)
+
     tl.store(dqw_ptr + pid * D * 2 + tl.arange(0, D), dqw_0)
     tl.store(dqw_ptr + pid * D * 2 + D + tl.arange(0, D), dqw_1)
 
@@ -463,7 +619,7 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
 
     dkw_0 = tl.zeros((D,), dtype=tl.float32)
     dkw_1 = tl.zeros((D,), dtype=tl.float32)
-    if interleave:
+    if INTERLEAVED:
         row_offs = tl.arange(0, h) * (w + 2)
         k_ptr = qkv_ptr + DD * w
         dk_ptr = dqkv_ptr + DD * w
@@ -488,13 +644,22 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
                     dim=2) * signs, (0, 2, 1)), (h, D))
         gk_0 = gk_0 * cos + gk_r * sin
 
-        k0 = tl.load(k_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                                  None] + tl.arange(
-            0, D)[None, :])
-        k1 = tl.load(
-            k_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                             None] + tl.arange(
+        if TRANSPOSED:
+            k0 = tl.load(k_ptr + pid * B * stride + i * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
                 0, D)[None, :])
+            k1 = tl.load(
+                k_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
+        else:
+            k0 = tl.load(k_ptr + pid * stride + i * L * stride + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :])
+            k1 = tl.load(
+                k_ptr + pid * stride + i * L * stride + D + DD * row_offs[:,
+                                                                None] + tl.arange(
+                    0, D)[None, :])
 
         rms = tl.sqrt((tl.sum(k0 * k0, 1) + tl.sum(k1 * k1, 1)) / DD + eps)
         r = (1 / rms)[:, None]
@@ -507,17 +672,25 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
         dk_0 = r * gk_0 * k_w0 - r * r * r / DD * k0 * s[:, None]
         dk_1 = r * gk_1 * k_w1 - r * r * r / DD * k1 * s[:, None]
 
-        tl.store(dk_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                               None] + tl.arange(
-            0, D)[None, :], dk_0)
-        tl.store(dk_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                                   None] + tl.arange(
-            0, D)[None, :], dk_1)
+        if TRANSPOSED:
+            tl.store(dk_ptr + pid * B * grad_stride + i * grad_stride + DD * row_offs[:,
+                                                                None] + tl.arange(
+                0, D)[None, :], dk_0)
+            tl.store(dk_ptr + pid * B * grad_stride + i * grad_stride + D + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :], dk_1)
+        else:
+            tl.store(dk_ptr + pid * grad_stride + i * L * grad_stride + DD * row_offs[:,
+                                                                None] + tl.arange(
+                0, D)[None, :], dk_0)
+            tl.store(dk_ptr + pid * grad_stride + i * L * grad_stride + D + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :], dk_1)
     tl.store(dkw_ptr + pid * D * 2 + tl.arange(0, D), dkw_0)
     tl.store(dkw_ptr + pid * D * 2 + D + tl.arange(0, D), dkw_1)
 
     # [bs, len, k_head, head_dim] -> [len, bs, k_head + 2 * kv_head, head_dim]
-    if interleave:
+    if INTERLEAVED:
         row_offs = tl.arange(0, h) * (w + 2)
         dv_ptr = dqkv_ptr + DD * w + DD
     else:
@@ -526,25 +699,38 @@ def qk_norm_and_half_rope_backward_kernel(gq_ptr, gk_ptr, gv_ptr,
     for i in range(B):
         v0 = tl.load(
             gv_ptr + i * L * h * DD + pid * h * DD + DD * tl.arange(0, h)[:,
-                                                          None] + tl.arange(0,
+                                                        None] + tl.arange(0,
                                                                             D)[
-                                                                  None, :])
-        tl.store(dv_ptr + pid * B * stride + i * stride + DD * row_offs[:,
-                                                               None] + tl.arange(
-            0, D)[None, :], v0)
+                                                                None, :])
+
+        if TRANSPOSED:                                        
+            tl.store(dv_ptr + pid * B * grad_stride + i * grad_stride + DD * row_offs[:,
+                                                                None] + tl.arange(
+                0, D)[None, :], v0)
+        else:
+            tl.store(dv_ptr + pid * grad_stride + i * L * grad_stride + DD * row_offs[:,
+                                                                None] + tl.arange(
+                0, D)[None, :], v0)   
+
 
         v1 = tl.load(
             gv_ptr + i * L * h * DD + pid * h * DD + D + DD * tl.arange(0, h)[:,
                                                               None] + tl.arange(
                 0, D)[None, :])
-        tl.store(dv_ptr + pid * B * stride + i * stride + D + DD * row_offs[:,
-                                                                   None] + tl.arange(
-            0, D)[None, :], v1)
+
+        if TRANSPOSED:
+            tl.store(dv_ptr + pid * B * grad_stride + i * grad_stride + D + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :], v1)
+        else:
+            tl.store(dv_ptr + pid * grad_stride + i * L * grad_stride + D + DD * row_offs[:,
+                                                                    None] + tl.arange(
+                0, D)[None, :], v1)
 
 
 def triton_qk_norm_and_half_rope_backward(gq, gk, gv, qkv, q_norm_weight,
                                           k_norm_weight, freqs, eps=1e-6,
-                                          transpose=False, interleave=True):
+                                          interleaved=True, transposed=False):
     """
     backward kernel of triton_qk_norm_and_half_rope_forward
     Args:
@@ -556,15 +742,14 @@ def triton_qk_norm_and_half_rope_backward(gq, gk, gv, qkv, q_norm_weight,
         k_norm_weight:
         freqs:
         eps:
-        transpose:
-        interleave:
+        interleaved:
+        transposed:
 
     Returns:
         - dqkv: gradient of qkv
         - dqw: gradient of q_norm_weight
         - dkw: gradient of k_norm_weight
     """
-    assert transpose
     B, L, H, D = gq.shape
     stride = qkv.stride(1)
     h = gk.shape[2]
@@ -573,7 +758,12 @@ def triton_qk_norm_and_half_rope_backward(gq, gk, gv, qkv, q_norm_weight,
 
     dtype = gq.dtype
     device = gq.device
-    dqkv = torch.empty((L, B, (H + 2 * h) * D), dtype=dtype, device=device)
+    if transposed:
+        dqkv = torch.empty((L, B, (H + 2 * h) * D), dtype=dtype, device=device)
+    else:
+        dqkv = torch.empty((B, L, (H + 2 * h) * D), dtype=dtype, device=device)
+    grad_stride = dqkv.stride(1)  # for potential fused kernel
+
     tmp_dqw = torch.empty((L, D), dtype=torch.float32, device=device)
     tmp_dkw = torch.empty((L, D), dtype=torch.float32, device=device)
 
@@ -587,12 +777,14 @@ def triton_qk_norm_and_half_rope_backward(gq, gk, gv, qkv, q_norm_weight,
         tmp_dqw, tmp_dkw,
         B,
         stride,
+        grad_stride,
         eps,
         H,
         h,
         D // 2,
         D // 4,
-        interleave,
+        interleaved,
+        transposed,
         num_stages=num_stages,
         num_warps=num_warps
     )
