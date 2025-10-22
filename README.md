@@ -3,7 +3,7 @@
 <h1 align="center"> linghe </h1>
 
 <div style="text-align: center;">
-<img src="docs/linghe.png" alt="Logo" width="200">
+<img src="assets/linghe.png" alt="Logo" width="200">
 </div>
   
 <p align="center">
