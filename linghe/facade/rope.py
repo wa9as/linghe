@@ -5,28 +5,31 @@ Copyright (c) Ant Financial Service Group and its affiliates.
 
 import torch
 
-from linghe.utils.rope import triton_qk_norm_and_half_rope_forward, \
-    triton_qk_norm_and_half_rope_backward
+from linghe.utils.rope import (
+    triton_qk_norm_and_half_rope_forward,
+    triton_qk_norm_and_half_rope_backward,
+)
 
 
 class QkNormHalfRopeFunction(torch.autograd.Function):
     """"""
-    @staticmethod
-    def forward(ctx, qkv, q_norm_weight, k_norm_weight, freqs, H=32, h=4,
-                eps=1e-6):
-        shape = qkv.shape
-        qo, ko, vo = triton_qk_norm_and_half_rope_forward(qkv,
-                                                          q_norm_weight.data,
-                                                          k_norm_weight.data,
-                                                          freqs,
-                                                          H=H,
-                                                          h=h,
-                                                          eps=eps,
-                                                          interleave=True,
-                                                          transpose=True)
 
-        ctx.save_for_backward(qkv, q_norm_weight.data, k_norm_weight.data,
-                              freqs)
+    @staticmethod
+    def forward(ctx, qkv, q_norm_weight, k_norm_weight, freqs, H=32, h=4, eps=1e-6):
+        shape = qkv.shape
+        qo, ko, vo = triton_qk_norm_and_half_rope_forward(
+            qkv,
+            q_norm_weight.data,
+            k_norm_weight.data,
+            freqs,
+            H=H,
+            h=h,
+            eps=eps,
+            interleave=True,
+            transpose=True,
+        )
+
+        ctx.save_for_backward(qkv, q_norm_weight.data, k_norm_weight.data, freqs)
         ctx.H = H
         ctx.h = h
         ctx.eps = eps
@@ -37,26 +40,30 @@ class QkNormHalfRopeFunction(torch.autograd.Function):
     def backward(ctx, grad_q, grad_k, grad_v):
         qkv, q_norm_weight, k_norm_weight, freqs = ctx.saved_tensors
 
-        dqkv, dqw, dkw = triton_qk_norm_and_half_rope_backward(grad_q,
-                                                               grad_k,
-                                                               grad_v,
-                                                               qkv,
-                                                               q_norm_weight,
-                                                               k_norm_weight,
-                                                               freqs,
-                                                               eps=ctx.eps,
-                                                               transpose=True,
-                                                               interleave=True)
+        dqkv, dqw, dkw = triton_qk_norm_and_half_rope_backward(
+            grad_q,
+            grad_k,
+            grad_v,
+            qkv,
+            q_norm_weight,
+            k_norm_weight,
+            freqs,
+            eps=ctx.eps,
+            transpose=True,
+            interleave=True,
+        )
         return dqkv, dqw, dkw, None, None, None, None
 
 
-def qk_norm_half_rope(qkv: torch.Tensor,
-                      q_norm_weight: torch.Tensor,
-                      k_norm_weight: torch.Tensor,
-                      freqs: torch.Tensor,
-                      H: int = 32,
-                      h: int = 4,
-                      eps: float = 1e-6):
+def qk_norm_half_rope(
+    qkv: torch.Tensor,
+    q_norm_weight: torch.Tensor,
+    k_norm_weight: torch.Tensor,
+    freqs: torch.Tensor,
+    H: int = 32,
+    h: int = 4,
+    eps: float = 1e-6,
+):
     """
     split qkv to q/k/v, apply qk norm and half rope to q/k, transpose q/k/v to flash-attention layout
     Args:
@@ -73,10 +80,6 @@ def qk_norm_half_rope(qkv: torch.Tensor,
         - ko: shape [B, S, h, head_dim]
         - vo: shape [B, S, h, head_dim]
     """
-    return QkNormHalfRopeFunction.apply(qkv,
-                                        q_norm_weight,
-                                        k_norm_weight,
-                                        freqs,
-                                        H,
-                                        h,
-                                        eps)
+    return QkNormHalfRopeFunction.apply(
+        qkv, q_norm_weight, k_norm_weight, freqs, H, h, eps
+    )

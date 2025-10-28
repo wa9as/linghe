@@ -9,8 +9,9 @@ import triton.language as tl
 
 
 @triton.jit
-def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
-                       ROUND: tl.constexpr):
+def block_quant_kernel(
+    x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr, ROUND: tl.constexpr
+):
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
     n = tl.cdiv(N, BLOCK_SIZE)
@@ -28,9 +29,7 @@ def block_quant_kernel(x_ptr, y_ptr, s_ptr, M, N, BLOCK_SIZE: tl.constexpr,
     tl.store(s_ptr + pid_m * n + pid_n, s)
 
 
-def triton_block_quant(x,
-                block_size=128,
-                round_scale=False):
+def triton_block_quant(x, block_size=128, round_scale=False):
     """
     blockwise quantize x
     Args:
@@ -44,16 +43,19 @@ def triton_block_quant(x,
     """
     M, N = x.size()
     y = torch.empty((M, N), dtype=torch.float8_e4m3fn, device=x.device)
-    s = x.new_empty(x.size(-2) // block_size, x.size(-1) // block_size,
-                    dtype=torch.float32)
+    s = x.new_empty(
+        x.size(-2) // block_size, x.size(-1) // block_size, dtype=torch.float32
+    )
     grid = (triton.cdiv(M, block_size), triton.cdiv(N, block_size))
-    block_quant_kernel[grid](x,
-                             y,
-                             s,
-                             M,
-                             N,
-                             BLOCK_SIZE=block_size,
-                             ROUND=round_scale,
-                             num_stages=6,
-                             num_warps=8)
+    block_quant_kernel[grid](
+        x,
+        y,
+        s,
+        M,
+        N,
+        BLOCK_SIZE=block_size,
+        ROUND=round_scale,
+        num_stages=6,
+        num_warps=8,
+    )
     return y, s

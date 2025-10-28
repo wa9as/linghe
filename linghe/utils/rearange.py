@@ -9,9 +9,20 @@ import triton.language as tl
 
 
 @triton.jit
-def split_and_cat_kernel(x_ptr, y_ptr, scale_ptr, scale_output_ptr, count_ptr,
-                         accum_ptr, rev_accum_ptr, index_ptr, M,
-                         N: tl.constexpr, SCALE: tl.constexpr, K: tl.constexpr):
+def split_and_cat_kernel(
+    x_ptr,
+    y_ptr,
+    scale_ptr,
+    scale_output_ptr,
+    count_ptr,
+    accum_ptr,
+    rev_accum_ptr,
+    index_ptr,
+    M,
+    N: tl.constexpr,
+    SCALE: tl.constexpr,
+    K: tl.constexpr,
+):
     pid = tl.program_id(axis=0)
     # row-wise read, row-wise write
     index = tl.load(index_ptr + pid)
@@ -26,10 +37,15 @@ def split_and_cat_kernel(x_ptr, y_ptr, scale_ptr, scale_output_ptr, count_ptr,
 
     if SCALE:
         for i in range(tl.cdiv(count, K)):
-            scale = tl.load(scale_ptr + si + i * K + tl.arange(0, K),
-                            mask=i * K + tl.arange(0, K) < count)
-            tl.store(scale_output_ptr + rev_si + i * K + tl.arange(0, K), scale,
-                     mask=i * K + tl.arange(0, K) < count)
+            scale = tl.load(
+                scale_ptr + si + i * K + tl.arange(0, K),
+                mask=i * K + tl.arange(0, K) < count,
+            )
+            tl.store(
+                scale_output_ptr + rev_si + i * K + tl.arange(0, K),
+                scale,
+                mask=i * K + tl.arange(0, K) < count,
+            )
 
 
 def triton_split_and_cat(x, counts, indices, scales=None):
@@ -75,6 +91,6 @@ def triton_split_and_cat(x, counts, indices, scales=None):
         S,
         K,
         num_stages=3,
-        num_warps=8
+        num_warps=8,
     )
     return y, output_scales

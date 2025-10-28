@@ -16,7 +16,7 @@ def torch_fp16_dot(x, y):
 
 def test_dot(M=4096, N=4096, bench=False):
     dtype = torch.bfloat16
-    device = 'cuda:0'
+    device = "cuda:0"
 
     n_repeat = 100
 
@@ -28,15 +28,15 @@ def test_dot(M=4096, N=4096, bench=False):
 
     sums = triton_dot(x, q)
     sums_ref = torch_fp16_dot(x, q.float().to(dtype))
-    output_check(sums_ref, sums, 'sum')
+    output_check(sums_ref, sums, "sum")
 
-    sums_ref = (x.float() * (
-            q.to(torch.float32) * quant_scale[:, None] * smooth_scale[None,
-                                                         :])).sum(dim=1)
+    sums_ref = (
+        x.float() * (q.to(torch.float32) * quant_scale[:, None] * smooth_scale[None, :])
+    ).sum(dim=1)
 
     if bench:
         ref_time = benchmark_func(torch_fp16_dot, x, y, n_repeat=n_repeat)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_dot(M=4096, N=4096)

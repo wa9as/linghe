@@ -10,6 +10,7 @@ from linghe.utils.transpose import triton_transpose
 
 class TransposeDim01Function(torch.autograd.Function):
     """"""
+
     @staticmethod
     def forward(ctx, x):
         return triton_transpose(x, dim0=0, dim1=1)

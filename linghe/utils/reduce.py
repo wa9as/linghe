@@ -9,34 +9,37 @@ import triton.language as tl
 
 
 @triton.jit
-def abs_max_kernel(x_ptr,
-                   scale_ptr,
-                   smooth_scale_ptr,
-                   output_ptr,
-                   min_value,
-                   M, N,
-                   H: tl.constexpr,
-                   W: tl.constexpr,
-                   EVEN: tl.constexpr,
-                   QUANTIZED: tl.constexpr):
+def abs_max_kernel(
+    x_ptr,
+    scale_ptr,
+    smooth_scale_ptr,
+    output_ptr,
+    min_value,
+    M,
+    N,
+    H: tl.constexpr,
+    W: tl.constexpr,
+    EVEN: tl.constexpr,
+    QUANTIZED: tl.constexpr,
+):
     pid = tl.program_id(axis=0)
     # col-wise read, col-wise write
     x_max = tl.zeros((W,), dtype=tl.float32)
     m = tl.cdiv(M, H)
     offs = pid * W + tl.arange(0, H)[:, None] * N + tl.arange(0, W)
     if QUANTIZED:
-        smooth_scale = tl.load(smooth_scale_ptr + pid * W + tl.arange(0, W))[
-                       None, :]
+        smooth_scale = tl.load(smooth_scale_ptr + pid * W + tl.arange(0, W))[None, :]
     for i in range(m):
         if EVEN:
             x = tl.load(x_ptr + offs).to(tl.float32)
         else:
-            x = tl.load(x_ptr + offs,
-                        mask=i * H + tl.arange(0, H)[:, None] < M).to(
-                tl.float32)
+            x = tl.load(x_ptr + offs, mask=i * H + tl.arange(0, H)[:, None] < M).to(
+                tl.float32
+            )
         if QUANTIZED:
-            scale = tl.load(scale_ptr + i * H + tl.arange(0, H),
-                            mask=i * H + tl.arange(0, H) < M)
+            scale = tl.load(
+                scale_ptr + i * H + tl.arange(0, H), mask=i * H + tl.arange(0, H) < M
+            )
             x = x * scale[:, None] * smooth_scale
         x_max = tl.maximum(x_max, tl.max(tl.abs(x), axis=0))
         offs += H * N
@@ -76,12 +79,14 @@ def triton_abs_max(x, scale=None, smooth_scale=None, min_value=1e-30, axis=0):
         smooth_scale,
         maxs,
         min_value,
-        M, N,
-        H, W,
+        M,
+        N,
+        H,
+        W,
         EVEN,
         quantized,
         num_stages=2,
-        num_warps=4
+        num_warps=4,
     )
     return maxs
 
@@ -115,31 +120,23 @@ def triton_batch_count_zero(xs):
         a single-value int64 tensor
     """
     device = xs[0].device
-    sizes = torch.tensor([x.numel() for x in xs], dtype=torch.int64,
-                         device=device)
-    ptrs = torch.tensor([x.data_ptr() for x in xs], dtype=torch.int64,
-                        device=device)
+    sizes = torch.tensor([x.numel() for x in xs], dtype=torch.int64, device=device)
+    ptrs = torch.tensor([x.data_ptr() for x in xs], dtype=torch.int64, device=device)
 
     sm = torch.cuda.get_device_properties(device).multi_processor_count
     tensor_count = len(xs)
     counts = torch.empty((tensor_count, sm), device=device, dtype=torch.int64)
     B = 4096
     grid = (tensor_count, sm)
-    batch_count_zero_kernel[grid](
-        ptrs,
-        sizes,
-        counts,
-        B,
-        num_stages=2,
-        num_warps=4
-    )
+    batch_count_zero_kernel[grid](ptrs, sizes, counts, B, num_stages=2, num_warps=4)
     count = counts.sum()
     return count
 
 
 @triton.jit
-def batch_sum_with_ord_kernel(input_ptrs, size_ptr, count_ptr, B: tl.constexpr,
-                              ORD: tl.constexpr):
+def batch_sum_with_ord_kernel(
+    input_ptrs, size_ptr, count_ptr, B: tl.constexpr, ORD: tl.constexpr
+):
     tid = tl.program_id(axis=0)
     bid = tl.program_id(axis=1)
     sm = tl.num_programs(axis=1)
@@ -172,10 +169,8 @@ def triton_batch_sum_with_ord(xs, ord=2):
     """
     assert ord in (1, 2)
     device = xs[0].device
-    sizes = torch.tensor([x.numel() for x in xs], dtype=torch.int64,
-                         device=device)
-    ptrs = torch.tensor([x.data_ptr() for x in xs], dtype=torch.int64,
-                        device=device)
+    sizes = torch.tensor([x.numel() for x in xs], dtype=torch.int64, device=device)
+    ptrs = torch.tensor([x.data_ptr() for x in xs], dtype=torch.int64, device=device)
 
     sm = torch.cuda.get_device_properties(device).multi_processor_count
     tensor_count = len(xs)
@@ -183,13 +178,7 @@ def triton_batch_sum_with_ord(xs, ord=2):
     B = 4096
     grid = (tensor_count, sm)
     batch_sum_with_ord_kernel[grid](
-        ptrs,
-        sizes,
-        sums,
-        B,
-        ord,
-        num_stages=2,
-        num_warps=4
+        ptrs, sizes, sums, B, ord, num_stages=2, num_warps=4
     )
     sums = sums.sum()
     return sums

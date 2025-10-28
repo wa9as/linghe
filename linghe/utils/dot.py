@@ -46,12 +46,5 @@ def triton_dot(x, y):
     device = x.device
     s = torch.empty((M,), device=device, dtype=x.dtype)
     grid = (triton.cdiv(M, W),)
-    dot_kernel[grid](
-        x, y, s,
-        M, N,
-        H, W,
-        num_stages=num_stages,
-        num_warps=num_warps
-    )
+    dot_kernel[grid](x, y, s, M, N, H, W, num_stages=num_stages, num_warps=num_warps)
     return s
-
